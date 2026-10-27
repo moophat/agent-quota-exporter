@@ -1,0 +1,23 @@
+# Observed layout of a Codex home (CODEX_HOME, default ~/.codex), names only, from a real node. No file was opened.
+# The logged-in credential file is auth.json; this node had none (not logged in). Its presence is checked by name only.
+.codex/.tmp
+.codex/goals_1.sqlite
+.codex/goals_1.sqlite-shm
+.codex/goals_1.sqlite-wal
+.codex/installation_id
+.codex/logs_2.sqlite
+.codex/logs_2.sqlite-shm
+.codex/logs_2.sqlite-wal
+.codex/memories_1.sqlite
+.codex/memories_1.sqlite-shm
+.codex/memories_1.sqlite-wal
+.codex/queue_1.sqlite
+.codex/queue_1.sqlite-shm
+.codex/queue_1.sqlite-wal
+.codex/skills
+.codex/state_5.sqlite
+.codex/state_5.sqlite-shm
+.codex/state_5.sqlite-wal
+.codex/tmp
+.codex/auth.json   (expected when logged in; not present on the sampled node; never read)
+.codex/skills/     (directory, contents not listed)

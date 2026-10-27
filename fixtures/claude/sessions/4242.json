@@ -1,0 +1,21 @@
+{
+  "pid": 4242,
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/root",
+  "startedAt": 1767225600000,
+  "procStart": "0000000000",
+  "version": "0.0.0",
+  "peerProtocol": 1,
+  "peerFeatures": [],
+  "kind": "interactive",
+  "entrypoint": "cli",
+  "pidDomain": "host",
+  "tmux": "",
+  "messagingSocketPath": "/root/.claude/sock-example",
+  "name": "example-session",
+  "nameSource": "auto",
+  "nameSince": 1767225601000,
+  "updatedAt": 1767225660000,
+  "status": "idle",
+  "statusUpdatedAt": 1767225660000
+}

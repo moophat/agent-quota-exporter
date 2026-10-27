@@ -1,0 +1,133 @@
+# Metric contract
+
+Status: draft v0 (design phase). This is the interface between the exporter and everything that scrapes it. A builder
+implements to this document; a consumer (dashboards, alerts, a label-mapping layer) relies on it. Breaking changes
+bump the contract version (`agent_quota_exporter_build_info{contract="0"}`).
+
+Naming follows Prometheus conventions: `snake_case`, a unit suffix (`_seconds`, `_ratio`, `_total` for counters,
+`_timestamp_seconds` for epoch times), base units, no unit in a label value. The prefix is `agent_` (generic, no
+vendor). Names such as `llm_quota_utilization_ratio{provider,window,scope}` in prior art are borrowed **as an idea**
+(ratio 0..1, window and scope as labels); the series here are defined independently.
+
+## Label vocabulary
+
+Labels are generic and defined once. A metric lists which of them it carries.
+
+| Label | Meaning | Value rules |
+|---|---|---|
+| `host` | machine the exporter runs on | config `host` or the OS hostname; never an IP unless configured so |
+| `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, ... | lowercase, fixed vocabulary per plugin |
+| `profile` | one workspace: config dir / `CODEX_HOME` / opencode instance / agy `HOME` | operator alias from config; for auto-discovered profiles a stable slug of the directory name (not the path) |
+| `account` | the login a profile holds | operator alias; default is a short stable hash of the account id. A raw email is used only if config sets `account_label: email` |
+| `provider` | who serves the model: `anthropic`, `openai`, `google`, `opencode-go`, ... | as reported by the source; lowercased |
+| `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
+| `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
+| `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet` | `all` when the window covers everything |
+
+`window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`).
+`scope` is never empty.
+
+Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are
+constant per exporter, so they add no cardinality. Total label count per series is capped (default 12).
+
+## Cardinality rules
+
+1. **No session id, request id, message id, pid, prompt or path as a label on any metric** in the default set.
+2. **State is expressed as gauges, not as label churn.** A changing state (logged in, stale, active) is a 0/1 or count
+   gauge with a fixed label set. An *info-style* gauge (constant value `1`, descriptive labels such as `plan`) is used
+   for slow-changing facts, and its labels change only on real change.
+3. Series per exporter is bounded by `hosts(1) x profiles x models x token types`. Model labels are capped per
+   profile (default top 20 by recent use, the rest folded to `model="other"`).
+4. Per-session series exist only behind `metrics.per_session: true` (default off) and are documented there as a
+   cardinality hazard; they are not in the contract below.
+5. Series for a profile that disappeared stop being emitted (no stale values): the exporter does not export a last
+   known value past `stale_after` (default 3x the source interval, minimum 30 minutes). A missing series means "unknown",
+   never "zero".
+
+## Quota metrics (gauges)
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_quota_utilization_ratio` | gauge | ratio 0..1 (may exceed 1 only if the vendor reports >100%) | `host harness profile account provider window scope` | share of the window consumed, as reported by the vendor |
+| `agent_quota_reset_timestamp_seconds` | gauge | Unix seconds | same | when the window resets; absent if the vendor gives none |
+| `agent_quota_limit_info` | gauge (info) | constant 1 | same + `severity` | vendor-reported limit state, one series per active limit entry (`severity`: `normal`, `warning`, `critical`, ...). Only the current severity is exposed |
+| `agent_quota_observed_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | when the vendor was last successfully asked (not when Prometheus scraped); basis for staleness alerts |
+
+Example:
+
+```
+# HELP agent_quota_utilization_ratio Share of a subscription quota window consumed, as reported by the vendor.
+# TYPE agent_quota_utilization_ratio gauge
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",window="5h",scope="all"} 0.42
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",window="7d",scope="all"} 0.18
+# TYPE agent_quota_reset_timestamp_seconds gauge
+agent_quota_reset_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",window="5h",scope="all"} 1.793e+09
+```
+
+## Usage metrics (counters, from local agent state)
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_tokens_total` | counter | tokens | `host harness profile account provider model type` | tokens consumed; `type` in `input`, `output`, `cache_read`, `cache_write`, `reasoning` |
+| `agent_requests_total` | counter | requests | `host harness profile account provider model outcome` | model calls; `outcome` in `ok`, `error` |
+| `agent_request_errors_total` | counter | errors | `host harness profile account provider model code` | calls that failed, `code` = a bounded class (`rate_limited`, `auth`, `overloaded`, `other`), never a raw message |
+| `agent_cost_usd_total` | counter | USD | `host harness profile account provider model` | cost **as reported by the harness**, only where the source reports one; absent otherwise. Not a bill |
+
+Counter semantics: the exporter keeps a durable offset per source in its state directory and counts only data it has
+read since it first saw that source (a new profile starts at zero; optional `backfill_days` seeds history once).
+After losing the state directory the counters restart at zero and Prometheus treats that as a counter reset; the
+exporter never replays old data into a counter without `backfill_days`. `process_start_time_seconds` and
+`agent_quota_exporter_state_epoch` expose restarts.
+
+Example:
+
+```
+# TYPE agent_tokens_total counter
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="input"} 1520
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="cache_read"} 98213
+agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="acct-b1",provider="opencode-go",model="model-y",outcome="ok"} 311
+```
+
+## State metrics (gauges)
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_account_logged_in` | gauge | 0/1 | `host harness profile account provider` | 1 if the profile holds a usable login (credential present and not known-expired), 0 otherwise |
+| `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported (`pro`, `max`, `team`, `unknown`) |
+| `agent_credential_expiry_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | access-token expiry time (a timestamp only, never the token); absent if unknown |
+| `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state: `active`, `idle`, `other`. A count: no session ids |
+
+## Exporter health metrics
+
+Every source (one plugin on one profile) reports its own health, so a broken source is visible without hiding the
+healthy ones.
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_source_up` | gauge | 0/1 | `host harness profile source` | 1 if the last attempt to read the source succeeded or a fresh cache entry exists |
+| `agent_source_last_success_timestamp_seconds` | gauge | Unix seconds | same | last successful read |
+| `agent_source_cache_age_seconds` | gauge | seconds | same | age of the value being served |
+| `agent_source_backoff_until_timestamp_seconds` | gauge | Unix seconds | same | non-zero while a vendor 429 / error backoff is active |
+| `agent_source_read_seconds` | gauge | seconds | same | duration of the last read |
+| `agent_source_errors_total` | counter | errors | `host harness profile source reason` | read failures; `reason` in `not_found`, `permission`, `parse`, `timeout`, `auth_expired`, `rate_limited`, `upstream`, `other` |
+| `agent_quota_exporter_build_info` | gauge (info) | constant 1 | `version contract` | build version and contract version |
+| `agent_quota_exporter_profiles` | gauge | profiles | `harness origin` | profiles known; `origin` in `config`, `discovered` |
+
+`source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `opencode-db`, ...), a fixed vocabulary.
+
+## Staleness and absence
+
+- A quota value older than its `stale_after` is dropped, not served (rule 5 above). Alert on
+  `time() - agent_quota_observed_timestamp_seconds > 3600`, or on `absent_over_time(...)`.
+- `agent_source_up == 0` with `agent_source_errors_total{reason="auth_expired"}` rising means the real client has to
+  refresh its login; the exporter does nothing about it by design.
+
+## OTLP (optional)
+
+Same metric names and attributes; counters map to monotonic sums, gauges to gauges, info gauges to gauges with value 1.
+Units are carried in the OTLP unit field (`s`, `1`, `{token}`). Off by default.
+
+## Versioning
+
+`contract` in `agent_quota_exporter_build_info` is an integer. Adding a metric or a label value is non-breaking.
+Removing or renaming a metric, changing a type, unit or label set is breaking and bumps it.
