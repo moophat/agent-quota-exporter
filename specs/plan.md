@@ -235,7 +235,7 @@ Acceptance:
 ### Phase 3: Codex and agy discovery
 Scope: Codex state/logs schema discovery, `codex-rate-limits` behind opt-in after measuring whether a single read can
 trigger a token refresh, agy local-state discovery.
-Acceptance: a written measurement (in `docs/sources.md`) of Codex refresh behaviour with evidence; if a read can
+Acceptance: a written measurement (in `specs/sources.md`) of Codex refresh behaviour with evidence; if a read can
 cause a refresh, the plugin ships off by default with that warning, or is dropped; agy gets either a real source or an
 explicit "no surface" statement.
 
@@ -271,7 +271,7 @@ of the secret-handling paths; docs reviewed by someone who did not write them.
 
 ## Open questions for the maintainer
 
-1. Licence: MIT or Apache-2.0 (Apache-2.0 provisional).
+1. ~~Licence~~: LOCKED Apache-2.0, 2026-10-28 (see `decisions.md`).
 2. Language: Go or Python (recommendation above; decision #13).
 3. Public repository timing (private until phase 5?).
 4. Whether the Claude quota plugin should be on by default for discovered profiles, or always require explicit opt-in

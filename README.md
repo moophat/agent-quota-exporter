@@ -23,7 +23,7 @@ cannot tell which account is exhausted, expired or idle. The existing open-sourc
 
 No open-source project we found combines **subscription quota windows + per-agent usage, across vendors,
 multi-account, without ever touching a token**. That is the gap. (Prior art and how it is used: see
-[docs/plan.md](docs/plan.md#prior-art). Ideas are borrowed; no code is.)
+[specs/plan.md](specs/plan.md#prior-art). Ideas are borrowed; no code is.)
 
 ## Principles
 
@@ -41,10 +41,10 @@ multi-account, without ever touching a token**. That is the gap. (Prior art and 
    per interval per account, with backoff after a 429.
 5. **Secrets never leave the file.** Tokens are read only inside the one plugin that needs them, held in memory for
    one request, and never logged, printed, put in an error message or a label. Credential files are opened only
-   by plugins that declare it; everything else is allow-listed by column or key (see [docs/sources.md](docs/sources.md)).
+   by plugins that declare it; everything else is allow-listed by column or key (see [specs/sources.md](specs/sources.md)).
 6. **No message content, ever.** Transcripts, prompts and tool output are parsed for structural fields only
    (timestamps, model, usage numbers). Content fields are dropped at the parser.
-7. **Prometheus first, OTLP optional.** `/metrics` is the contract ([docs/metric-contract.md](docs/metric-contract.md)).
+7. **Prometheus first, OTLP optional.** `/metrics` is the contract ([specs/metric-contract.md](specs/metric-contract.md)).
    Cardinality is bounded by design: no session or request ids on hot series.
 8. **Own config file, explicit workspaces, plus auto-discovery** of the standard locations.
 
@@ -63,14 +63,15 @@ multi-account, without ever touching a token**. That is the gap. (Prior art and 
 
 | Path | What |
 |---|---|
-| `docs/plan.md` | architecture, config, discovery, caching, errors, packaging, phases, Go vs Python recommendation |
-| `docs/metric-contract.md` | metric names, types, units, labels, cardinality rules, examples |
-| `docs/sources.md` | per harness and provider: what is read, how, cadence, secret hazards, out of scope |
+| `specs/plan.md` | architecture, config, discovery, caching, errors, packaging, phases, Go vs Python recommendation |
+| `specs/metric-contract.md` | metric names, types, units, labels, cardinality rules, examples |
+| `specs/sources.md` | per harness and provider: what is read, how, cadence, secret hazards, out of scope |
+| `specs/decisions.md` | open and settled decisions (licence locked; language, public timing, per-session open) |
 | `fixtures/` | sanitized sample inputs for offline development (see `fixtures/README.md`) |
-| `AGENTS.md` | rules for AI agents working in this repo |
+| `AGENTS.md` | rules for AI agents working in this repo (`CLAUDE.md` is a symlink to it) |
 | `.aiworkflow/` | work ledger and component manifest |
 
 ## Licence
 
-Provisional: **Apache-2.0** (see `LICENSE`). The choice between MIT and Apache-2.0 is the maintainer's to confirm
-before the first public release.
+**Apache-2.0** (see `LICENSE`), the licence of node_exporter and the other prometheus/ exporters. Locked 2026-10-28; see
+[specs/decisions.md](specs/decisions.md).

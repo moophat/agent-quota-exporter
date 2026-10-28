@@ -46,3 +46,9 @@ node_modules/
 .vscode/
 .DS_Store
 *.swp
+
+# agent / tool state
+.claude/
+.gemini/
+.aiworkflow/*.bak
+.local/

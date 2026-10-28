@@ -1,0 +1,16 @@
+# gitleaks configuration: agent-quota-exporter
+#
+# Pairs with .pre-commit-config.yaml (local hook, scans only what is staged) and
+# .github/workflows/secrets.yml (CI backstop that cannot be skipped). Both read this file, so
+# there is one allowlist to maintain.
+#
+# History is clean from the first commit, so the allowlist is EMPTY on purpose. Keep it that way
+# unless a real, triaged finding forces an exception, and then pin the exact value in `regexes`.
+# Never write a path-only rule: in gitleaks 8.30 a global [[allowlists]] entry with `paths` matches
+# regardless of `regexes` (`condition = "AND"` is silently ignored), which exempts every secret in
+# that file. Fixtures hold invented values only; if one trips a rule, change the fixture value.
+
+title = "agent-quota-exporter"
+
+[extend]
+useDefault = true

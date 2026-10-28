@@ -1,0 +1,16 @@
+# Secret scanning before a commit is made. Install once per checkout:
+#
+#     pip install pre-commit && pre-commit install
+#
+# The hook entry is `gitleaks git --pre-commit --redact --staged`, so it reads only what you
+# are about to commit. It never walks history.
+#
+# The hook is local and opt-in, so it cannot be the only control: a machine that never ran
+# `pre-commit install` silently skips it. The `gitleaks` job in .github/workflows/secrets.yml is
+# the backstop that cannot be skipped. Both read the same .gitleaks.toml, so there is one
+# allowlist to maintain.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks

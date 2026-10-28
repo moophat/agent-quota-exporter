@@ -1,10 +1,12 @@
-# Manifest: component status
+# MANIFEST: agent-quota-exporter
+**Last-Updated:** 2026-10-28T13:05:00+07:00
 
-Status values: planned, in-progress, done. Updated 2026-10-28 by claude-sonnet-5-5. Design documents exist; no code does.
+Status values: planned, in-progress, done. Updated 2026-10-28 by claude-sonnet-5-5. Licence Apache-2.0 (locked). Design documents exist; no code does.
 
 | Component | Status | Notes |
 |---|---|---|
-| Docs: README, plan, metric contract, sources | done (draft v0) | design phase |
+| Spec: plan, metric contract, sources, decisions | done (draft v0) | design phase; `specs/` |
+| Repo guards: gitleaks config, pre-commit, secrets workflow | done | copied from the TSB repos |
 | Fixtures | done (synthetic) | see `fixtures/README.md` |
 | Core: config loader and validation | planned | phase 1 |
 | Core: profile discovery | planned | phase 1 |
