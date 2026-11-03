@@ -43,6 +43,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "agent-quota-exporter %s (contract %s)\n", version, core.ContractVersion)
 		return 0
 	}
+	if *onceQuota && !*once {
+		// Alone, the flag was ignored by the one-shot path while the server still started, so a probe meant
+		// as a single request became a long-lived exporter that polls the vendor.
+		fmt.Fprintln(stderr, "--once-with-quota requires --once")
+		return 2
+	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 
 	cfg, err := config.Load(*cfgPath)
