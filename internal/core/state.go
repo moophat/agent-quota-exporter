@@ -30,6 +30,8 @@ type State struct {
 	dir  string
 	f    stateFile
 	lock *os.File
+	// failSave, when set (tests only), makes Save fail as an unwritable state dir would, also for root.
+	failSave error
 	// Quarantined is true when a corrupt state file was moved aside at start; callers then apply a
 	// conservative backoff to network sources so lost gates cannot hammer a vendor.
 	Quarantined bool
@@ -61,7 +63,7 @@ func OpenState(dir string, now time.Time) (*State, error) {
 		return nil, fmt.Errorf("state.json: cannot read (%s)", errClass(err))
 	default:
 		var f stateFile
-		if json.Unmarshal(b, &f) != nil || f.Epoch == 0 {
+		if json.Unmarshal(b, &f) != nil || f.Epoch == 0 || hasNil(f.Instances) {
 			_ = os.Rename(p, fmt.Sprintf("%s.corrupt-%d", p, now.Unix()))
 			s.Quarantined = true
 		} else {
@@ -72,6 +74,15 @@ func OpenState(dir string, now time.Time) (*State, error) {
 		}
 	}
 	return s, s.Save()
+}
+
+func hasNil(m map[string]*InstState) bool {
+	for _, v := range m {
+		if v == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Close releases the lock.
@@ -88,7 +99,7 @@ func (s *State) Epoch() int64 { return s.f.Epoch }
 func (s *State) Get(key string) InstState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if v, ok := s.f.Instances[key]; ok {
+	if v, ok := s.f.Instances[key]; ok && v != nil {
 		return *v
 	}
 	return InstState{}
@@ -106,6 +117,9 @@ func (s *State) Put(key string, v InstState) {
 func (s *State) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failSave != nil {
+		return s.failSave
+	}
 	b, err := json.Marshal(s.f)
 	if err != nil {
 		return err

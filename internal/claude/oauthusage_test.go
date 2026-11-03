@@ -279,3 +279,23 @@ type stepClock struct {
 
 func (c *stepClock) Now() time.Time      { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
 func (c *stepClock) add(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
+
+// After the profile logs into another account, the previous account's quota is never served under it
+// (Qodo #6), neither on a failed collect nor after a restart.
+func TestOAuthUsageNoQuotaFromPreviousLogin(t *testing.T) {
+	st := newStub(t, fixture(t, "oauth-usage-response.json"), 200, 500)
+	p := newProfile(t, "a")
+	_, state, err := collect(t, st.source(p), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	write(t, filepath.Join(filepath.Dir(p.Dir), ".claude.json"), []byte(`{"oauthAccount":{"accountUuid":"another-account"}}`))
+	res, _, err := collect(t, st.source(p), t0.Add(20*time.Minute), state)
+	if err == nil || len(res.Samples) != 0 {
+		t.Fatalf("old login's quota served on failure: %v %v", res.Samples, err)
+	}
+	if r := st.source(p).Restore(state); len(r.Samples) != 0 {
+		t.Fatal("old login's quota restored")
+	}
+}

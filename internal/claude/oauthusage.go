@@ -94,6 +94,9 @@ func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
 	if json.Unmarshal(raw, &st) != nil || st.Last == nil || st.LastAt == 0 {
 		return core.Result{}
 	}
+	if label, _ := s.P.Account(); label != st.Acct {
+		return core.Result{} // the profile now holds another login
+	}
 	return core.Result{Samples: s.samples(st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 }
 
@@ -101,7 +104,8 @@ func (s *OAuthUsageSource) client() *http.Client {
 	rt := s.Transport
 	if rt == nil {
 		// Direct connection only: an environment proxy would see the bearer token.
-		rt = &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		// No keep-alives: calls are 15 min apart, and a pooled idle connection per call would only pile up.
+		rt = &http.Transport{Proxy: nil, DisableKeepAlives: true, DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 			TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
 	}
 	return &http.Client{Timeout: 10 * time.Second, Transport: rt,
@@ -118,7 +122,7 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 	fail := func(err error) (core.Result, json.RawMessage, error) {
 		blob, _ := json.Marshal(st)
 		res := core.Result{}
-		if st.Last != nil && st.LastAt > 0 {
+		if st.Last != nil && st.LastAt > 0 && st.Acct == label { // never another login's quota under this profile
 			res = core.Result{Samples: s.samples(st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 		}
 		return res, blob, err
@@ -212,6 +216,9 @@ func isTimeout(err error) bool {
 // once if it changed during the read (the real client rewrites it on refresh), so a half-written token is not
 // sent; a token that is not token-shaped is never sent.
 func readToken(dir string) (string, time.Time, string, error) {
+	if err := realDir(dir); err != nil {
+		return "", time.Time{}, "", err
+	}
 	path := filepath.Join(dir, ".credentials.json")
 	for attempt := 0; attempt < 2; attempt++ {
 		before, err := os.Lstat(path)

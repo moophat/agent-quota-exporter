@@ -21,6 +21,9 @@ func (s *AccountSource) MinInterval() time.Duration { return s.Interval }
 func (s *AccountSource) Network() bool              { return false }
 
 func (s *AccountSource) Collect(_ context.Context, now time.Time, _ json.RawMessage) (core.Result, json.RawMessage, error) {
+	if err := realDir(s.P.Dir); err != nil {
+		return core.Result{}, nil, err
+	}
 	if err := s.P.ResolveAccount(); err != nil {
 		return core.Result{}, nil, err
 	}

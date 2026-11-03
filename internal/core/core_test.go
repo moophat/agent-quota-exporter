@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -273,4 +274,74 @@ func render(t *testing.T, s *Scheduler, c Clock) string {
 		t.Fatal(err)
 	}
 	return b.String()
+}
+
+// While the state cannot be written, vendor sources must not run (their attempt would not survive a restart);
+// local sources keep working, and vendor sources resume once a save succeeds.
+func TestUnwritableStatePausesVendorCalls(t *testing.T) {
+	c := newClock()
+	st := openState(t, t.TempDir(), c)
+	local := &fakeSource{name: "l", interval: time.Minute}
+	net := &fakeSource{name: "n", interval: 15 * time.Minute, network: true}
+	s := NewScheduler([]Source{local, net}, st, c, quietLog(), 30*time.Minute)
+	st.failSave = errors.New("read-only file system")
+	s.Tick(context.Background(), nil, false, true)
+	c.Add(2 * time.Minute)
+	s.Tick(context.Background(), nil, false, true)
+	if net.calls != 0 || local.calls != 2 {
+		t.Fatalf("want net=0 local=2, got net=%d local=%d", net.calls, local.calls)
+	}
+	st.failSave = nil
+	c.Add(2 * time.Minute)
+	s.Tick(context.Background(), nil, false, true) // local run saves successfully → vendor allowed again
+	s.Tick(context.Background(), nil, false, true)
+	if net.calls != 1 {
+		t.Fatalf("vendor source did not resume after state became writable: %d", net.calls)
+	}
+}
+
+// A null instance entry is structurally invalid state: quarantine it instead of crashing at start.
+func TestNullInstanceQuarantined(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"epoch":1,"instances":{"claude-code/p/n":null}}`), 0o600)
+	st := openState(t, dir, c)
+	if !st.Quarantined {
+		t.Fatal("null entry not quarantined")
+	}
+	NewScheduler([]Source{&fakeSource{name: "n", interval: time.Minute, network: true}}, st, c, quietLog(), 30*time.Minute)
+}
+
+// The quarantine backoff is written to disk: a restart within the hour still does not call the vendor.
+func TestQuarantineBackoffSurvivesRestart(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "state.json"), []byte("{nope"), 0o600)
+	st := openState(t, dir, c)
+	NewScheduler([]Source{&fakeSource{name: "n", interval: 15 * time.Minute, network: true}}, st, c, quietLog(), 30*time.Minute)
+	st.Close()
+	c.Add(10 * time.Minute)
+	net := &fakeSource{name: "n", interval: 15 * time.Minute, network: true}
+	NewScheduler([]Source{net}, openState(t, dir, c), c, quietLog(), 30*time.Minute).Tick(context.Background(), nil, false, true)
+	if net.calls != 0 {
+		t.Fatal("restart inside the quarantine hour called the vendor")
+	}
+}
+
+// Host-wide spacing survives a restart: a second vendor source is not called right after the first one's
+// persisted attempt.
+func TestHostSpacingSurvivesRestart(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	a := &fakeSource{name: "a", interval: 15 * time.Minute, network: true}
+	st := openState(t, dir, c)
+	NewScheduler([]Source{a}, st, c, quietLog(), 30*time.Minute).Tick(context.Background(), nil, false, true)
+	st.Close()
+	c.Add(5 * time.Second)
+	b := &fakeSource{name: "b", interval: 15 * time.Minute, network: true}
+	a2 := &fakeSource{name: "a", interval: 15 * time.Minute, network: true}
+	NewScheduler([]Source{a2, b}, openState(t, dir, c), c, quietLog(), 30*time.Minute).Tick(context.Background(), nil, false, true)
+	if b.calls != 0 {
+		t.Fatal("vendor called within the host spacing right after a restart")
+	}
 }

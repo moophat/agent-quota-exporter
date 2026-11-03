@@ -25,5 +25,5 @@ jobs:
         run: go test -race -count=1 ./...
       - name: fixture secret checks (fixtures/README.md, both must print nothing)
         run: |
-          ! grep -rEn '@[a-z0-9-]+\.(com|vn)' fixtures | grep -v example.com
-          ! grep -rEn 's[k]-|e[y]J|Bea[r]er|r[e]fresh_token"\s*:\s*"[A-Za-z0-9]' fixtures
+          if grep -rEn '@[a-z0-9-]+\.(com|vn)' fixtures | grep -v example.com; then echo "email found in fixtures"; exit 1; fi
+          if grep -rEn 's[k]-|e[y]J|Bea[r]er|r[e]fresh_token"\s*:\s*"[A-Za-z0-9]' fixtures; then echo "token-like value found in fixtures"; exit 1; fi

@@ -65,6 +65,9 @@ type Scheduler struct {
 	netLast   time.Time // last vendor call start
 	wg        sync.WaitGroup
 	saveError string
+	// saveFailing blocks vendor calls while the state cannot be written: an attempt or a 429 backoff that is
+	// not durable would be forgotten by a restart and the vendor asked again at once.
+	saveFailing bool
 }
 
 // NewScheduler builds a scheduler. staleFloor is defaults.stale_after; the effective staleness per source is
@@ -72,6 +75,7 @@ type Scheduler struct {
 func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, staleFloor time.Duration) *Scheduler {
 	s := &Scheduler{state: st, clock: clock, log: log, sem: make(chan struct{}, MaxConcurrentReads)}
 	now := clock.Now()
+	quarantined := false
 	for _, src := range srcs {
 		key := src.Harness() + "/" + src.Profile() + "/" + src.Name()
 		h := fnv.New32a()
@@ -95,6 +99,11 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		}
 		if st.Quarantined && src.Network() {
 			in.backoffUntil = now.Add(QuarantineBackoff)
+			quarantined = true
+		}
+		// Host-wide spacing survives a restart: the newest persisted vendor attempt counts as the last call.
+		if src.Network() && in.lastAttempt.After(s.netLast) {
+			s.netLast = in.lastAttempt
 		}
 		if r, ok := src.(Restorer); ok && len(ps.Plugin) > 0 {
 			if res := r.Restore(ps.Plugin); !res.ObservedAt.IsZero() && len(res.Samples) > 0 {
@@ -105,6 +114,12 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 			s.netBlock = in.backoffUntil
 		}
 		s.insts = append(s.insts, in)
+		if quarantined {
+			s.persistLocked(in) // the quarantine backoff must survive a restart within the hour
+		}
+	}
+	if quarantined {
+		s.save()
 	}
 	return s
 }
@@ -115,7 +130,7 @@ func (s *Scheduler) due(in *instance, now time.Time, force bool) bool {
 		return false
 	}
 	if in.src.Network() {
-		if now.Before(s.netBlock) || (!s.netLast.IsZero() && now.Sub(s.netLast) < NetSpacing) {
+		if s.saveFailing || now.Before(s.netBlock) || (!s.netLast.IsZero() && now.Sub(s.netLast) < NetSpacing) {
 			return false
 		}
 		// Network sources never bypass their interval, not even when forced (--once).
@@ -133,6 +148,12 @@ func (s *Scheduler) due(in *instance, now time.Time, force bool) bool {
 func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, wait bool) {
 	now := s.clock.Now()
 	var started []*instance
+	type gate struct {
+		lastAttempt time.Time
+		attempted   bool
+		netLast     time.Time
+	}
+	prev := map[*instance]gate{}
 	s.mu.Lock()
 	for _, in := range s.insts {
 		if filter != nil && !filter(in.src) {
@@ -141,6 +162,7 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 		if !s.due(in, now, force) {
 			continue
 		}
+		prev[in] = gate{in.lastAttempt, in.attempted, s.netLast}
 		in.inflight = true
 		in.lastAttempt = now
 		in.attempted = true
@@ -154,8 +176,24 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 	if len(started) == 0 {
 		return
 	}
-	// Attempts are on disk before any vendor call, so a crash loop cannot re-send on every start.
-	s.save()
+	// Attempts are on disk before any vendor call, so a crash loop cannot re-send on every start. If they
+	// cannot be written, vendor sources do not run.
+	if err := s.save(); err != nil {
+		kept := started[:0]
+		s.mu.Lock()
+		for _, in := range started {
+			if in.src.Network() {
+				// not run: undo the attempt so it is due again once the state is writable
+				g := prev[in]
+				in.inflight, in.lastAttempt, in.attempted, s.netLast = false, g.lastAttempt, g.attempted, g.netLast
+				s.persistLocked(in)
+				continue
+			}
+			kept = append(kept, in)
+		}
+		s.mu.Unlock()
+		started = kept
+	}
 	for _, in := range started {
 		s.wg.Add(1)
 		go func(in *instance) {
@@ -271,16 +309,23 @@ func (s *Scheduler) persistLocked(in *instance) {
 	s.state.Put(in.key, ps)
 }
 
-func (s *Scheduler) save() {
-	if err := s.state.Save(); err != nil {
-		s.mu.Lock()
-		changed := s.saveError != err.Error()
-		s.saveError = err.Error()
-		s.mu.Unlock()
-		if changed {
-			s.log.Error("cannot persist state", "error", err.Error())
+func (s *Scheduler) save() error {
+	err := s.state.Save()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.saveFailing = true
+		if s.saveError != err.Error() {
+			s.log.Error("cannot persist state; vendor sources paused until it can", "error", err.Error())
 		}
+		s.saveError = err.Error()
+		return err
 	}
+	if s.saveFailing {
+		s.log.Info("state persisted again; vendor sources resume")
+	}
+	s.saveFailing, s.saveError = false, ""
+	return nil
 }
 
 func unixOrZero(t time.Time) int64 {

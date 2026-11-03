@@ -25,7 +25,8 @@ const (
 type Profile struct {
 	Host         string
 	Alias        string
-	Dir          string
+	Dir          string // real path (symlinks resolved at start)
+	ConfigDir    string // the path as configured or discovered; decides where a default install keeps .claude.json
 	AccountAlias string // operator alias from config; "" = derive
 	EmailLabel   bool   // metrics.account_label: email
 	MaxModels    int
@@ -53,7 +54,7 @@ func (p *Profile) Account() (label, uuid string) {
 // ResolveAccount re-reads .claude.json when its mtime changed (specs/sources.md: "at start, on change").
 // Only oauthAccount.accountUuid (and emailAddress in email mode) is decoded.
 func (p *Profile) ResolveAccount() error {
-	path := ClaudeJSONPath(p.Dir)
+	path := ClaudeJSONPath(p.Dir, p.ConfigDir)
 	fi, statErr := os.Stat(path)
 	p.mu.Lock()
 	if p.resolved && statErr == nil && fi.ModTime().Equal(p.jsonMod) {
@@ -106,13 +107,30 @@ func (p *Profile) ResolveAccount() error {
 	return rerr
 }
 
-// ClaudeJSONPath: <dir>/.claude.json, or for a default ~/.claude dir the sibling ~/.claude.json.
-func ClaudeJSONPath(dir string) string {
+// ClaudeJSONPath: <dir>/.claude.json, or for a default ~/.claude dir the sibling ~/.claude.json. configDir is
+// the path as given (it may be a symlink named .claude whose target has another name); "" means dir.
+func ClaudeJSONPath(dir, configDir string) string {
 	in := filepath.Join(dir, ".claude.json")
-	if _, err := os.Stat(in); err == nil || filepath.Base(dir) != ".claude" {
+	if configDir == "" {
+		configDir = dir
+	}
+	if _, err := os.Stat(in); err == nil || filepath.Base(configDir) != ".claude" {
 		return in
 	}
-	return filepath.Join(filepath.Dir(dir), ".claude.json")
+	return filepath.Join(filepath.Dir(configDir), ".claude.json")
+}
+
+// realDir requires path to be a directory itself, not a symlink to one: the exporter may run as root over
+// directories their users control, and a swapped-in link must not redirect it to another profile.
+func realDir(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return core.Fail(core.ErrReason(err))
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return core.Fail(core.ReasonPermission)
+	}
+	return nil
 }
 
 func (p *Profile) labels(account string, extra ...core.Label) []core.Label {

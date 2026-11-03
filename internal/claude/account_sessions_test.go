@@ -149,3 +149,34 @@ func TestSessionsDirMissing(t *testing.T) {
 		t.Fatalf("want three zero states, got %v %v", res.Samples, err)
 	}
 }
+
+// A sessions dir or profile dir swapped for a link is refused, not followed (Qodo #3).
+func TestSessionsAndAccountRefuseLinkedDirs(t *testing.T) {
+	p := newProfile(t, "a")
+	os.RemoveAll(filepath.Join(p.Dir, "sessions"))
+	os.Symlink(t.TempDir(), filepath.Join(p.Dir, "sessions"))
+	if _, _, err := collect(t, &SessionsSource{P: p, Interval: time.Minute}, t0, nil); err == nil {
+		t.Fatal("linked sessions dir followed")
+	}
+	q := newProfile(t, "b")
+	link := filepath.Join(t.TempDir(), "link")
+	os.Symlink(q.Dir, link)
+	q.Dir = link
+	if _, _, err := collect(t, &AccountSource{P: q, Interval: time.Minute}, t0, nil); err == nil {
+		t.Fatal("linked profile dir followed")
+	}
+}
+
+// A configured ~/.claude that is a link to a dir with another name still finds the sibling ~/.claude.json
+// (Qodo #13).
+func TestClaudeJSONPathUsesConfiguredName(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(home, "real-claude")
+	os.MkdirAll(target, 0o755)
+	if got := ClaudeJSONPath(target, filepath.Join(home, ".claude")); got != filepath.Join(home, ".claude.json") {
+		t.Fatalf("got %s", got)
+	}
+	if got := ClaudeJSONPath(target, ""); got != filepath.Join(target, ".claude.json") {
+		t.Fatalf("got %s", got)
+	}
+}

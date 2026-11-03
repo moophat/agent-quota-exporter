@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,20 +198,77 @@ func TestTranscriptsContentAndModelBounded(t *testing.T) {
 	}
 }
 
-// The model cap keeps the most recently used models and folds the rest into "other".
-func TestTranscriptsModelCapByRecentUse(t *testing.T) {
+func asstLine(id, model, ts string, in int) []byte {
+	return []byte(fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"id":%q,"model":%q,"content":[],"usage":{"input_tokens":%d,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`+"\n", ts, id, model, in))
+}
+
+// The model cap is decided when a message is counted: a model keeps its own series while in use, a new model
+// takes the slot of one unused for a day (that series ends) or counts into "other". No total ever moves between
+// series, so model="other" never goes down.
+func TestTranscriptsModelCapNeverMovesTotals(t *testing.T) {
 	x := newTT(t)
 	x.p.MaxModels = 1
 	x.collect()
-	mk := func(id, model string) []byte {
-		return []byte(`{"type":"assistant","timestamp":"2026-01-01T00:01:00.000Z","message":{"id":"` + id + `","model":"` + model + `","content":[],"usage":{"input_tokens":1,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}` + "\n")
-	}
-	write(t, x.file("s.jsonl"), mk("m1", "old-model"))
+	write(t, x.file("s.jsonl"), asstLine("m1", "old-model", "2026-01-01T00:01:00Z", 1))
 	x.collect()
 	x.now = x.now.Add(time.Minute)
-	appendFile(t, x.file("s.jsonl"), mk("m2", "new-model"))
+	appendFile(t, x.file("s.jsonl"), asstLine("m2", "new-model", "2026-01-01T00:02:00Z", 1))
 	got := x.collect()
-	if got["agent_requests_total:new-model"] != 1 || got["agent_requests_total:other"] != 1 || got["agent_requests_total:old-model"] != 0 {
-		t.Fatalf("got %v", got)
+	if got["agent_requests_total:old-model"] != 1 || got["agent_requests_total:other"] != 1 {
+		t.Fatalf("slot in use must keep its model; new one counts as other: %v", got)
+	}
+	// A day later the unused old model gives up its slot; other keeps what it had.
+	x.now = x.now.Add(25 * time.Hour)
+	appendFile(t, x.file("s.jsonl"), asstLine("m3", "new-model", "2026-01-02T01:00:00Z", 1))
+	got = x.collect()
+	if got["agent_requests_total:new-model"] != 1 || got["agent_requests_total:other"] != 1 {
+		t.Fatalf("after a day: %v", got)
+	}
+	if _, ok := got["agent_requests_total:old-model"]; ok {
+		t.Fatalf("evicted model series must end, not move into other: %v", got)
+	}
+	// The old model coming back while the slot is busy counts into other, which only grows.
+	appendFile(t, x.file("s.jsonl"), asstLine("m4", "old-model", "2026-01-02T01:01:00Z", 1))
+	if got = x.collect(); got["agent_requests_total:other"] != 2 {
+		t.Fatalf("other must only grow: %v", got)
+	}
+}
+
+// A session file created and written during an exporter outage is counted after the restart (Qodo #4).
+func TestTranscriptsFileCreatedDuringOutageCounted(t *testing.T) {
+	x := newTT(t)
+	x.collect() // last collect at t0+1m
+	x.now = x.now.Add(3 * time.Hour)
+	x.restart()
+	write(t, x.file("new.jsonl"), asstLine("o1", "model-x", "2026-01-01T01:00:00Z", 9)) // written 2h before restart
+	if got := x.collect(); got["agent_tokens_total:model-x:input"] != 9 {
+		t.Fatalf("outage session lost: %v", got)
+	}
+}
+
+// A truncated or replaced file re-read from the start does not recount history, even when the dedupe set no
+// longer holds those ids (Qodo #5).
+func TestTranscriptsReplacedFileNoReplay(t *testing.T) {
+	x := newTT(t)
+	x.collect()
+	write(t, x.file("s.jsonl"), asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
+	x.collect()
+	x.src.st.Seen = map[string]*seenMsg{} // as if evicted
+	x.now = x.now.Add(5 * time.Hour)
+	os.Remove(x.file("s.jsonl"))
+	write(t, x.file("s.jsonl"), asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
+	if got := x.collect(); got["agent_tokens_total:model-x:input"] != 4 {
+		t.Fatalf("replaced file recounted: %v", got)
+	}
+}
+
+// A user-controlled link inside a profile is never followed (Qodo #3).
+func TestTranscriptsSymlinkedProjectsRefused(t *testing.T) {
+	x := newTT(t)
+	os.RemoveAll(filepath.Join(x.p.Dir, "projects"))
+	other := t.TempDir()
+	os.Symlink(other, filepath.Join(x.p.Dir, "projects"))
+	if _, _, err := x.src.Collect(context.Background(), x.now, nil); err == nil || err.Error() != "source error: permission" {
+		t.Fatalf("want permission, got %v", err)
 	}
 }

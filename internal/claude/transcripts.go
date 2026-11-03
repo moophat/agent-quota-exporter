@@ -48,7 +48,7 @@ type TranscriptsSource struct {
 type fileState struct {
 	Off   int64  `json:"o"`
 	Ino   uint64 `json:"i"`
-	First int64  `json:"f,omitempty"` // first sighting (unix) for files found after init; 0 = no age filter
+	First int64  `json:"f,omitempty"` // lines older than First - copyGrace are history, not new usage; 0 = no filter
 }
 
 type usage struct {
@@ -65,8 +65,7 @@ type seenMsg struct {
 
 type total struct {
 	usage
-	Req  int64 `json:"req"`
-	Last int64 `json:"last"` // unix time of the last counted message, for the recent-use model cap
+	Req int64 `json:"req"`
 }
 
 type tState struct {
@@ -74,7 +73,13 @@ type tState struct {
 	Files  map[string]*fileState `json:"files"` // key: hashed relative path
 	Seen   map[string]*seenMsg   `json:"seen"`  // key: hashed message id
 	Seq    int64                 `json:"seq"`
-	Totals map[string]*total     `json:"totals"` // key: account \x00 model
+	Totals map[string]*total     `json:"totals"` // key: account \x00 model label (decided at count time)
+	// Named holds, per account, the models that have their own series and when each was last used. The label of
+	// a message is decided when it is counted and never changes afterwards, so no total moves between series.
+	Named map[string]map[string]int64 `json:"named"`
+	// LastCollect is the end of the previous collect. A file first seen after it (or replaced since) is new
+	// unless its lines predate it: lines written during an exporter outage still count.
+	LastCollect int64 `json:"last_collect,omitempty"`
 }
 
 func (s *TranscriptsSource) Name() string               { return "claude-transcripts" }
@@ -133,6 +138,9 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		if st.Seen == nil {
 			st.Seen = map[string]*seenMsg{}
 		}
+		if st.Named == nil {
+			st.Named = map[string]map[string]int64{}
+		}
 		if st.Totals == nil {
 			st.Totals = map[string]*total{}
 		}
@@ -142,7 +150,13 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	res := core.Result{}
 	parseErr := 0
 
+	if err := realDir(s.P.Dir); err != nil {
+		return res, nil, err
+	}
 	root := filepath.Join(s.P.Dir, "projects")
+	if fi, err := os.Lstat(root); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return res, nil, core.Fail(core.ReasonPermission) // never follow a user-controlled link out of the profile
+	}
 	type found struct {
 		rel  string
 		path string
@@ -177,6 +191,11 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
 
+	// since: files that are new or replaced since the last collect count lines from that moment on.
+	since := st.LastCollect
+	if since == 0 {
+		since = now.Unix()
+	}
 	live := map[string]bool{}
 	account, _ := s.P.Account()
 	for _, f := range files {
@@ -188,12 +207,12 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 			continue
 		}
 		if fst == nil {
-			fst = &fileState{Ino: f.ino, First: now.Unix()}
+			fst = &fileState{Ino: f.ino, First: since}
 			st.Files[k] = fst
 		}
 		if fst.Ino != f.ino || f.size < fst.Off {
 			// replaced or truncated: read again from the start; dedupe stops double counting.
-			fst.Off, fst.Ino = 0, f.ino
+			fst.Off, fst.Ino, fst.First = 0, f.ino, since
 		}
 		if f.size == fst.Off {
 			continue
@@ -211,6 +230,7 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		}
 	}
 	st.Init = true
+	st.LastCollect = now.Unix()
 	s.evict()
 
 	if parseErr > 0 {
@@ -296,13 +316,12 @@ func (s *TranscriptsSource) count(ln []byte, fst *fileState, account string, now
 	st := s.st
 	u := usage{l.Message.Usage.In, l.Message.Usage.Out, l.Message.Usage.CR, l.Message.Usage.CW}
 	key := hashKey(l.Message.ID)
-	tk := account + "\x00" + modelLabel(l.Message.Model)
+	tk := account + "\x00" + s.labelFor(account, modelLabel(l.Message.Model), now)
 	t := st.Totals[tk]
 	if t == nil {
 		t = &total{}
 		st.Totals[tk] = t
 	}
-	t.Last = now.Unix()
 	st.Seq++
 	if prev, ok := st.Seen[key]; ok {
 		t.In += pos(u.In - prev.U.In)
@@ -363,67 +382,68 @@ func (s *TranscriptsSource) persistView() *tState {
 	return &v
 }
 
-// samples emits totals per account; per account the max_models most recently used models keep their name and
-// the rest fold into model="other" (contract cardinality rule 3).
-func (s *TranscriptsSource) samples() []core.Sample {
-	type entry struct {
-		model string
-		t     *total
+// staleModel is how long a named model must go unused before a new model may take its slot.
+const staleModel = 24 * time.Hour
+
+// labelFor returns the series a message of this model counts into. A model keeps its own series while it is
+// among the max_models named models of the account; a new model takes a free slot, or the slot of a model unused
+// for a day (that model's series ends; its total is not moved), else it counts into model="other". Totals never
+// move between series, so no counter goes backwards (contract cardinality rule 3: top N by recent use).
+func (s *TranscriptsSource) labelFor(account, model string, now time.Time) string {
+	if model == "other" {
+		return model
 	}
-	byAcct := map[string][]entry{}
-	for k, t := range s.st.Totals {
-		acct, model, _ := strings.Cut(k, "\x00")
-		byAcct[acct] = append(byAcct[acct], entry{model, t})
+	named := s.st.Named[account]
+	if named == nil {
+		named = map[string]int64{}
+		s.st.Named[account] = named
+	}
+	if _, ok := named[model]; ok {
+		named[model] = now.Unix()
+		return model
 	}
 	limit := s.P.MaxModels
 	if limit <= 0 {
 		limit = 20
 	}
-	var out []core.Sample
-	accts := make([]string, 0, len(byAcct))
-	for a := range byAcct {
-		accts = append(accts, a)
+	if len(named) >= limit {
+		victim, oldest := "", now.Unix()
+		for m, last := range named {
+			if last < oldest || (last == oldest && m < victim) {
+				victim, oldest = m, last
+			}
+		}
+		if now.Sub(time.Unix(oldest, 0)) < staleModel {
+			return "other"
+		}
+		delete(named, victim)
+		delete(s.st.Totals, account+"\x00"+victim)
 	}
-	sort.Strings(accts)
-	for _, acct := range accts {
-		es := byAcct[acct]
-		sort.Slice(es, func(i, j int) bool {
-			if es[i].t.Last != es[j].t.Last {
-				return es[i].t.Last > es[j].t.Last
-			}
-			return es[i].model < es[j].model
-		})
-		folded := map[string]*total{}
-		var order []string
-		for i, e := range es {
-			m := e.model
-			if i >= limit {
-				m = "other"
-			}
-			if folded[m] == nil {
-				folded[m] = &total{}
-				order = append(order, m)
-			}
-			f := folded[m]
-			f.In += e.t.In
-			f.Out += e.t.Out
-			f.CR += e.t.CR
-			f.CW += e.t.CW
-			f.Req += e.t.Req
+	named[model] = now.Unix()
+	return model
+}
+
+// samples emits the totals as they were counted.
+func (s *TranscriptsSource) samples() []core.Sample {
+	keys := make([]string, 0, len(s.st.Totals))
+	for k := range s.st.Totals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []core.Sample
+	for _, k := range keys {
+		acct, m, _ := strings.Cut(k, "\x00")
+		f := s.st.Totals[k]
+		base := func(extra ...core.Label) []core.Label {
+			return s.P.labels(acct, append([]core.Label{{Name: "provider", Value: Provider}, {Name: "model", Value: m}}, extra...)...)
 		}
-		for _, m := range order {
-			f := folded[m]
-			base := func(extra ...core.Label) []core.Label {
-				return s.P.labels(acct, append([]core.Label{{Name: "provider", Value: Provider}, {Name: "model", Value: m}}, extra...)...)
-			}
-			for _, tv := range []struct {
-				typ string
-				v   int64
-			}{{"input", f.In}, {"output", f.Out}, {"cache_read", f.CR}, {"cache_write", f.CW}} {
-				out = append(out, core.Sample{Name: "agent_tokens_total", Labels: base(core.Label{Name: "type", Value: tv.typ}), Value: float64(tv.v)})
-			}
-			out = append(out, core.Sample{Name: "agent_requests_total", Labels: base(core.Label{Name: "outcome", Value: "ok"}), Value: float64(f.Req)})
+		for _, tv := range []struct {
+			typ string
+			v   int64
+		}{{"input", f.In}, {"output", f.Out}, {"cache_read", f.CR}, {"cache_write", f.CW}} {
+			out = append(out, core.Sample{Name: "agent_tokens_total", Labels: base(core.Label{Name: "type", Value: tv.typ}), Value: float64(tv.v)})
 		}
+		out = append(out, core.Sample{Name: "agent_requests_total", Labels: base(core.Label{Name: "outcome", Value: "ok"}), Value: float64(f.Req)})
 	}
 	return out
 }

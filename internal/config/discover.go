@@ -14,6 +14,7 @@ type Resolved struct {
 	Harness    string
 	Alias      string
 	Dir        string // real path (symlinks resolved)
+	ConfigDir  string // the path as configured or discovered
 	Account    string // operator alias, "" = derive
 	QuotaOptIn bool
 	Origin     string // config | discovered
@@ -39,7 +40,7 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 			real := realPath(p.Dir)
 			taken[real] = true
 			aliases[p.Alias] = true
-			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, Account: p.Account,
+			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, ConfigDir: p.Dir, Account: p.Account,
 				QuotaOptIn: p.Quota["claude_oauth_usage"], Origin: "config"})
 		}
 	}
@@ -74,6 +75,11 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 					continue
 				}
 				d := filepath.Join(h, n)
+				// A discovered entry must be a real directory: as root, following a user's link could expose
+				// another profile under their name. Operator-listed dirs (config, CLAUDE_CONFIG_DIR) may be links.
+				if e.Type()&os.ModeSymlink != 0 {
+					continue
+				}
 				if isClaudeDir(d) {
 					found = append(found, d)
 				}
@@ -97,7 +103,7 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 			a = fmt.Sprintf("%s-%d", cd.alias, i)
 		}
 		aliases[a] = true
-		out = append(out, Resolved{Harness: HarnessClaude, Alias: a, Dir: cd.real, Origin: "discovered"})
+		out = append(out, Resolved{Harness: HarnessClaude, Alias: a, Dir: cd.real, ConfigDir: cd.dir, Origin: "discovered"})
 	}
 	return out, warns
 }

@@ -47,15 +47,23 @@ func sessionState(status string) string {
 func (s *SessionsSource) Collect(_ context.Context, _ time.Time, _ json.RawMessage) (core.Result, json.RawMessage, error) {
 	counts := map[string]float64{"active": 0, "idle": 0, "other": 0}
 	res := core.Result{}
-	ents, err := os.ReadDir(filepath.Join(s.P.Dir, "sessions"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return res, nil, core.Fail(core.ErrReason(err))
+	if err := realDir(s.P.Dir); err != nil {
+		return res, nil, err
+	}
+	dir := filepath.Join(s.P.Dir, "sessions")
+	var ents []os.DirEntry
+	if err := realDir(dir); err == nil {
+		if ents, err = os.ReadDir(dir); err != nil {
+			return res, nil, core.Fail(core.ErrReason(err))
+		}
+	} else if _, statErr := os.Lstat(dir); !errors.Is(statErr, os.ErrNotExist) {
+		return res, nil, err // present but a link or not a directory
 	}
 	for _, e := range ents {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		b, err := readSmall(filepath.Join(s.P.Dir, "sessions", e.Name()), 1<<20)
+		b, err := readSmall(filepath.Join(dir, e.Name()), 1<<20)
 		if err != nil {
 			continue // a session file can vanish between list and read
 		}
