@@ -33,8 +33,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           [[ "$TAG" == *-rc.* ]] && exit 0
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "final tag $TAG is not on main"; exit 1; }
+          # fetch-depth: 0 already brought every branch, so no authenticated fetch is needed here.
+          git rev-parse --verify -q refs/remotes/origin/main >/dev/null || { echo "origin/main missing from checkout"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || { echo "final tag $TAG is not on main"; exit 1; }
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
