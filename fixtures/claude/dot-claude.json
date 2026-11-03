@@ -1,0 +1,10 @@
+{
+  "numStartups": 0,
+  "projects": {"/root": {"history": [], "allowedTools": []}},
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-0000000000a1",
+    "emailAddress": "user-a1@example.com",
+    "organizationUuid": "00000000-0000-4000-8000-0000000000b1",
+    "displayName": "CANARY-CONTENT-NAME"
+  }
+}
