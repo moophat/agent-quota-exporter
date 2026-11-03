@@ -66,3 +66,10 @@ func (e *SourceError) Error() string { return "source error: " + e.Reason }
 
 // Fail returns a SourceError with the given reason.
 func Fail(reason string) error { return &SourceError{Reason: reason} }
+
+// Restorer is implemented by sources that persist their last good values (e.g. quota). The scheduler calls it
+// once at start so those values are served after a restart until they go stale, instead of vanishing until the
+// next permitted vendor call.
+type Restorer interface {
+	Restore(state json.RawMessage) Result
+}

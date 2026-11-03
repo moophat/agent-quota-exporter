@@ -96,6 +96,11 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		if st.Quarantined && src.Network() {
 			in.backoffUntil = now.Add(QuarantineBackoff)
 		}
+		if r, ok := src.(Restorer); ok && len(ps.Plugin) > 0 {
+			if res := r.Restore(ps.Plugin); !res.ObservedAt.IsZero() && len(res.Samples) > 0 {
+				in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
+			}
+		}
 		if src.Network() && in.backoffUntil.After(s.netBlock) {
 			s.netBlock = in.backoffUntil
 		}

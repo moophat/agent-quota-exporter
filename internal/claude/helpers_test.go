@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,3 +100,5 @@ func noCanary(t *testing.T, ss []core.Sample, err error, extra ...string) {
 		t.Fatalf("canary leaked: %s", b.String())
 	}
 }
+
+func errorsAs(err error, target any) bool { return errors.As(err, target) }

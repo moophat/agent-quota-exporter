@@ -109,10 +109,10 @@ type line struct {
 		ID    string `json:"id"`
 		Model string `json:"model"`
 		Usage *struct {
-			In int64 `json:"input_tokens"`
+			In  int64 `json:"input_tokens"`
 			Out int64 `json:"output_tokens"`
-			CR int64 `json:"cache_read_input_tokens"`
-			CW int64 `json:"cache_creation_input_tokens"`
+			CR  int64 `json:"cache_read_input_tokens"`
+			CW  int64 `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 }
