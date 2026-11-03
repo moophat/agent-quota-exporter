@@ -1,7 +1,7 @@
 # MANIFEST: agent-quota-exporter
 **Last-Updated:** 2026-11-03T19:35:00Z
 
-Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release v0.1.0-rc.1 published 2026-11-03 (prerelease, tag at c5a6750). Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
+Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release v0.1.0-rc.2 published 2026-11-03 (prerelease, tag at 19852a0; rc.1 at c5a6750 predates the plan label). Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
 
 | Component | Status | Notes |
 |---|---|---|

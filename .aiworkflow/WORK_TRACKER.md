@@ -6,9 +6,9 @@
 ### Exporter v0.1, Claude only | 2026-11-03
 **Meta:** feat/phase1-core | claude-opus-5-5 | `plans/261103-0900-exporter-v0.1-claude/plan.md`
 **Model:** claude-opus-5-5
-**Outcome:** v0.1.0-rc.1 released 2026-11-03 (tag at c5a6750, prerelease, 2 linux tarballs + SHA256SUMS, checksums verified, released binary passes the cloud end-to-end run); PRs #1-#3 merged after Qodo review and green CI; release by tag push, main-only dispatch or a `release/<tag>` branch push (PR #3, for the cloud lane)
+**Outcome:** v0.1.0-rc.2 released 2026-11-03 (tag at 19852a0, after rc.1 at c5a6750; prerelease, 2 linux tarballs + SHA256SUMS, checksums verified, released binary passes the cloud end-to-end run); PRs #1-#5 merged after Qodo review and green CI; release by tag push, main-only dispatch or a `release/<tag>` branch push (PR #3, for the cloud lane)
 **Key:** Go, one dep (yaml.v3), hand-written exposition; plan red-teamed by 4 reviewers (32 findings adjudicated in plan.md); opencode dropped from this lane (Tu 2026-11-02); quota opt-in, host-wide 429 backoff, never refreshes
-**Pending:** on-prem integration test against real profiles (Tu's on-prem agent); Tu: ruleset or protected environment for releases (PR #3 security thread), delete stale branch release/v0.1.0-rc.1 (proxy blocks it here), subscriptionType allow-list, contract rows for state_epoch/process_start, NFS homes; v0.1.0 after the on-prem test
+**Pending:** on-prem integration test against real profiles (Tu's on-prem agent); handoff `plans/handoffs/onprem-integration-test-20261103-1938.md`; D6 NFS counting rule (Tu); delete stale branches release/v0.1.0-rc.1 and -rc.2 (proxy blocks it here); release ruleset only if the repo goes public or gains writers; v0.1.0 after the on-prem test
 <!-- END STUB: 2026-11-03 | Exporter v0.1, Claude only -->
 - [x] Plan, red team, adjudication
 - [x] Phases 01-05 (config, core, account/sessions, transcripts, quota)
@@ -16,6 +16,7 @@
 - [x] PR #1 + Qodo review (3 rounds), merged
 - [x] PR #2 (release dispatch, bounded CI), PR #3 (release branch trigger, cloud end-to-end run)
 - [x] v0.1.0-rc.1 released and verified; label map in agent-fleet-kit (PR #119, merged)
+- [x] PR #5 (bounded plan label, contract rows, D5/D6, on-prem handoff); v0.1.0-rc.2 released and verified
 - [ ] on-prem integration test, v0.1.0
 
 ## Paused

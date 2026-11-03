@@ -8,7 +8,11 @@ branch: feat/plan-label-contract-rows
 head: 8ce6757
 ---
 
-# HANDOFF: agent-quota-exporter, on-prem test of v0.1.0-rc.1
+# HANDOFF: agent-quota-exporter, on-prem test of v0.1.0-rc.2
+
+> Updated after PR #5 merged: test **`v0.1.0-rc.2`** (tag at 19852a0, `main` as of PR #5). It supersedes rc.1:
+> it adds the bounded `plan` label and the lenient `subscriptionType` read. The task focus below keeps its original
+> wording.
 
 ## Mission and current status
 
@@ -19,17 +23,15 @@ The outcome is that the exporter runs on real fleet nodes against real Claude Co
 right and no change to any agent file. Then `v0.1.0` ships, and the fleet scrapes it with graph ids attached.
 
 Done (cloud lane, 2026-11-03):
-- Exporter v0.1 for Claude, quota included. PRs #1–#4 are merged; `main` is at 026c8a7.
-- Release `v0.1.0-rc.1`: a prerelease with its tag at c5a6750. It holds the linux amd64 and arm64 tarballs plus
-  SHA256SUMS.
+- Exporter v0.1 for Claude, quota included. PRs #1–#5 are merged; `main` is at 19852a0.
+- Release `v0.1.0-rc.2`: a prerelease with its tag at 19852a0. It holds the linux amd64 and arm64 tarballs plus
+  SHA256SUMS. (`v0.1.0-rc.1`, at c5a6750, came before PR #5.)
   - The checksums verify.
   - The released amd64 binary passes the cloud end-to-end run on mocked homes:
     `plans/261103-0900-exporter-v0.1-claude/itest/`.
 - Label map: agent-fleet-kit `mesh/label_map.py` and `mesh/label_map.yaml` (PR #119, merged at 706cca4).
 
 Remaining:
-- **PR #5, waiting on Qodo.** It makes the `plan` label come from `subscriptionType`, bounded to pro, max and team. It
-  also adds contract rows for the two restart metrics and records rulings D5 and D6.
 - **The on-prem integration test.** This is the main job here; see Exact next actions.
 - **Fleet wiring.** Each node needs its harness elements declared, the listen port, a deploy role, and the relabel
   rules added to the `fleet` scrape job.
@@ -79,12 +81,10 @@ Safety boundaries:
 
 ## Current state
 
-- Branch: `feat/plan-label-contract-rows`. PR #5 is open; it was pushed at 8ce6757 before this handoff was added.
-- `main`: 026c8a7 (`docs(ledger): record the v0.1.0-rc.1 release (#4)`).
-- Working tree: clean apart from this handoff file.
-- Stale remote branch `release/v0.1.0-rc.1`, at c5a6750: harmless. Any push to it starts a run that is refused,
-  because the release already exists. The cloud proxy cannot delete it; Tu can, or the local session can with
-  `git push origin --delete release/v0.1.0-rc.1`.
+- `main`: 19852a0 (PR #5). No open PRs from the cloud lane apart from the one carrying this update.
+- Stale remote branches `release/v0.1.0-rc.1` (c5a6750) and `release/v0.1.0-rc.2` (19852a0): harmless. Any push
+  to them starts a run that is refused, because those releases exist. The cloud proxy cannot delete refs; Tu or the
+  local session can, with `git push origin --delete release/v0.1.0-rc.1 release/v0.1.0-rc.2`.
 - Intentional local modifications: no.
 
 ## Decisions and rationale
@@ -92,7 +92,7 @@ Safety boundaries:
 | Decision | Rationale | Alternative rejected | Reference |
 |---|---|---|---|
 | Release by pushing a `release/<tag>` branch, in addition to tag push and dispatch | The cloud proxy drops tag pushes and the app token gets a 403 on dispatch | Waiting for Tu to tag | PR #3 |
-| No ruleset on `v*` or `release/*` for now | Private repo with one owner; whoever can push could already publish. Revisit if the repo goes public or someone else gets write access | Repository ruleset or protected environment now | Tu, 2026-11-03; PR #3 thread |
+| No ruleset on `v*` or `release/*` for now | Private repo with one owner; whoever can push could already publish. Revisit if the repo goes public or someone else gets write access | Repository ruleset or protected environment now | Recommendation; Tu saw no need for it now (2026-11-03); PR #3 thread |
 | `plan` label bounded to pro, max, team, else `unknown` | Keeps the label bounded however upstream names plans | Passing `subscriptionType` through raw | D5, PR #5 |
 | NFS config dirs: one exporter per shared dir (proposed) | Several nodes discovering the same dir multiply the counts | Dedupe across hosts (needs shared state) | D6, open |
 | Listen port 9478 in the fleet role | The graph expects 9478; the exporter's default is 9877 | Changing the default | agent-fleet-kit graph |
@@ -140,9 +140,6 @@ Known pre-existing failures, not caused by this work: `mesh/tests` `test_drift`,
   - Type: question. Owner: Tu or the local session (facts first).
   - Impact: if one config dir is visible to several exporters, fleet totals multiply.
   - Find out which dirs are on NFS (`findmnt -T <dir>`) and whether discovery on more than one node reaches them.
-- **PR #5 merge.**
-  - Type: dependency. Owner: whoever holds the session when Qodo answers.
-  - Impact: until it merges, `plan` reads `unknown` in rc.1.
 - **Session status vocabulary.**
   - Type: risk. Owner: local session.
   - Impact: real status words outside the mocked set land in `state="other"`; check them on real sessions.
@@ -160,8 +157,8 @@ Known pre-existing failures, not caused by this work: `mesh/tests` `test_drift`,
 
 1. **First safe step**: on the chosen node (not the NFS-server production node), read-only setup, no agent files
    touched.
-   - Download the `v0.1.0-rc.1` assets into a fresh directory and run `sha256sum -c SHA256SUMS`.
-   - Run `./agent-quota-exporter --version`; expect `v0.1.0-rc.1 (contract 0)`.
+   - Download the `v0.1.0-rc.2` assets into a fresh directory and run `sha256sum -c SHA256SUMS`.
+   - Run `./agent-quota-exporter --version`; expect `v0.1.0-rc.2 (contract 0)`.
 2. Rerun the cloud driver locally to prove the binary on this host:
    `python3 -I plans/261103-0900-exporter-v0.1-claude/itest/run.py <binary> "$(mktemp -d)"`.
    Expect `ALL CHECKS PASSED`; the run takes about 2 minutes.
@@ -197,7 +194,7 @@ Known pre-existing failures, not caused by this work: `mesh/tests` `test_drift`,
    - a role installing the binary, the systemd unit from the tarball, and `listen: :9478`;
    - the relabel output (`mesh/label_map.py relabel`) added to the `fleet` job's `metric_relabel_configs`.
    - Propose before touching the NFS-server production node.
-8. Once the test passes and PR #5 is merged: cut `v0.1.0`.
+8. Once the test passes: cut `v0.1.0`.
    - Push the tag `v0.1.0` at that `main` commit (from on-prem), or push a `release/v0.1.0` branch.
    - Then verify the assets the same way as in step 1.
 9. Write the result into this repo's `.aiworkflow/WORK_TRACKER.md` (own Active stub only) and `MANIFEST.md`, without
@@ -205,8 +202,8 @@ Known pre-existing failures, not caused by this work: `mesh/tests` `test_drift`,
 
 ## Source pointers
 
-- Release: https://github.com/moophat/agent-quota-exporter/releases/tag/v0.1.0-rc.1
-- Open PR: https://github.com/moophat/agent-quota-exporter/pull/5
+- Release: https://github.com/moophat/agent-quota-exporter/releases/tag/v0.1.0-rc.2
+- PR #5 (plan label, contract rows, this handoff): https://github.com/moophat/agent-quota-exporter/pull/5
 - Merged PRs: https://github.com/moophat/agent-quota-exporter/pull/3 (release-branch trigger and its security
   thread), https://github.com/moophat/agent-fleet-kit/pull/119 (label map)
 - Spec: `specs/metric-contract.md`, `specs/sources.md`, `specs/decisions.md` (D5, D6), `specs/plan.md`
