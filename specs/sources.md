@@ -23,7 +23,7 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 |---|---|---|---|---|
 | `claude-transcripts` | per-message token usage and model | tail `<config>/projects/**/*.jsonl` (including `subagents/*.jsonl`) by byte offset; from each `assistant` line take `message.id`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_creation.ephemeral_1h_input_tokens}`, `timestamp`; skip `model == "<synthetic>"`; dedupe by `message.id` (keep the highest `output_tokens`, a message can be logged more than once while streaming) | 1 to 5 min, incremental | verified |
 | `claude-sessions` | live session count and state | read `<config>/sessions/<pid>.json`: `status`, `updatedAt`, `startedAt`, `pid` (check the pid is alive). Count by `status`. Do not read `cwd`/`name` | each scrape (cheap, local) | verified |
-| `claude-account` | account identity, plan | `<config>/.claude.json` `oauthAccount` object: account uuid/email domain only if needed to derive the alias hash; **never** other keys of that file | at start, on change | verified (file shape) |
+| `claude-account` | account identity, plan | `<config>/.claude.json` `oauthAccount` object: account uuid/email domain only if needed to derive the alias hash; **never** other keys of that file. `<config>/.credentials.json` `claudeAiOauth`: `expiresAt`, whether `accessToken` is a non-empty string (never its value), and `subscriptionType` for the `plan` label (bounded to `pro`, `max`, `team`, else `unknown`) | at start, on change | verified (file shape) |
 | `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (separate model-family limits), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account**; 60 min after a 429; stop for the profile after two consecutive 401s until the credential file changes | verified (field names), **undocumented endpoint** |
 
 Rules specific to `claude-oauth-usage`:
@@ -38,7 +38,7 @@ Rules specific to `claude-oauth-usage`:
   `agent_source_errors_total{reason="auth_expired"}` and wait for the credential file's mtime or expiry to change.
 - One request per **account**, not per profile, when two profiles hold the same grant (they should not; see the profile
   principle). If detected, warn once and query only one.
-- Never-read columns/files: `.credentials.json` other than `accessToken` and `expiresAt`; `.claude.json` other than the
+- Never-read columns/files: `.credentials.json` other than `accessToken`, `expiresAt` and `subscriptionType`; `.claude.json` other than the
   allowed `oauthAccount` fields; `history.jsonl` and all `message.content`, `toolUseResult`, prompts.
 
 ## Codex (harness `codex`, provider `openai`)

@@ -25,8 +25,7 @@ Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5
 
 ## Known issues / deviations (v0.1)
 - Release triggers have no repository-side control yet (no ruleset on `v*` / `release/*`, no protected environment on `publish`); maintainer decision, PR #3.
-- `agent_account_info{plan}` is always `unknown`: the plan field (`subscriptionType`) is not on the sources.md allow-list.
-- `agent_quota_exporter_state_epoch` and `process_start_time_seconds` are named in contract prose only, not in a table.
+- Config dirs on NFS (D6): a dir visible to several nodes' exporters would be counted once per node; which dirs, and the rule, are open.
 - Discovered alias = home name for `~/.claude` (spec says directory-name slug, which collides); `.claude-X` → `claude-x`.
 - Session liveness = `/proc/<pid>` exists (pid reuse not detected); busy status words beyond `idle` unverified.
 - Example unit runs as root (agent homes are root's on the reference fleet); spec prefers a dedicated user.

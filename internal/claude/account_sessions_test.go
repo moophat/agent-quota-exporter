@@ -180,3 +180,46 @@ func TestClaudeJSONPathUsesConfiguredName(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+// The plan label comes from claudeAiOauth.subscriptionType but is bounded: only pro, max and team pass through (any
+// case), everything else, including a missing field or a logged-out profile, reads as unknown. A new upstream plan
+// name must not add a label value nobody planned for.
+func TestAccountPlanIsBounded(t *testing.T) {
+	cases := []struct{ cred, want string }{
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"max"}}`, "max"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"Pro"}}`, "pro"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"team"}}`, "team"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"enterprise-gold-2027"}}`, "unknown"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000}}`, "unknown"},
+		{`{}`, "unknown"},
+	}
+	for _, c := range cases {
+		p := newProfile(t, "a")
+		write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(c.cred))
+		res, _, err := collect(t, &AccountSource{P: p, Interval: time.Minute}, t0, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, s := range res.Samples {
+			if s.Name == "agent_account_info" {
+				n++
+			}
+		}
+		if v, ok := find(res.Samples, "agent_account_info", "plan", c.want); !ok || v != 1 || n != 1 {
+			t.Errorf("%s: want one agent_account_info{plan=%q}, got %d series", c.cred, c.want, n)
+		}
+	}
+	// A missing credential file is logged out, plan unknown.
+	p := newProfile(t, "b")
+	if err := os.Remove(filepath.Join(p.Dir, ".credentials.json")); err != nil {
+		t.Fatal(err)
+	}
+	res, _, err := collect(t, &AccountSource{P: p, Interval: time.Minute}, t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := find(res.Samples, "agent_account_info", "plan", "unknown"); !ok {
+		t.Error("missing credentials: plan must be unknown")
+	}
+}
