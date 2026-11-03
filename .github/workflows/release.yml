@@ -1,4 +1,6 @@
-# Tag-triggered release: static linux binaries + SHA256SUMS on a GitHub release.
+# Release: static linux binaries + SHA256SUMS on a GitHub release. Triggered by pushing a tag, or by a manual
+# dispatch on main with a tag name (the workflow then creates the tag at the dispatched commit; used where tag
+# pushes are not possible).
 #
 # The tagged code is built and tested in a job with a read-only token and no persisted checkout credential;
 # only the publish job gets contents: write, and it runs no tagged code. A final tag (vX.Y.Z) must point at a
@@ -9,6 +11,16 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and release, e.g. v0.1.0 or v0.1.0-rc.1 (dispatch from main only)"
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -16,21 +28,34 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: validate tag
+        id: tag
         env:
-          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PUSHED: ${{ github.ref_name }}
+          INPUT: ${{ inputs.tag }}
         run: |
+          TAG="$PUSHED"
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            [[ "$REF" == refs/heads/main ]] || { echo "dispatch releases only from main"; exit 1; }
+            TAG="$INPUT"
+          fi
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "bad tag"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: final tags must be on main
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           [[ "$TAG" == *-rc.* ]] && exit 0
           # fetch-depth: 0 already brought every branch, so no authenticated fetch is needed here.
@@ -43,7 +68,7 @@ jobs:
         run: go test -count=1 ./...
       - name: build
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p out
           for arch in amd64 arm64; do
@@ -66,6 +91,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
@@ -77,11 +103,22 @@ jobs:
         run: cd out && sha256sum -c SHA256SUMS
       - name: publish
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.build.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           pre=""
           [[ "$TAG" == *-rc.* ]] && pre="--prerelease"
-          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS $pre --verify-tag --title "$TAG" \
+          # A pushed tag must already exist; a dispatch creates it at the dispatched commit (and fails if it exists).
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            if gh release view "$TAG" >/dev/null 2>&1 || gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+              echo "tag $TAG already exists"; exit 1
+            fi
+            where=(--target "$SHA")
+          else
+            where=(--verify-tag)
+          fi
+          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS $pre "${where[@]}" --title "$TAG" \
             --notes "agent-quota-exporter $TAG (metric contract 0). Verify with: sha256sum -c SHA256SUMS"
