@@ -118,7 +118,10 @@ jobs:
           if state=$(gh release view "$TAG" --json isDraft,targetCommitish --jq '"\(.isDraft) \(.targetCommitish)"' 2>/dev/null); then
             read -r draft target <<<"$state"
             [[ "$draft" == true ]] || { echo "release $TAG is already published"; exit 1; }
-            if [[ "$target" != "$SHA" && "$target" != "$TAG" ]]; then echo "draft $TAG targets $target, not $SHA"; exit 1; fi
+            # The commit behind an existing tag is the proof (commits/<tag> peels annotated tags); targetCommitish can
+            # name a branch. Only a dispatch draft, whose tag is created on publish, is checked by its target.
+            if commit=$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha 2>/dev/null); then target=$commit; fi
+            [[ "$target" == "$SHA" ]] || { echo "draft $TAG is for $target, not $SHA"; exit 1; }
             gh release upload "$TAG" out/*.tar.gz out/SHA256SUMS --clobber
             gh release edit "$TAG" --draft=false $pre
             exit 0
