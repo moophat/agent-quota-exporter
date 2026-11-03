@@ -191,6 +191,10 @@ func TestAccountPlanIsBounded(t *testing.T) {
 		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"team"}}`, "team"},
 		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":"enterprise-gold-2027"}}`, "unknown"},
 		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000}}`, "unknown"},
+		// a non-string plan must not fail the whole read: login and expiry still export
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":123}}`, "unknown"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":{"tier":"max"}}}`, "unknown"},
+		{`{"claudeAiOauth":{"accessToken":"x","expiresAt":1767232800000,"subscriptionType":null}}`, "unknown"},
 		{`{}`, "unknown"},
 	}
 	for _, c := range cases {
@@ -208,6 +212,15 @@ func TestAccountPlanIsBounded(t *testing.T) {
 		}
 		if v, ok := find(res.Samples, "agent_account_info", "plan", c.want); !ok || v != 1 || n != 1 {
 			t.Errorf("%s: want one agent_account_info{plan=%q}, got %d series", c.cred, c.want, n)
+		}
+		if c.cred == `{}` {
+			continue // no claudeAiOauth object: logged out, no expiry
+		}
+		if v, ok := find(res.Samples, "agent_account_logged_in"); !ok || v != 1 {
+			t.Errorf("%s: logged_in %v %v, want 1", c.cred, v, ok)
+		}
+		if _, ok := find(res.Samples, "agent_credential_expiry_timestamp_seconds"); !ok {
+			t.Errorf("%s: expiry missing", c.cred)
 		}
 	}
 	// A missing credential file is logged out, plan unknown.

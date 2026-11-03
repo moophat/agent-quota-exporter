@@ -177,9 +177,9 @@ func wipe(b []byte) {
 // credentials is the allow-listed view of .credentials.json: expiry and token presence only.
 type credentials struct {
 	OAuth *struct {
-		ExpiresAt        int64   `json:"expiresAt"` // Unix milliseconds
-		AccessToken      present `json:"accessToken"`
-		SubscriptionType string  `json:"subscriptionType"`
+		ExpiresAt        int64           `json:"expiresAt"` // Unix milliseconds
+		AccessToken      present         `json:"accessToken"`
+		SubscriptionType json.RawMessage `json:"subscriptionType"` // decoded leniently: a non-string is unknown
 	} `json:"claudeAiOauth"`
 }
 
@@ -217,7 +217,10 @@ func readCredentialFacts(dir string) (bool, time.Time, string, error) {
 	if c.OAuth.ExpiresAt > 0 {
 		exp = time.UnixMilli(c.OAuth.ExpiresAt)
 	}
-	plan := strings.ToLower(c.OAuth.SubscriptionType)
+	var plan string
+	if json.Unmarshal(c.OAuth.SubscriptionType, &plan) == nil {
+		plan = strings.ToLower(plan)
+	}
 	if !plans[plan] {
 		plan = "unknown"
 	}

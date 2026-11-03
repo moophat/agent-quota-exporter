@@ -101,7 +101,7 @@ agent_quota_exporter_build_info{version="test",contract="0",env="lab"} 1
 # TYPE agent_quota_exporter_profiles gauge
 agent_quota_exporter_profiles{harness="claude-code",origin="config",env="lab"} 1
 agent_quota_exporter_profiles{harness="claude-code",origin="discovered",env="lab"} 1
-# HELP agent_quota_exporter_state_epoch When the exporter state directory was created, Unix seconds; a change means counters restarted.
+# HELP agent_quota_exporter_state_epoch When the current persisted state was initialized, Unix seconds; a change means counters restarted.
 # TYPE agent_quota_exporter_state_epoch gauge
 agent_quota_exporter_state_epoch{env="lab"} 1767225660
 # HELP process_start_time_seconds Start time of the process since unix epoch in seconds.

@@ -36,7 +36,7 @@ var families = []family{
 	{"agent_source_errors_total", "counter", "Read failures by bounded reason."},
 	{"agent_quota_exporter_build_info", "gauge", "Build version and metric contract version."},
 	{"agent_quota_exporter_profiles", "gauge", "Profiles known, by harness and origin."},
-	{"agent_quota_exporter_state_epoch", "gauge", "When the exporter state directory was created, Unix seconds; a change means counters restarted."},
+	{"agent_quota_exporter_state_epoch", "gauge", "When the current persisted state was initialized, Unix seconds; a change means counters restarted."},
 	{"process_start_time_seconds", "gauge", "Start time of the process since unix epoch in seconds."},
 }
 
