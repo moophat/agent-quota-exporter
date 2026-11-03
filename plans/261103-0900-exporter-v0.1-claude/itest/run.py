@@ -17,6 +17,8 @@ import time
 import urllib.request
 
 BIN, BASE = sys.argv[1], sys.argv[2]
+if os.path.exists(BASE) and os.listdir(BASE):  # a previous run's state would not match this run's ground truth
+    raise SystemExit(f"{BASE} is not empty; give a fresh directory")
 PORT = 19878
 HOST = "Ubuntu04-10-98-10-13"
 random.seed(7)
@@ -29,12 +31,16 @@ HOMES = {  # profile alias -> (config dir, .claude.json path, account uuid)
 }
 truth = {p: {} for p in HOMES}  # profile -> msg id -> [in, out, cr, cw, model]
 procs = []
+mine = {}  # every file this script wrote under a profile tree -> (size, mtime_ns) right after its last write
 
 
 def write(path, data, mode="w"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode, encoding="utf-8") as f:
         f.write(data)
+    if path.startswith((f"{BASE}/root/", f"{BASE}/home/")):
+        st = os.stat(path)
+        mine[path] = (st.st_size, st.st_mtime_ns)
 
 
 def line(mid, model, u, ts=None):
@@ -134,15 +140,20 @@ def expected():
     return out
 
 
-def snapshot_tree():
-    res = []
-    for alias, (d, cj, _) in HOMES.items():
-        for root, _, files in os.walk(d):
+def check_trees(label):
+    """Every file under the profile homes (config dirs and the sibling .claude.json) must be exactly as this script
+    last wrote it: the exporter may not create, change or touch anything there at any point of the run."""
+    seen = {}
+    for top in (f"{BASE}/root", f"{BASE}/home"):
+        for root, _, files in os.walk(top):
             for fn in files:
                 p = os.path.join(root, fn)
                 st = os.stat(p)
-                res.append((p, st.st_size, st.st_mtime_ns))
-    return sorted(res)
+                seen[p] = (st.st_size, st.st_mtime_ns)
+    if seen != mine:
+        diff = sorted(p for p in set(seen) | set(mine) if seen.get(p) != mine.get(p))
+        raise SystemExit(f"  {label}: the exporter changed files under the profile homes: {diff[:8]}")
+    print(f"  {label}: {len(seen)} profile files exactly as the test wrote them")
 
 
 def wait_converged(label, timeout=75):
@@ -182,6 +193,7 @@ try:
     emit("root", 40)
     emit("claude-work", 25)
     h1 = wait_converged("phase 1")
+    check_trees("phase 1")
 
     print("phase 2: restart mid-stream (state kept)")
     p.send_signal(signal.SIGTERM)
@@ -190,6 +202,7 @@ try:
     p = start()
     emit("claude-work", 20)
     h2 = wait_converged("phase 2")
+    check_trees("phase 2")
     monotonic(h1 + h2)
 
     text = scrape()
@@ -208,10 +221,8 @@ try:
     accts = set(re.findall(r'account="([^"]+)"', text))
     assert len(accts) == 2 and all(a.startswith("acct-") for a in accts), accts
     print(f"  two distinct hashed account labels: {sorted(accts)}")
-    before = snapshot_tree()
     time.sleep(35)  # one more transcripts cycle with nothing new
-    assert snapshot_tree() == before, "the exporter changed a file under a profile directory"
-    print("  profile trees unchanged by the exporter")
+    check_trees("idle cycle")
     print("ALL CHECKS PASSED")
 finally:
     for p in procs:

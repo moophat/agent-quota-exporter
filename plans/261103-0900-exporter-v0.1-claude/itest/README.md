@@ -7,7 +7,7 @@ assistant lines across project and `subagents/` files, 30 % of them streamed twi
 
 ```
 go build -o /tmp/aqe ./cmd/agent-quota-exporter
-python3 -I plans/261103-0900-exporter-v0.1-claude/itest/run.py /tmp/aqe /tmp/aqe-itest
+python3 -I plans/261103-0900-exporter-v0.1-claude/itest/run.py /tmp/aqe "$(mktemp -d)"
 ```
 
 Result (cloud container, real HTTP serving and scraping):
@@ -18,7 +18,10 @@ Result (cloud container, real HTTP serving and scraping):
 - counters monotonic across 25 scrapes;
 - no content, name or token canary in `/metrics` or the log;
 - sessions 1 active + 1 idle per profile, dead pid ignored; both profiles logged in; two distinct hashed account labels;
-- profile trees (names, sizes, mtimes) unchanged by the exporter.
+- profile trees (names, sizes, mtimes, sibling `.claude.json` included) exactly as the test wrote them, checked after
+  each phase and after an idle cycle.
+
+`run.py` refuses a non-empty directory: a previous run's state would not match a new run's ground truth.
 
 The final scrape through agent-fleet-kit `mesh/label_map.py check` (main 706cca4, real fleet graph, host
 `Ubuntu04-10-98-10-13`): the `root` profile's 36 series map to `harness/claude-code@U04`; the second profile's 36 are
