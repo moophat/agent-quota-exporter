@@ -52,12 +52,17 @@ func (s *SessionsSource) Collect(_ context.Context, _ time.Time, _ json.RawMessa
 	}
 	dir := filepath.Join(s.P.Dir, "sessions")
 	var ents []os.DirEntry
-	if err := realDir(dir); err == nil {
-		if ents, err = os.ReadDir(dir); err != nil {
+	if df, err := openDir(dir); err == nil {
+		ents, err = df.ReadDir(-1)
+		df.Close()
+		if err != nil {
 			return res, nil, core.Fail(core.ErrReason(err))
 		}
-	} else if _, statErr := os.Lstat(dir); !errors.Is(statErr, os.ErrNotExist) {
-		return res, nil, err // present but a link or not a directory
+	} else {
+		var se *core.SourceError
+		if !errors.As(err, &se) || se.Reason != core.ReasonNotFound {
+			return res, nil, err // present but a link or not a directory
+		}
 	}
 	for _, e := range ents {
 		if !strings.HasSuffix(e.Name(), ".json") {

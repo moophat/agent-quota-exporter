@@ -65,6 +65,7 @@ type oauthState struct {
 	Last   *parsedQuota `json:"last,omitempty"`
 	LastAt int64        `json:"last_at,omitempty"`
 	Acct   string       `json:"acct,omitempty"` // account label the last values belong to
+	UUID   string       `json:"uuid,omitempty"` // account id of the last answer: seeds the per-account gate on restart
 }
 
 // OAuthUsageSource is `claude-oauth-usage` (opt-in): the vendor's quota windows for one profile's account.
@@ -94,8 +95,19 @@ func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
 	if json.Unmarshal(raw, &st) != nil || st.Last == nil || st.LastAt == 0 {
 		return core.Result{}
 	}
-	if label, _ := s.P.Account(); label != st.Acct {
+	label, uuid := s.P.Account()
+	if label != st.Acct {
 		return core.Result{} // the profile now holds another login
+	}
+	// The per-account gate survives a restart: another profile of the same account finds this answer in the
+	// shared cache and does not call the vendor again inside the interval.
+	if uuid != "" && uuid == st.UUID && s.Cache != nil {
+		at := time.Unix(st.LastAt, 0)
+		s.Cache.mu.Lock()
+		if e, ok := s.Cache.m[uuid]; !ok || e.at.Before(at) {
+			s.Cache.m[uuid] = quotaEntry{at: at, q: *st.Last}
+		}
+		s.Cache.mu.Unlock()
 	}
 	return core.Result{Samples: s.samples(st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 }
@@ -128,7 +140,7 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 		return res, blob, err
 	}
 	ok := func(q parsedQuota, at time.Time) (core.Result, json.RawMessage, error) {
-		st.Last, st.LastAt, st.Acct, st.C401, st.FP = &q, at.Unix(), label, 0, ""
+		st.Last, st.LastAt, st.Acct, st.UUID, st.C401, st.FP = &q, at.Unix(), label, uuid, 0, ""
 		blob, _ := json.Marshal(st)
 		return core.Result{Samples: s.samples(label, q, at), ObservedAt: at}, blob, nil
 	}

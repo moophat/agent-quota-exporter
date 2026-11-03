@@ -9,14 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -150,13 +148,6 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	res := core.Result{}
 	parseErr := 0
 
-	if err := realDir(s.P.Dir); err != nil {
-		return res, nil, err
-	}
-	root := filepath.Join(s.P.Dir, "projects")
-	if fi, err := os.Lstat(root); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return res, nil, core.Fail(core.ReasonPermission) // never follow a user-controlled link out of the profile
-	}
 	type found struct {
 		rel  string
 		path string
@@ -164,30 +155,42 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		ino  uint64
 	}
 	var files []found
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	root := filepath.Join(s.P.Dir, "projects")
+	// Walk by directory handle: no link is followed at any level (safefs.go). Depth is bounded; Claude Code
+	// keeps projects/<project>/<session>.jsonl and <session>/subagents/*.jsonl.
+	var walk func(d *os.File, rel string, depth int)
+	walk = func(d *os.File, rel string, depth int) {
+		ents, err := d.ReadDir(-1)
 		if err != nil {
-			if path == root {
-				return err
+			return
+		}
+		for _, e := range ents {
+			name := e.Name()
+			r := filepath.Join(rel, name)
+			switch {
+			case e.IsDir() && depth < 6:
+				if sd, err := openSubdir(d, name); err == nil {
+					walk(sd, r, depth+1)
+					sd.Close()
+				}
+			case e.Type().IsRegular() && strings.HasSuffix(name, ".jsonl"):
+				if size, ino, ok := statAt(d, name); ok {
+					files = append(files, found{r, filepath.Join(root, r), size, ino})
+				}
 			}
-			return nil // an unreadable sub-tree is skipped, not fatal
 		}
-		if d.IsDir() || d.Type()&fs.ModeSymlink != 0 || !strings.HasSuffix(d.Name(), ".jsonl") || !d.Type().IsRegular() {
-			return nil
+	}
+	if err := realDir(s.P.Dir); err != nil {
+		return res, nil, err
+	}
+	if rd, err := openDir(root); err == nil {
+		walk(rd, "", 0)
+		rd.Close()
+	} else {
+		var se *core.SourceError
+		if !errors.As(err, &se) || se.Reason != core.ReasonNotFound {
+			return res, nil, err // projects is a link or not a directory: never followed
 		}
-		fi, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		var ino uint64
-		if sys, ok := fi.Sys().(*syscall.Stat_t); ok {
-			ino = sys.Ino
-		}
-		rel, _ := filepath.Rel(root, path)
-		files = append(files, found{rel, path, fi.Size(), ino})
-		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
-		return res, nil, core.Fail(core.ErrReason(walkErr))
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
 

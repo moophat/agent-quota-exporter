@@ -120,34 +120,22 @@ func ClaudeJSONPath(dir, configDir string) string {
 	return filepath.Join(filepath.Dir(configDir), ".claude.json")
 }
 
-// realDir requires path to be a directory itself, not a symlink to one: the exporter may run as root over
-// directories their users control, and a swapped-in link must not redirect it to another profile.
-func realDir(path string) error {
-	fi, err := os.Lstat(path)
-	if err != nil {
-		return core.Fail(core.ErrReason(err))
-	}
-	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
-		return core.Fail(core.ReasonPermission)
-	}
-	return nil
-}
-
 func (p *Profile) labels(account string, extra ...core.Label) []core.Label {
 	ls := []core.Label{{Name: "host", Value: p.Host}, {Name: "harness", Value: Harness}, {Name: "profile", Value: p.Alias}, {Name: "account", Value: account}}
 	return append(ls, extra...)
 }
 
-// openRegular opens a file read-only without following a final symlink and without blocking on FIFOs or
-// devices, and refuses anything that is not a regular file (a profile dir may be writable by its user while the
-// exporter runs as root).
+// openRegular opens a file read-only: no link followed on any path component (safefs.go), no blocking on FIFOs
+// or devices, and anything but a regular file is refused.
 func openRegular(path string) (*os.File, os.FileInfo, error) {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	dir, err := openDir(filepath.Dir(path))
 	if err != nil {
-		if errors.Is(err, syscall.ELOOP) {
-			return nil, nil, core.Fail(core.ReasonPermission)
-		}
-		return nil, nil, core.Fail(core.ErrReason(&os.PathError{Err: err}))
+		return nil, nil, err
+	}
+	fd, err := syscall.Openat(int(dir.Fd()), filepath.Base(path), syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	dir.Close()
+	if err != nil {
+		return nil, nil, fsReason(err)
 	}
 	f := os.NewFile(uintptr(fd), path)
 	fi, err := f.Stat()

@@ -299,3 +299,26 @@ func TestOAuthUsageNoQuotaFromPreviousLogin(t *testing.T) {
 		t.Fatal("old login's quota restored")
 	}
 }
+
+// After a restart, a profile of the same account that never ran itself still does not call the vendor inside
+// the interval: the persisted answer of its sibling seeds the per-account gate (Qodo #7).
+func TestOAuthUsagePerAccountGateSurvivesRestart(t *testing.T) {
+	st := newStub(t, fixture(t, "oauth-usage-response.json"))
+	a, b := newProfile(t, "a"), newProfile(t, "b") // same account id
+	_, stateA, err := collect(t, st.source(a), t0, nil)
+	if err != nil || st.calls != 1 {
+		t.Fatalf("first call: %v %d", err, st.calls)
+	}
+	// restart: fresh cache, sources rebuilt, Restore runs for each before any collect
+	sa, sb := st.source(a), st.source(b)
+	sb.Cache = sa.Cache
+	sa.Restore(stateA)
+	sb.Restore(nil)
+	res, _, err := collect(t, sb, t0.Add(5*time.Minute), nil)
+	if err != nil || st.calls != 1 {
+		t.Fatalf("restart let a same-account profile call the vendor: err %v calls %d", err, st.calls)
+	}
+	if _, ok := find(res.Samples, "agent_quota_utilization_ratio", "profile", "b"); !ok {
+		t.Fatal("restored answer not served under the sibling profile")
+	}
+}
