@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -176,10 +177,15 @@ func wipe(b []byte) {
 // credentials is the allow-listed view of .credentials.json: expiry and token presence only.
 type credentials struct {
 	OAuth *struct {
-		ExpiresAt   int64   `json:"expiresAt"` // Unix milliseconds
-		AccessToken present `json:"accessToken"`
+		ExpiresAt        int64           `json:"expiresAt"` // Unix milliseconds
+		AccessToken      present         `json:"accessToken"`
+		SubscriptionType json.RawMessage `json:"subscriptionType"` // decoded leniently: a non-string is unknown
 	} `json:"claudeAiOauth"`
 }
+
+// plans is the bounded vocabulary of agent_account_info{plan}; any other subscription type reads as unknown, so a new
+// upstream plan name can never add an unbounded label value.
+var plans = map[string]bool{"pro": true, "max": true, "team": true}
 
 // present records whether a JSON value is a non-empty string, without keeping the value.
 type present bool
@@ -189,27 +195,34 @@ func (p *present) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// readCredentialFacts returns (token present, expiry). A missing file is a valid logged-out state.
-func readCredentialFacts(dir string) (bool, time.Time, error) {
+// readCredentialFacts returns (token present, expiry, plan). A missing file is a valid logged-out state.
+func readCredentialFacts(dir string) (bool, time.Time, string, error) {
 	b, err := readSmall(filepath.Join(dir, ".credentials.json"), 1<<20)
 	if err != nil {
 		var se *core.SourceError
 		if errors.As(err, &se) && se.Reason == core.ReasonNotFound {
-			return false, time.Time{}, nil
+			return false, time.Time{}, "unknown", nil
 		}
-		return false, time.Time{}, err
+		return false, time.Time{}, "", err
 	}
 	defer wipe(b)
 	var c credentials
 	if json.Unmarshal(b, &c) != nil {
-		return false, time.Time{}, core.Fail(core.ReasonParse)
+		return false, time.Time{}, "", core.Fail(core.ReasonParse)
 	}
 	if c.OAuth == nil {
-		return false, time.Time{}, nil
+		return false, time.Time{}, "unknown", nil
 	}
 	var exp time.Time
 	if c.OAuth.ExpiresAt > 0 {
 		exp = time.UnixMilli(c.OAuth.ExpiresAt)
 	}
-	return bool(c.OAuth.AccessToken), exp, nil
+	var plan string
+	if json.Unmarshal(c.OAuth.SubscriptionType, &plan) == nil {
+		plan = strings.ToLower(plan)
+	}
+	if !plans[plan] {
+		plan = "unknown"
+	}
+	return bool(c.OAuth.AccessToken), exp, plan, nil
 }

@@ -23,6 +23,10 @@ import (
 // version is set at build time: -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
+// processStart is taken as the binary initializes, before config loading, so process_start_time_seconds covers
+// the whole run.
+var processStart = time.Now()
+
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -72,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		log.Warn("state.json was unreadable and has been moved aside; vendor sources start backed off")
 	}
 	sched := core.NewScheduler(built.Sources, st, core.RealClock, log, cfg.Defaults.StaleAfter.D())
-	exp := &core.Exposition{Host: host, Static: built.Static, Version: version, ProcessStart: now,
+	exp := &core.Exposition{Host: host, Static: built.Static, Version: version, ProcessStart: processStart,
 		Profiles: built.Profiles, Sched: sched, Clock: core.RealClock}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -41,6 +41,21 @@ and PRs are required (see `AGENTS.md`, Git).
 Whether a per-session metric set is wanted at all. Current design: off by default, no session ids as labels on hot
 series (cardinality rule in `metric-contract.md`).
 
+## D5. Claude plan label and contract rows: LOCKED (Tu, 2026-11-03)
+
+- `claudeAiOauth.subscriptionType` in `.credentials.json` is allow-listed for `claude-account` (`sources.md`). It
+  feeds `agent_account_info{plan}`, bounded to `pro`, `max`, `team`; anything else reads `unknown`.
+- `agent_quota_exporter_state_epoch` and `process_start_time_seconds` get rows in the contract's health table. Both
+  were already emitted and described in prose, so this documents them and is non-breaking (contract stays 0).
+
+## D6. Claude config dirs on NFS: OPEN (fact recorded, design not ruled)
+
+Tu, 2026-11-03: some Claude config dirs on the fleet are on NFS. Not yet known: which dirs, and whether one dir is
+visible to more than one node's exporter. If it is, every exporter that discovers it counts the same transcripts,
+so fleet totals are multiplied by the number of nodes. Proposed rule, pending a ruling: a config dir on a shared mount
+is read by exactly one exporter (the node that owns the session); on the other nodes, narrow `discovery.roots`
+or use `discovery.mode: only` with roots that leave it out. The config has no per-dir exclude today.
+
 ## Also recorded in `plan.md`, not yet ruled
 
 Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always

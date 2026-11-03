@@ -92,7 +92,8 @@ func (s *State) Close() {
 	}
 }
 
-// Epoch is the unix time the state was created (agent_quota_exporter_state_epoch).
+// Epoch is the unix time the current persisted state was initialized: no state.json yet, or an invalid one set aside
+// (agent_quota_exporter_state_epoch). A state.json that cannot be read stops OpenState instead.
 func (s *State) Epoch() int64 { return s.f.Epoch }
 
 // Get returns a copy of an instance's state (zero value if absent).

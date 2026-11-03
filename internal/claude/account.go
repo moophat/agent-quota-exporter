@@ -28,7 +28,7 @@ func (s *AccountSource) Collect(_ context.Context, now time.Time, _ json.RawMess
 		return core.Result{}, nil, err
 	}
 	label, _ := s.P.Account()
-	has, exp, err := readCredentialFacts(s.P.Dir)
+	has, exp, plan, err := readCredentialFacts(s.P.Dir)
 	if err != nil {
 		return core.Result{}, nil, err
 	}
@@ -39,8 +39,7 @@ func (s *AccountSource) Collect(_ context.Context, now time.Time, _ json.RawMess
 	}
 	samples := []core.Sample{
 		{Name: "agent_account_logged_in", Labels: s.P.labels(label, pl), Value: loggedIn},
-		// plan: the subscription type is not on the sources.md allow-list yet, so it is reported as unknown.
-		{Name: "agent_account_info", Labels: s.P.labels(label, pl, core.Label{Name: "plan", Value: "unknown"}), Value: 1},
+		{Name: "agent_account_info", Labels: s.P.labels(label, pl, core.Label{Name: "plan", Value: plan}), Value: 1},
 	}
 	if !exp.IsZero() {
 		samples = append(samples, core.Sample{Name: "agent_credential_expiry_timestamp_seconds",
