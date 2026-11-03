@@ -44,9 +44,11 @@ type TranscriptsSource struct {
 }
 
 type fileState struct {
-	Off   int64  `json:"o"`
-	Ino   uint64 `json:"i"`
-	First int64  `json:"f,omitempty"` // lines older than First - copyGrace are history, not new usage; 0 = no filter
+	Off int64  `json:"o"`
+	Ino uint64 `json:"i"`
+	// First: lines older than First - copyGrace are history, not new usage; 0 = no filter. Lines inside the grace
+	// (clock skew between writer and reader) rely on the seen set for dedupe.
+	First int64 `json:"f,omitempty"`
 }
 
 type usage struct {
