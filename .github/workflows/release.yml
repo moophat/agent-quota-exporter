@@ -18,8 +18,10 @@ on:
         required: true
         type: string
 
+# One run per tag at a time (GitHub keeps a single pending run per group, so a shared group would drop releases
+# of other tags); different tags release independently.
 concurrency:
-  group: release
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -111,9 +113,19 @@ jobs:
         run: |
           pre=""
           [[ "$TAG" == *-rc.* ]] && pre="--prerelease"
+          # Resume an interrupted publish: gh creates a draft first and publishes it last, so a draft for this tag
+          # aimed at this commit is ours to finish. A published release, or a draft aimed elsewhere, is refused.
+          if state=$(gh release view "$TAG" --json isDraft,targetCommitish --jq '"\(.isDraft) \(.targetCommitish)"' 2>/dev/null); then
+            read -r draft target <<<"$state"
+            [[ "$draft" == true ]] || { echo "release $TAG is already published"; exit 1; }
+            if [[ "$target" != "$SHA" && "$target" != "$TAG" ]]; then echo "draft $TAG targets $target, not $SHA"; exit 1; fi
+            gh release upload "$TAG" out/*.tar.gz out/SHA256SUMS --clobber
+            gh release edit "$TAG" --draft=false $pre
+            exit 0
+          fi
           # A pushed tag must already exist; a dispatch creates it at the dispatched commit (and fails if it exists).
           if [[ "$EVENT" == workflow_dispatch ]]; then
-            if gh release view "$TAG" >/dev/null 2>&1 || gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
               echo "tag $TAG already exists"; exit 1
             fi
             where=(--target "$SHA")
