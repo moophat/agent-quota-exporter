@@ -130,15 +130,15 @@ jobs:
             gh release edit "$TAG" --draft=false $pre
             exit 0
           fi
-          # A pushed tag must already exist; a dispatch or a release/<tag> branch creates it at the triggering commit
-          # (and fails if it exists).
+          # A pushed tag must already exist. A dispatch or a release/<tag> branch first creates the tag ref at the
+          # built commit (atomic: it fails if the tag exists); an existing tag is accepted only if it already points
+          # at this commit (a retried run). Publishing then always uses --verify-tag, so the release can never sit on
+          # a tag that points elsewhere.
           if [[ "$EVENT" == workflow_dispatch || "$REF" == refs/heads/release/* ]]; then
-            if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
-              echo "tag $TAG already exists"; exit 1
+            if ! gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null 2>&1; then
+              commit=$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha 2>/dev/null) || { echo "cannot create tag $TAG"; exit 1; }
+              [[ "$commit" == "$SHA" ]] || { echo "tag $TAG already exists at $commit, not $SHA"; exit 1; }
             fi
-            where=(--target "$SHA")
-          else
-            where=(--verify-tag)
           fi
-          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS $pre "${where[@]}" --title "$TAG" \
+          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS $pre --verify-tag --title "$TAG" \
             --notes "agent-quota-exporter $TAG (metric contract 0). Verify with: sha256sum -c SHA256SUMS"
