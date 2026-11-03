@@ -253,12 +253,39 @@ func TestTranscriptsReplacedFileNoReplay(t *testing.T) {
 	x.collect()
 	write(t, x.file("s.jsonl"), asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
 	x.collect()
+	x.now = x.now.Add(3 * time.Hour)
+	x.collect()                           // last collect well after the line was written
 	x.src.st.Seen = map[string]*seenMsg{} // as if evicted
-	x.now = x.now.Add(5 * time.Hour)
-	os.Remove(x.file("s.jsonl"))
-	write(t, x.file("s.jsonl"), asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
+	x.now = x.now.Add(2 * time.Hour)
+	// Replace by rename, so the new file has a new inode whatever the filesystem reuses.
+	tmp := x.file("s.jsonl.new")
+	write(t, tmp, asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
+	if err := os.Rename(tmp, x.file("s.jsonl")); err != nil {
+		t.Fatal(err)
+	}
 	if got := x.collect(); got["agent_tokens_total:model-x:input"] != 4 {
 		t.Fatalf("replaced file recounted: %v", got)
+	}
+}
+
+// Truncation in place (same inode, smaller size) is re-read from the start with the same rule.
+func TestTranscriptsTruncatedInPlaceNoReplay(t *testing.T) {
+	x := newTT(t)
+	x.collect()
+	write(t, x.file("s.jsonl"), append(asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4),
+		asstLine("r2", "model-x", "2026-01-01T00:02:00Z", 1)...))
+	x.collect()
+	x.now = x.now.Add(3 * time.Hour)
+	x.collect()
+	x.src.st.Seen = map[string]*seenMsg{}
+	f, err := os.OpenFile(x.file("s.jsonl"), os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write(asstLine("r1", "model-x", "2026-01-01T00:01:00Z", 4))
+	f.Close()
+	if got := x.collect(); got["agent_tokens_total:model-x:input"] != 5 {
+		t.Fatalf("truncated file recounted: %v", got)
 	}
 }
 

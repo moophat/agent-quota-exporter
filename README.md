@@ -75,8 +75,9 @@ agent-quota-exporter --version
 - `--once` takes the same state-dir lock as the daemon, so it refuses to run next to a running exporter. Point it
   at a copy of the config with its own `state_dir` for ad-hoc checks; the quota endpoint is still asked at most once
   per 15 min per state dir.
-- Releases: tag `vX.Y.Z` (or `vX.Y.Z-rc.N` for a prerelease) builds static linux amd64/arm64 tarballs and
-  `SHA256SUMS`. Verify with `sha256sum -c SHA256SUMS`.
+- Releases: pushing tag `vX.Y.Z` (or `vX.Y.Z-rc.N` for a prerelease) builds static linux amd64/arm64 tarballs and
+  `SHA256SUMS`; where tags cannot be pushed, dispatch the `release` workflow on `main` with the tag name and it
+  creates the tag. Final tags must be on `main`. Verify with `sha256sum -c SHA256SUMS`.
 - Develop: `go vet ./... && go test -race ./...`. The golden output is `testdata/golden/metrics.txt`; after an
   intended change, review the diff and run `go test ./internal/app -update`.
 
