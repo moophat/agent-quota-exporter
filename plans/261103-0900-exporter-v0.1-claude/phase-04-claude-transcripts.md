@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: Claude transcripts
-status: pending
+status: done
 depends: [2]
 ---
 

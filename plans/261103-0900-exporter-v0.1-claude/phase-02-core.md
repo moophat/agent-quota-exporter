@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: Core — state, scheduler, renderer, HTTP, CLI
-status: pending
+status: done
 depends: [1]
 ---
 

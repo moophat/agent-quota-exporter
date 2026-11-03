@@ -1,7 +1,25 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-10-28T13:05:00+07:00
+**Last-Updated:** 2026-11-03T13:43:50Z
 
-## Active — Repo convention setup | 2026-10-28
+## Active — Exporter v0.1, Claude only | 2026-11-03
+<!-- BEGIN STUB: 2026-11-03 | Exporter v0.1, Claude only -->
+### Exporter v0.1, Claude only | 2026-11-03
+**Meta:** feat/phase1-core | claude-opus-5-5 | `plans/261103-0900-exporter-v0.1-claude/plan.md`
+**Model:** claude-opus-5-5
+**Outcome:** core + claude-account/sessions/transcripts + opt-in claude-oauth-usage built; go vet, go test -race green (also as non-root); golden /metrics and contract conformance tests; CI and tag release workflows; PR and v0.1.0-rc.1 next
+**Key:** Go, one dep (yaml.v3), hand-written exposition; plan red-teamed by 4 reviewers (32 findings adjudicated in plan.md); opencode dropped from this lane (Tu 2026-11-02); quota opt-in, host-wide 429 backoff, never refreshes
+**Pending:** on-prem integration test against real profiles (Tu's on-prem agent); Tu: subscriptionType allow-list, contract rows for state_epoch/process_start, NFS homes; label map PR in agent-fleet-kit after release
+<!-- END STUB: 2026-11-03 | Exporter v0.1, Claude only -->
+- [x] Plan, red team, adjudication
+- [x] Phases 01-05 (config, core, account/sessions, transcripts, quota)
+- [x] Phase 06 acceptance tests, CI, release workflow, examples, README
+- [ ] PR + Qodo review, rc tag, on-prem integration test, merge, v0.1.0 tag
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-10-28 | Repo convention setup -->
 ### Repo convention setup | 2026-10-28
 **Meta:** main | claude-sonnet-5-5 | `specs/plan.md`
@@ -9,14 +27,5 @@
 **Key:** specs/ (git mv from docs/), specs/decisions.md (D1 locked; D2 language, D3 public timing, D4 per-session open), rotate-work-tracker.py copied unchanged, secrets CI on ubuntu-latest
 **Pending:** orchestrator commits signed; D2-D4 open; no gitleaks binary on node, so fixtures not scanned by it
 <!-- END STUB: 2026-10-28 | Repo convention setup -->
-- [x] Instruction: Tu's go 2026-10-28 12:49, relayed by the orchestrator
-- [x] specs/, decisions.md, AGENTS.md, CLAUDE.md symlink, guards, README links
-- [x] Licence locked Apache-2.0 (Tu, 2026-10-28), "provisional" dropped
-- [ ] Commit (orchestrator)
-
-## Paused
-None
-
-## Log
 
 (Earlier entry, 2026-10-28 03:38 +07, claude-sonnet-5-5: initial repo setup, docs/plan, contract, sources, fixtures, no code.)

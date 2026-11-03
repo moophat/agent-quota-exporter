@@ -1,0 +1,48 @@
+# Tag-triggered release: static linux binaries + SHA256SUMS on a GitHub release.
+# rc tags (vX.Y.Z-rc.N) are prereleases for integration testing; final tags are cut from reviewed main.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+      - name: validate tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "bad tag"; exit 1; }
+      - name: test
+        run: go test -count=1 ./...
+      - name: build
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p out
+          for arch in amd64 arm64; do
+            name="agent-quota-exporter_${TAG}_linux_${arch}"
+            mkdir -p "out/$name"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${TAG}" -o "out/$name/agent-quota-exporter" ./cmd/agent-quota-exporter
+            cp LICENSE README.md examples/config.yaml examples/agent-quota-exporter.service "out/$name/"
+            tar -C out -czf "out/$name.tar.gz" "$name"
+          done
+          (cd out && sha256sum ./*.tar.gz > SHA256SUMS)
+      - name: publish
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pre=""
+          [[ "$TAG" == *-rc.* ]] && pre="--prerelease"
+          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS $pre --title "$TAG" --notes "agent-quota-exporter $TAG (metric contract 0). Verify with: sha256sum -c SHA256SUMS"

@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: Scaffold, config, discovery
-status: pending
+status: done
 depends: []
 ---
 

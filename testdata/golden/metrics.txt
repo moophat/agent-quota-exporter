@@ -1,0 +1,109 @@
+# HELP agent_quota_utilization_ratio Share of a subscription quota window consumed, as reported by the vendor.
+# TYPE agent_quota_utilization_ratio gauge
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",env="lab"} 0.42
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="all",env="lab"} 0.185
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="model_family_example",env="lab"} 0.07
+# HELP agent_quota_reset_timestamp_seconds When the quota window resets, Unix seconds.
+# TYPE agent_quota_reset_timestamp_seconds gauge
+agent_quota_reset_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",env="lab"} 1767243600
+agent_quota_reset_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="all",env="lab"} 1767690000
+agent_quota_reset_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="model_family_example",env="lab"} 1767690000
+# HELP agent_quota_limit_info Vendor-reported limit state, one series per active limit entry.
+# TYPE agent_quota_limit_info gauge
+agent_quota_limit_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",severity="normal",env="lab"} 1
+agent_quota_limit_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="all",severity="normal",env="lab"} 1
+# HELP agent_quota_observed_timestamp_seconds When the vendor was last successfully asked, Unix seconds.
+# TYPE agent_quota_observed_timestamp_seconds gauge
+agent_quota_observed_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",env="lab"} 1767225660
+# HELP agent_tokens_total Tokens consumed, read from local agent state.
+# TYPE agent_tokens_total counter
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="input",env="lab"} 5
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="output",env="lab"} 507
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="input",env="lab"} 5
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="output",env="lab"} 507
+# HELP agent_requests_total Model calls, read from local agent state.
+# TYPE agent_requests_total counter
+agent_requests_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
+agent_requests_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
+# HELP agent_account_logged_in 1 if the profile holds a usable login (credential present and not known-expired).
+# TYPE agent_account_logged_in gauge
+agent_account_logged_in{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",env="lab"} 1
+agent_account_logged_in{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",env="lab"} 1
+# HELP agent_account_info Slow-changing account facts.
+# TYPE agent_account_info gauge
+agent_account_info{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",plan="unknown",env="lab"} 1
+agent_account_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",plan="unknown",env="lab"} 1
+# HELP agent_credential_expiry_timestamp_seconds Access-token expiry time, Unix seconds (never the token).
+# TYPE agent_credential_expiry_timestamp_seconds gauge
+agent_credential_expiry_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",env="lab"} 1767232800
+agent_credential_expiry_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",env="lab"} 1767232800
+# HELP agent_sessions Live sessions by state.
+# TYPE agent_sessions gauge
+agent_sessions{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",state="active",env="lab"} 0
+agent_sessions{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",state="idle",env="lab"} 1
+agent_sessions{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",state="other",env="lab"} 0
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="active",env="lab"} 0
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="idle",env="lab"} 1
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="other",env="lab"} 0
+# HELP agent_source_up 1 if the last read of the source succeeded or a fresh cache entry exists.
+# TYPE agent_source_up gauge
+agent_source_up{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="acct-b",source="claude-transcripts",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="work",source="claude-account",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 1
+agent_source_up{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 1
+# HELP agent_source_last_success_timestamp_seconds Last successful read of the source, Unix seconds.
+# TYPE agent_source_last_success_timestamp_seconds gauge
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 1767225780
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 1767225780
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-transcripts",env="lab"} 1767225780
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-account",env="lab"} 1767225780
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 1767225660
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 1767225780
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 1767225780
+# HELP agent_source_cache_age_seconds Age of the value being served, seconds.
+# TYPE agent_source_cache_age_seconds gauge
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 0
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 0
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-transcripts",env="lab"} 0
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="work",source="claude-account",env="lab"} 0
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 120
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 0
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 0
+# HELP agent_source_backoff_until_timestamp_seconds Non-zero while a vendor 429 or error backoff is active, Unix seconds.
+# TYPE agent_source_backoff_until_timestamp_seconds gauge
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-transcripts",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-account",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 0
+# HELP agent_source_read_seconds Duration of the last read of the source, seconds.
+# TYPE agent_source_read_seconds gauge
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-transcripts",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="work",source="claude-account",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 0
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 0
+# HELP agent_quota_exporter_build_info Build version and metric contract version.
+# TYPE agent_quota_exporter_build_info gauge
+agent_quota_exporter_build_info{version="test",contract="0",env="lab"} 1
+# HELP agent_quota_exporter_profiles Profiles known, by harness and origin.
+# TYPE agent_quota_exporter_profiles gauge
+agent_quota_exporter_profiles{harness="claude-code",origin="config",env="lab"} 1
+agent_quota_exporter_profiles{harness="claude-code",origin="discovered",env="lab"} 1
+# HELP agent_quota_exporter_state_epoch When the exporter state directory was created, Unix seconds; a change means counters restarted.
+# TYPE agent_quota_exporter_state_epoch gauge
+agent_quota_exporter_state_epoch{env="lab"} 1767225660
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds{env="lab"} 1767225600

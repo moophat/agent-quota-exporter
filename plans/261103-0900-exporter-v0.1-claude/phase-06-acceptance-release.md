@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: Acceptance, CI, release, ledgers, PR
-status: pending
+status: done
 depends: [1, 2, 3, 4, 5]
 ---
 

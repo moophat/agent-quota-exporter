@@ -1,0 +1,32 @@
+# Example systemd unit. Deviation from specs/plan.md "Security posture" (dedicated user with read-only group
+# access): on hosts where agent homes are root's (/root/.claude*), the exporter must run as root to read them.
+# It still writes nowhere but its state dir. For per-user homes, prefer a dedicated user with a read-only group
+# on the profile dirs and remove User=root.
+[Unit]
+Description=agent-quota-exporter (read-only AI agent quota and usage metrics)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+ExecStart=/usr/local/bin/agent-quota-exporter --config /etc/agent-quota-exporter/config.yaml
+StateDirectory=agent-quota-exporter
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=30s
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/agent-quota-exporter
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

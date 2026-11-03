@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: Claude account + sessions
-status: pending
+status: done
 depends: [2]
 ---
 

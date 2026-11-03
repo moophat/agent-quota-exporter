@@ -76,8 +76,10 @@ type OAuthUsageSource struct {
 	Version    string
 	Cache      *QuotaCache
 
-	base string            // test override of usageBase
-	rt   http.RoundTripper // test override of the transport
+	// Endpoint and Transport override the vendor URL and transport. Tests only: they are not reachable from
+	// the config file.
+	Endpoint  string
+	Transport http.RoundTripper
 }
 
 func (s *OAuthUsageSource) Name() string               { return "claude-oauth-usage" }
@@ -96,7 +98,7 @@ func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
 }
 
 func (s *OAuthUsageSource) client() *http.Client {
-	rt := s.rt
+	rt := s.Transport
 	if rt == nil {
 		// Direct connection only: an environment proxy would see the bearer token.
 		rt = &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
@@ -150,7 +152,7 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 		return fail(core.Fail(core.ReasonAuthExpired)) // never refresh: an idle client's token stays expired
 	}
 
-	base := s.base
+	base := s.Endpoint
 	if base == "" {
 		base = usageBase
 	}

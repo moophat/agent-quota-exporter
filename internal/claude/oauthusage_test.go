@@ -71,7 +71,7 @@ func (g guardRT) RoundTrip(r *http.Request) (*http.Response, error) {
 func (s *stub) source(p *Profile) *OAuthUsageSource {
 	u, _ := url.Parse(s.srv.URL)
 	return &OAuthUsageSource{P: p, Interval: 15 * time.Minute, Backoff429: time.Hour, Version: "test",
-		Cache: NewQuotaCache(), base: s.srv.URL, rt: guardRT{s.t, u.Host}}
+		Cache: NewQuotaCache(), Endpoint: s.srv.URL, Transport: guardRT{s.t, u.Host}}
 }
 
 func TestOAuthUsageParsesFixture(t *testing.T) {

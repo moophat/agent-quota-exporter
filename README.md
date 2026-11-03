@@ -1,7 +1,8 @@
 # agent-quota-exporter
 
-> Status: **pre-release, design phase.** No implementation exists yet. This repository holds the plan, the metric
-> contract, the source catalogue and sanitized fixtures so a builder can start offline.
+> Status: **v0.1 (pre-release), Claude Code only.** Implemented: core, the Claude transcript, session and account
+> plugins, and the opt-in Claude quota plugin (spec phases 1 and 2 for Claude). Codex, opencode and agy plugins,
+> OTLP and packaging are not built yet; see [specs/plan.md](specs/plan.md#phases-and-acceptance-criteria).
 
 A read-only Prometheus exporter for AI coding agents. It reports, per machine, per workspace and per account:
 
@@ -59,6 +60,26 @@ multi-account, without ever touching a token**. That is the gap. (Prior art and 
   private or undocumented. Anything that would need a token refresh is out of scope (or opt-in and marked risky).
 - Fixtures in this repository are synthetic. Nothing in this repository is real telemetry.
 
+## Usage
+
+```
+agent-quota-exporter --config /etc/agent-quota-exporter/config.yaml   # serve /metrics and /healthz (127.0.0.1:9877)
+agent-quota-exporter --config FILE --once                              # collect local sources once, print, exit
+agent-quota-exporter --config FILE --once --once-with-quota            # also ask the quota endpoint if its gate allows
+agent-quota-exporter --version
+```
+
+- Config: [examples/config.yaml](examples/config.yaml). With no config file, profiles are auto-discovered under
+  `/root` and `/home/*` (`.claude` and `.claude-*` dirs). Quota is opt-in per profile (`quota: {claude_oauth_usage: true}`).
+- systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service).
+- `--once` takes the same state-dir lock as the daemon, so it refuses to run next to a running exporter. Point it
+  at a copy of the config with its own `state_dir` for ad-hoc checks; the quota endpoint is still asked at most once
+  per 15 min per state dir.
+- Releases: tag `vX.Y.Z` (or `vX.Y.Z-rc.N` for a prerelease) builds static linux amd64/arm64 tarballs and
+  `SHA256SUMS`. Verify with `sha256sum -c SHA256SUMS`.
+- Develop: `go vet ./... && go test -race ./...`. The golden output is `testdata/golden/metrics.txt`; after an
+  intended change, review the diff and run `go test ./internal/app -update`.
+
 ## Layout
 
 | Path | What |
@@ -70,6 +91,9 @@ multi-account, without ever touching a token**. That is the gap. (Prior art and 
 | `fixtures/` | sanitized sample inputs for offline development (see `fixtures/README.md`) |
 | `AGENTS.md` | rules for AI agents working in this repo (`CLAUDE.md` is a symlink to it) |
 | `.aiworkflow/` | work ledger and component manifest |
+| `cmd/`, `internal/` | the exporter: `config` (load, validate, discover), `core` (scheduler, state, exposition), `claude` (plugins), `app` (wiring and end-to-end test) |
+| `examples/` | example config and systemd unit |
+| `plans/` | build plans with their red-team review |
 
 ## Licence
 

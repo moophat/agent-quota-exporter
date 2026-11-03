@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: Claude OAuth usage (quota)
-status: pending
+status: done
 depends: [2, 3]
 ---
 
