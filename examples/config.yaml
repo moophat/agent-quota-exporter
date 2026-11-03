@@ -1,0 +1,27 @@
+# Example configuration for agent-quota-exporter (Claude Code profiles only in this version).
+# Path: --config FILE or AGENT_QUOTA_EXPORTER_CONFIG. Every key is optional except version.
+version: 1
+listen: "127.0.0.1:9877"        # expose beyond localhost only behind your scraper's network
+# host: node-a                  # label value; default = OS hostname
+state_dir: /var/lib/agent-quota-exporter
+labels: {}                      # constant labels on every series, e.g. {env: lab}
+discovery:
+  mode: add                     # off | add | only
+  roots: ["/root", "/home/*"]   # one level: <root>/.claude and <root>/.claude-* dirs
+metrics:
+  max_models_per_profile: 20
+  account_label: alias          # alias | email
+defaults:
+  usage_interval: 60s
+  stale_after: 45m
+profiles:
+  - harness: claude-code
+    alias: work
+    dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR
+    account: acct-a1            # optional; default is a short hash of the account id
+    quota: { claude_oauth_usage: true }   # opt-in: private, undocumented vendor endpoint
+  - harness: claude-code
+    alias: personal
+    dir: /home/acct-b/.claude
+sources:
+  claude-oauth-usage: { min_interval: 15m, backoff_429: 60m }   # floors; may only be raised
