@@ -112,7 +112,7 @@ healthy ones.
 | `agent_source_errors_total` | counter | errors | `host harness profile source reason` | read failures; `reason` in `not_found`, `permission`, `parse`, `timeout`, `auth_expired`, `rate_limited`, `upstream`, `other` |
 | `agent_quota_exporter_build_info` | gauge (info) | constant 1 | `version contract` | build version and contract version |
 | `agent_quota_exporter_profiles` | gauge | profiles | `harness origin` | profiles known; `origin` in `config`, `discovered` |
-| `agent_quota_exporter_state_epoch` | gauge | Unix seconds | none | when the current persisted state was initialized: a new state directory, or a missing or unreadable state file that was replaced; a change means the counters restarted from zero |
+| `agent_quota_exporter_state_epoch` | gauge | Unix seconds | none | when the current persisted state was initialized: no `state.json` yet, or an invalid one that was set aside as `state.json.corrupt-<time>`; a change means the counters restarted from zero. A `state.json` that exists but cannot be read stops startup instead |
 | `process_start_time_seconds` | gauge | Unix seconds | none | start time of the exporter process, taken as the binary initializes (before config loading) |
 
 `source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `opencode-db`, ...), a fixed vocabulary.

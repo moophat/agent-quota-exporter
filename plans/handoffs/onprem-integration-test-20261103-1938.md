@@ -167,14 +167,23 @@ Known pre-existing failures, not caused by this work: `mesh/tests` `test_drift`,
    Expect `ALL CHECKS PASSED`; the run takes about 2 minutes.
 3. Real-profile dry run, without quota.
    - Write a config: `host: <node handle>`, `listen: "127.0.0.1:9478"`, a `state_dir` under a fresh temp dir, discovery on.
-   - Before starting, snapshot `find <each config dir> -printf '%p %s %T@\n'` excluding `projects/**/*.jsonl`, which
-     Claude itself appends to.
+   - Prove the exporter writes nothing under the profiles from its own system calls. A file snapshot cannot do
+     this on a live profile: Claude Code itself rewrites `.claude.json`, `sessions/`, transcripts and more. Start
+     the exporter under strace:
+     `strace -f -qq -e trace=openat,open,creat,rename,renameat,renameat2,unlink,unlinkat,mkdir,mkdirat,truncate,ftruncate,utimensat,chmod,fchmodat,chown,fchownat -o /tmp/aqe.strace ./agent-quota-exporter --config <cfg>`.
+     Agent files are opened relative to directory handles, so strace shows bare names (`openat(7,
+     ".credentials.json", O_RDONLY|...)`), not their paths; the state dir is written with absolute paths. So check
+     that every write-type call names the state dir, which must print `0`:
+     `grep -E 'O_WRONLY|O_RDWR|O_CREAT|O_TRUNC|rename|unlink|mkdir|truncate|utimensat|chmod|chown' /tmp/aqe.strace | grep -v ENOENT | grep -v -F '<state_dir>' | wc -l`.
+     Also, `grep 'openat([0-9]' /tmp/aqe.strace | grep -vc O_RDONLY` must print `0` (every relative open read-only).
+     Both checks were verified in the cloud on a mocked profile: 0 and 0, with the state writes all under
+     `state_dir`.
    - Run `--once`, then serve for at least 30 min while a real session works.
    - Check:
      - nothing is replayed at first start (`agent_tokens_total` starts near 0);
      - counters rise during work and never fall;
      - `agent_sessions` matches the live sessions;
-     - the non-transcript files are unchanged afterwards;
+     - the strace check above is empty for every config dir;
      - no token or email appears in `/metrics` or the log.
 4. Quota on one profile: set `quota: { claude_oauth_usage: true }` for that profile only.
    - Expect `agent_quota_utilization_ratio{window="5h"|"7d"}` after the first collect, then at most one request per
