@@ -1,7 +1,7 @@
 # MANIFEST: agent-quota-exporter
-**Last-Updated:** 2026-11-03T13:43:50Z
+**Last-Updated:** 2026-11-03T19:35:00Z
 
-Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release workflow by tag push or main-only dispatch. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
+Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release v0.1.0-rc.1 published 2026-11-03 (prerelease, tag at c5a6750). Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
 
 | Component | Status | Notes |
 |---|---|---|
@@ -24,6 +24,7 @@ Status values: planned, in-progress, done. Updated 2026-11-03 by claude-opus-5-5
 | CI: tests, golden metrics, secret-scan of fixtures | done | `.github/workflows/ci.yml`, `release.yml` |
 
 ## Known issues / deviations (v0.1)
+- Release triggers have no repository-side control yet (no ruleset on `v*` / `release/*`, no protected environment on `publish`); maintainer decision, PR #3.
 - `agent_account_info{plan}` is always `unknown`: the plan field (`subscriptionType`) is not on the sources.md allow-list.
 - `agent_quota_exporter_state_epoch` and `process_start_time_seconds` are named in contract prose only, not in a table.
 - Discovered alias = home name for `~/.claude` (spec says directory-name slug, which collides); `.claude-X` → `claude-x`.
