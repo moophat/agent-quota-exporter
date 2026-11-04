@@ -82,12 +82,54 @@ Never-read (hard blocklist, enforced by the query allow-list): tables `account`,
 (`access_token`, `refresh_token`, `value`), `permission`, `part` (message text), and `/provider` response keys
 `key` and `options`.
 
-## agy (harness `agy`)
+## agy (harness `agy`, provider `google`)
 
-A *profile* is one `HOME` per account. On the reference node there is no agy home, so nothing is verified. Prior
-investigation found **no quota surface**. Plan: a placeholder plugin that reports profile presence and logged-in
-state from file existence only (`fixtures/agy/layout.md`), and a discovery task in phase 3 to look for local session
-logs. Do not invent a metric for something no source supports.
+A *profile* is one `HOME` per account. agy profiles are never discovered: they exist only when declared in config.
+Local state holds no quota, but the official client has a quota surface (this corrects the earlier "no quota surface"):
+`agy -p /usage --output-format json` answers with quota buckets, using 0 tokens and no model turn (agy CLI 1.5.0, one
+account, read twice on-prem on 2026-11-04).
+
+| Source | What | How | Cadence | Evidence |
+|---|---|---|---|---|
+| `agy-usage` | quota windows | spawn the official client with the fixed argv `agy -p /usage --output-format json`; read `command.data.groups[].buckets[]`: `id`, `window`, `remaining_fraction`, `reset_time`. See `fixtures/agy/usage-command.json` | default every 30 min, floor 15 min; 60 min after a non-zero exit or a timeout; 24 h after the guard below trips | verified (field names, 0 tokens), agy CLI 1.5.0 |
+
+Rules specific to `agy-usage`:
+
+- **Opt-in per profile** (`quota.agy_usage: true`), off by default.
+- **An explicit `account` is required.** The same login can sit on many machines, so the operator reads each account
+  from one host only by declaring `account` on that host's profile. Without it the source spawns nothing and reports
+  `agent_source_up 0` with `agent_source_errors_total{reason="other"}` on every attempt. The `account` label is the
+  configured alias; nothing is read from the agy home to derive it.
+- **The exporter never opens a file in the agy home and never holds a token.** It runs the client the way a person would:
+  `exec` with no shell, the binary found with `PATH` lookup (must resolve to an absolute path), working directory and
+  `HOME` = the profile, environment exactly `HOME`, `PATH` (the exporter's own, `/usr/local/bin:/usr/bin:/bin` if
+  unset) and `LANG=C`, stdin from `/dev/null`,
+  stdout capped at 256 KiB (more is a `parse` error), stderr discarded and never logged.
+- **Token refresh is the client's.** A run with an expired access token refreshes it and rewrites the token file, as any
+  agy run does; two runs with a live token changed nothing (on-prem, by hash and mtime only). So each poll can trigger the
+  client's normal refresh. Whether the refresh token itself rotates is re-checked on-prem on an rc before `v0.2.0`; if it
+  rotates, the source stays out of the release.
+- **Timeout:** 30 s per run. The client runs in its own process group; on timeout the group gets `SIGTERM`, then 5 s to
+  finish writing its token file, then `SIGKILL`. Never `SIGKILL` first.
+- **One client at a time** per exporter, across all profiles. agy has its own gate group (`agy`) for spacing and backoff,
+  so a backoff on Claude's endpoint never pauses agy and the reverse. `sources.agy-usage.backoff_429` sets the backoff after
+  a non-zero exit or timeout (floor 60 min).
+- **Zero-cost guard.** The output is used only if `command.name == "usage"`, `num_turns == 0` and `usage.total_tokens == 0`,
+  each present. Anything else means the client changed in a way that may spend model turns: no sample is taken from that
+  output, the error is `reason="other"` and the source pauses for 24 h.
+- **Mapping:** `agent_quota_utilization_ratio` = `1 - remaining_fraction` (floored at 0; a bucket without it is absent,
+  never zero); `agent_quota_reset_timestamp_seconds` from `reset_time` (RFC 3339); `agent_quota_observed_timestamp_seconds`
+  = the time of the successful run. `window` is the bucket's `window` lowercased (`5h`, `weekly`: named windows keep the
+  vendor word) if it matches `^[a-z0-9]{1,16}$`, else `other`. `scope` is the bucket id before its first `-`: `gemini` or
+  `3p`, else `other`. Buckets that share a label set after that mapping merge (highest utilization, earliest reset).
+- **Unknown bucket ids** are served under `scope="other"` and each one counts in
+  `agent_source_errors_total{reason="parse"}` while the read still succeeds: the output no longer matches the known
+  vocabulary, and the contract's existing bounded counter shows it without a new metric or label value.
+- **Staleness:** a live source, so the contract's `stale_after` applies. The last good reading is persisted and served
+  after a restart until stale.
+- **`--once`** never spawns the client unless `--once-with-quota` is given, and then only if its gate allows.
+- Never-read: every file in the agy home; in the output, `response`, every `name` and `description`, and every field not
+  listed above.
 
 ## Other providers (later, by plugin)
 

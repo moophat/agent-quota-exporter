@@ -19,6 +19,7 @@ Collected read-only on 2026-10-28 from a development node by `claude-sonnet-5-5`
 | `codex/layout.txt` | names-only listing of a real Codex home | file and directory names | nothing was opened; `auth.json` is listed as expected-but-absent |
 | `codex/rate-limits-response.json` | shape documented for `codex app-server` `account/rateLimits/read` | field names | numbers invented; **unverified** (not run on a logged-in client) |
 | `agy/layout.md` | none on this node | n/a | described, not listed |
+| `agy/usage-command.json` | shape of `agy -p /usage --output-format json` (agy CLI 1.5.0), read on-prem 2026-11-04 | key names and nesting, bucket ids `gemini-*`/`3p-*`, windows `5h`/`weekly`, the zero-cost fields (`num_turns`, `usage.*`, `command.name`) | every value invented; extended 2026-11-04 (claude-opus-5-5) with synthetic buckets: an unsafe window (`gemini-perminute`), two unknown ids that merge (`newtier-*`, `othertier-*`), and `CANARY-AGY-*` text in content fields |
 
 ## Rules for fixtures
 
