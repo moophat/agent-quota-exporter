@@ -66,6 +66,13 @@ On-prem inspection, 2026-11-04 (`plans/handoffs/onprem-test-result-20261104-0400
 So no shared config dir is known today, and the rule is not applied yet. It stays OPEN as the guard: apply it if a
 profile is ever placed on a shared mount, and re-check when the NFS server node is inspected.
 
+## D7. Model attribution, no Co-Authored-By: LOCKED (Tu, 2026-11-04)
+
+- No commit and no squash message in this repo carries a `Co-Authored-By` trailer.
+- The model id is in every commit message (`AI-Model:` and `Model:` trailers), every PR body (`**AI-Model:**`
+  line) and every PR comment or review reply (`AI-Model:` line), for failure attribution. Checked on `main` after the v0.2 merge (14aeb20):
+`git log -1 --format=%b` shows none.
+
 ## Also recorded in `plan.md`, not yet ruled
 
 Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always

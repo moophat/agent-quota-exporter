@@ -1,18 +1,18 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-04T13:20:00Z
+**Last-Updated:** 2026-11-04T14:10:00Z
 
 ## Active — Exporter v0.2, more sources | 2026-11-04
 <!-- BEGIN STUB: 2026-11-04 | Exporter v0.2, more sources -->
 ### Exporter v0.2, more sources | 2026-11-04
 **Meta:** feat/v0.2-sources | claude-opus-5-5 | `plans/261104-1800-more-sources/plan.md`
 **Model:** claude-opus-5-5
-**Outcome:** codex-rollouts (quota, credits, tokens), opencode-db, router-9router, agy-usage (opt-in) built with sqlro (allow-listed read-only SQLite) and safefs; design red-teamed (13 findings, 12 accepted); all packages pass go test -race with mutation checks
+**Outcome:** v0.2 merged (PR #10, 14aeb20); v0.2.0-rc.2 released from 75697f0 and verified (checksums, Claude itest); codex-rollouts, opencode-db, router-9router, agy-usage with sqlro and safefs; red-team, code review and Qodo findings fixed
 **Key:** passive quota served until its own reset; credits 0 is not "out"; one Codex reading per scope; WAL DB without sidecars skipped so nothing is created in agent dirs; agy disables itself if /usage spends a turn; provider balances deferred
-**Pending:** maintainer: provider balances (unit label vs contract, money), -shm read-marks with a live writer; idle RSS vs 15 MB target; on-prem test of v0.2.0-rc.N (`plans/handoffs/v0.2-rc-test-20261104.md`)
+**Pending:** on-prem test of v0.2.0-rc.2 (`plans/handoffs/v0.2-rc-test-20261104.md`); maintainer: provider balances, -shm read-marks / run-as-owner; idle RSS ~16 MB vs 15 MB target
 <!-- END STUB: 2026-11-04 | Exporter v0.2, more sources -->
 - [x] Brief read and deleted; design + red-team
 - [x] Scaffold, sqlro, safefs, codex, agy, router, opencode
-- [ ] PR, Qodo, merge, v0.2.0-rc.1
+- [x] PR #10 (Qodo: 13 + 8 + 1 findings fixed or answered), merged as 14aeb20; v0.2.0-rc.1 and rc.2 released and verified
 - [ ] On-prem test results, v0.2.0
 
 ## Paused

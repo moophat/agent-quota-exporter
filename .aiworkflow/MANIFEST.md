@@ -1,5 +1,5 @@
 # MANIFEST: agent-quota-exporter
-**Last-Updated:** 2026-11-04T02:55:00Z
+**Last-Updated:** 2026-11-04T14:10:00Z
 
 Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release **v0.1.0** published 2026-11-04 (tag at c6f4dc8, cut on-prem after the real-node test of rc.2); fixes ship as v0.1.x. Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
 
@@ -13,11 +13,11 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 | Core: scheduler, cache, rate gates, state store | done | `internal/core` |
 | Core: `/metrics`, `/healthz`, health metrics | done | `internal/core/render.go`, `http.go` |
 | Plugin: claude-transcripts, claude-sessions, claude-account | done, verified on-prem (v0.1.0-rc.2) | `internal/claude` |
-| Plugin: opencode-db | done (v0.2), awaiting on-prem test | `internal/opencode`; opencode-http not built |
+| Plugin: opencode-db | done (v0.2, merged; rc.2), awaiting on-prem test | `internal/opencode`; opencode-http not built |
 | Plugin: claude-oauth-usage (quota) | done, verified on-prem (v0.1.0-rc.2) | opt-in; `internal/claude/oauthusage.go` |
-| Plugin: codex-rollouts (quota, credits, tokens) | done (v0.2), awaiting on-prem test | `internal/codex`; codex-state and codex-rate-limits not built |
-| Plugin: agy-usage (opt-in) | done (v0.2), awaiting on-prem test | `internal/agy`; runs the client's own /usage |
-| Plugin: router-9router | done (v0.2), awaiting on-prem test | `internal/router`; declared profiles only |
+| Plugin: codex-rollouts (quota, credits, tokens) | done (v0.2, merged; rc.2), awaiting on-prem test | `internal/codex`; codex-state and codex-rate-limits not built |
+| Plugin: agy-usage (opt-in) | done (v0.2, merged; rc.2), awaiting on-prem test | `internal/agy`; runs the client's own /usage |
+| Plugin: router-9router | done (v0.2, merged; rc.2), awaiting on-prem test | `internal/router`; declared profiles only |
 | Provider plugins: Anthropic/OpenAI admin usage, balances | planned | balances deferred: unit label vs contract, money (maintainer) |
 | OTLP output | planned | phase 4 |
 | Packaging: binary/package, systemd unit, container | planned | phase 5 |
