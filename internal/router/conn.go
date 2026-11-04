@@ -1,6 +1,8 @@
 package router
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"regexp"
 	"sort"
@@ -13,9 +15,11 @@ import (
 )
 
 var (
-	labelRe = regexp.MustCompile(`^[a-z0-9._-]{1,48}$`)
-	modelRe = regexp.MustCompile(`^[a-z0-9._:/@\[\]-]{1,64}$`)
-	emailRe = regexp.MustCompile(`^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,63}$`)
+	labelRe  = regexp.MustCompile(`^[a-z0-9._-]{1,48}$`)
+	safeRe   = regexp.MustCompile(`^[a-z0-9._-]{49,256}$`)
+	uuidTail = regexp.MustCompile(`-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	modelRe  = regexp.MustCompile(`^[a-z0-9._:/@\[\]-]{1,64}$`)
+	emailRe  = regexp.MustCompile(`^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,63}$`)
 )
 
 // testStatus words as 9router writes them (data.testStatus). A failed word means the last test failed; a passing
@@ -194,7 +198,9 @@ func statusOK(v any) bool {
 	return err == nil && n >= 200 && n < 300
 }
 
-// providerLabel bounds the router's provider string: lowercase, label-safe, else "other"; empty is "unknown".
+// providerLabel bounds the router's provider string: lowercase and label-safe, else "other"; empty is "unknown".
+// A label-safe id longer than 48 (9router's custom providers are "<kind>-compatible-<uuid>") keeps its prefix,
+// without a trailing uuid and cut to 39, plus "-" and 8 hex digits of its sha256, so two such providers stay apart.
 func providerLabel(p string) string {
 	p = strings.ToLower(strings.TrimSpace(p))
 	switch {
@@ -202,6 +208,14 @@ func providerLabel(p string) string {
 		return "unknown"
 	case labelRe.MatchString(p):
 		return p
+	case safeRe.MatchString(p):
+		base := uuidTail.ReplaceAllString(p, "")
+		base = strings.TrimRight(base[:min(len(base), 39)], "-._")
+		h := sha256.Sum256([]byte(p))
+		if base == "" {
+			return hex.EncodeToString(h[:4])
+		}
+		return base + "-" + hex.EncodeToString(h[:4])
 	}
 	return "other"
 }

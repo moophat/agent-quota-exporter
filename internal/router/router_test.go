@@ -624,10 +624,32 @@ func TestValueMapping(t *testing.T) {
 		}
 	}
 	for in, want := range map[string]string{"OpenRouter": "openrouter", "": "unknown", "weird provider!": "other",
-		strings.Repeat("p", 49): "other", "cc": "cc"} {
+		strings.Repeat("p", 257): "other", "cc": "cc", strings.Repeat("p", 48): strings.Repeat("p", 48)} {
 		if got := providerLabel(in); got != want {
 			t.Errorf("providerLabel(%q) = %q, want %q", in, got, want)
 		}
+	}
+
+	// 9router's custom providers are "<kind>-compatible-<uuid>", over 48 characters. Two of them must not merge into
+	// one series, and the label keeps the readable kind and never the uuid.
+	a := providerLabel("anthropic-compatible-0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b")
+	b := providerLabel("Anthropic-Compatible-7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d")
+	c := providerLabel("openai-compatible-chat-0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b")
+	long := providerLabel(strings.Repeat("p", 49))
+	for _, l := range []string{a, b, c, long} {
+		if !labelRe.MatchString(l) {
+			t.Errorf("label %q is not label-safe or over 48", l)
+		}
+	}
+	if a == b || a == c || b == c {
+		t.Errorf("custom providers merged: %q %q %q", a, b, c)
+	}
+	if !strings.HasPrefix(a, "anthropic-compatible-") || !strings.HasPrefix(c, "openai-compatible-chat-") ||
+		strings.Contains(a+c, "0f8e2c1a") || !strings.HasPrefix(long, strings.Repeat("p", 39)+"-") {
+		t.Errorf("prefix not kept or uuid leaked: %q %q %q", a, c, long)
+	}
+	if providerLabel("anthropic-compatible-0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b") != a {
+		t.Error("label not stable")
 	}
 }
 
