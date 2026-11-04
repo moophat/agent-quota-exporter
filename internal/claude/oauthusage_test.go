@@ -189,6 +189,26 @@ func TestOAuthUsageCollidingScopesKept(t *testing.T) {
 	}
 }
 
+// A key that equals the scope generated for a colliding key does not take that reading's series either.
+func TestOAuthUsageGeneratedScopeNotReused(t *testing.T) {
+	taken := strings.ToUpper(distinctScope("foo_bar", "foo_bar")) // sorts first, so it claims the generated scope
+	body := []byte(`{"` + taken + `":{"utilization":1},"foo.bar":{"utilization":2},"foo_bar":{"utilization":3}}`)
+	st := newStub(t, body)
+	res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes, vals := map[string]bool{}, map[float64]bool{}
+	for _, s := range res.Samples {
+		if s.Name == "agent_quota_utilization_ratio" {
+			scopes[label(s, "scope")], vals[s.Value] = true, true
+		}
+	}
+	if len(scopes) != 3 || len(vals) != 3 {
+		t.Fatalf("want three distinct series, got scopes %v values %v", scopes, vals)
+	}
+}
+
 // However many unknown keys the vendor adds, one profile gets at most maxOtherWindows "other" series, the same ones
 // on every call.
 func TestOAuthUsageOtherWindowsBounded(t *testing.T) {

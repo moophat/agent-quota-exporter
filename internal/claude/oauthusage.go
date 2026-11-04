@@ -356,8 +356,14 @@ func parseUsage(body []byte) (parsedQuota, error) {
 		if !ok || (!known && others >= maxOtherWindows) {
 			continue
 		}
-		if have[w+"/"+sc] {
-			sc = distinctScope(sc, k) // another key normalised to the same scope: keep both readings
+		if have[w+"/"+sc] { // another key normalised to the same scope: keep both readings
+			base, salt := sc, k
+			for i := 0; have[w+"/"+sc] && i < 8; i++ { // a key may even equal a generated scope
+				sc, salt = distinctScope(base, salt), salt+"#"
+			}
+			if have[w+"/"+sc] {
+				continue
+			}
 		}
 		var o *struct {
 			Utilization *float64 `json:"utilization"`

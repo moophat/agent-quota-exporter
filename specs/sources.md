@@ -43,7 +43,8 @@ Rules specific to `claude-oauth-usage`:
   - Any other top-level object with a numeric `utilization` (seen: `iguana_necktie`, `extra_usage`) → `window="other"`,
     scope = the key. Its length is not given and not guessed. At most 8 such keys per response, the first by key name,
     so a vendor adding keys cannot grow the series; a key over 48 characters is dropped. Two keys that normalise
-    to the same scope both stay: the later by key name gets the scope cut to 39 plus `_` and 8 hex digits of sha256(key). `extra_usage` is the paid
+    to the same scope both stay: the later by key name gets the scope cut to 39 plus `_` and 8 hex digits of sha256(key),
+    re-hashed with a salt if even that scope is taken (at most 8 tries, else the key is dropped). `extra_usage` is the paid
     allowance used past the subscription limits, a credits figure rather than a quota window; only its `utilization`
     ratio is exposed, under the same rule, never an amount (D9).
   - `limits[]`: `kind` `session` → `5h/all`, `weekly_all` → `7d/all`, `weekly_X` → `7d/X` (so `weekly_scoped` →
