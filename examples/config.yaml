@@ -24,5 +24,19 @@ profiles:
   - harness: claude-code
     alias: personal
     dir: /home/acct-b/.claude
+  - harness: codex
+    alias: codex-work
+    dir: /home/acct-a/.codex     # a CODEX_HOME; ~/.codex is also discovered
+  - harness: opencode
+    alias: oc-lane-1
+    dir: /var/lib/opencode-lane-1/opencode   # the data dir holding opencode.db
+  - harness: 9router                  # off unless declared
+    alias: router
+    dir: /home/acct-a/.9router
+  - harness: agy
+    alias: agy-a
+    dir: /home/acct-c            # the HOME agy runs under
+    account: agy-a1             # required: read each agy login from one host only
+    quota: { agy_usage: true }  # opt-in: runs agy's own /usage; each poll can trigger its normal token refresh
 sources:
   claude-oauth-usage: { min_interval: 15m, backoff_429: 60m }   # floors; may only be raised

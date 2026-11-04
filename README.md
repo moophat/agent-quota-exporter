@@ -1,8 +1,8 @@
 # agent-quota-exporter
 
-> Status: **v0.1 (pre-release), Claude Code only.** Implemented: core, the Claude transcript, session and account
-> plugins, and the opt-in Claude quota plugin (spec phases 1 and 2 for Claude). Codex, opencode and agy plugins,
-> OTLP and packaging are not built yet; see [specs/plan.md](specs/plan.md#phases-and-acceptance-criteria).
+> Status: **v0.2 (pre-release).** Claude Code (v0.1), plus Codex, opencode, a 9router router and agy
+> ([plans/261104-1800-more-sources](plans/261104-1800-more-sources/plan.md)). Provider balance endpoints, OTLP and
+> packaging are not built yet; see [specs/plan.md](specs/plan.md#phases-and-acceptance-criteria).
 
 A read-only Prometheus exporter for AI coding agents. It reports, per machine, per workspace and per account:
 
@@ -70,7 +70,20 @@ agent-quota-exporter --version
 ```
 
 - Config: [examples/config.yaml](examples/config.yaml). With no config file, profiles are auto-discovered under
-  `/root` and `/home/*` (`.claude` and `.claude-*` dirs). Quota is opt-in per profile (`quota: {claude_oauth_usage: true}`).
+  `/root` and `/home/*`: `.claude` and `.claude-*` dirs, `.codex` (with `sessions/`) and `.local/share/opencode`
+  (with `opencode.db`). Router and agy profiles exist only when declared. Sources:
+
+  | Source | Harness | Default | Reads |
+  |---|---|---|---|
+  | `claude-transcripts`, `claude-sessions`, `claude-account` | `claude-code` | on | local state |
+  | `claude-oauth-usage` | `claude-code` | opt-in, `quota: {claude_oauth_usage: true}` | the profile's token and Claude's quota endpoint |
+  | `codex-rollouts` | `codex` | on | quota, credits and tokens the Codex CLI wrote to its rollouts |
+  | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
+  | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
+  | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |
+
+  Read-only SQLite sources skip a cycle when a WAL database has no `-wal`/`-shm` (no writer has it open), so the
+  exporter never creates them; with a writer present they attach to the existing `-shm` like any SQLite reader.
 - systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service).
 - `--once` takes the same state-dir lock as the daemon, so it refuses to run next to a running exporter. Point it
   at a copy of the config with its own `state_dir` for ad-hoc checks; the quota endpoint is still asked at most once
@@ -93,7 +106,7 @@ agent-quota-exporter --version
 | `fixtures/` | sanitized sample inputs for offline development (see `fixtures/README.md`) |
 | `AGENTS.md` | rules for AI agents working in this repo (`CLAUDE.md` is a symlink to it) |
 | `.aiworkflow/` | work ledger and component manifest |
-| `cmd/`, `internal/` | the exporter: `config` (load, validate, discover), `core` (scheduler, state, exposition), `claude` (plugins), `app` (wiring and end-to-end test) |
+| `cmd/`, `internal/` | the exporter: `config` (load, validate, discover), `core` (scheduler, state, exposition), one package per harness (`claude`, `codex`, `opencode`, `router`, `agy`), `safefs` and `sqlro` (no-link files, allow-listed read-only SQLite), `app` (wiring and end-to-end test) |
 | `examples/` | example config and systemd unit |
 | `plans/` | build plans with their red-team review |
 
