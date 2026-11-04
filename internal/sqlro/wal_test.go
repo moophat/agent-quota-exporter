@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/moophat/agent-quota-exporter/internal/core"
 )
 
 // sidecars reports which of -wal and -shm exist next to path, with their mtimes.
@@ -102,8 +100,9 @@ func TestWALSidecarsAbsent(t *testing.T) {
 }
 
 // Read-only directory (measured as an unprivileged user; root ignores directory modes, so the test skips as
-// root). Without -wal and -shm the reader cannot create them and SQLite refuses with SQLITE_READONLY_DIRECTORY:
-// Open reports ReasonPermission and creates nothing. With a live writer the sidecars exist and the read works.
+// root). Without -wal and -shm, Open now refuses with ErrIdle before SQLite runs (SQLite itself would refuse with
+// SQLITE_READONLY_DIRECTORY, measured before ErrIdle existed); nothing is created. With a live writer the sidecars
+// exist and the read works.
 func TestWALReadOnlyDir(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory permissions; run the compiled test binary as an unprivileged user")
@@ -125,8 +124,10 @@ func TestWALReadOnlyDir(t *testing.T) {
 		if err := os.Chmod(dir, 0o555); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Open(path, routerAllow); reasonOf(err) != core.ReasonPermission {
-			t.Fatalf("want %s, got %v", core.ReasonPermission, err)
+		// Open refuses an idle WAL database before SQLite runs (ErrIdle), so it never reaches SQLite's
+		// SQLITE_READONLY_DIRECTORY here, and nothing is created either way.
+		if _, err := Open(path, routerAllow); !errors.Is(err, ErrIdle) {
+			t.Fatalf("want ErrIdle, got %v", err)
 		}
 		if s := sidecars(path); len(s) != 0 {
 			t.Fatalf("sidecars appeared: %v", keys(s))
