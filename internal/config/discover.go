@@ -34,6 +34,14 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 			if p.Disable {
 				continue
 			}
+			if !contains(Harnesses, p.Harness) {
+				// as in v0.1: a harness this build has no plugin for is skipped, not fatal
+				warns = append(warns, fmt.Sprintf("profile %s/%s: harness %q has no plugin in this version; skipped", p.Harness, p.Alias, p.Harness))
+				continue
+			}
+			if p.Quota["codex_rate_limits"] {
+				warns = append(warns, fmt.Sprintf("profile %s/%s: quota.codex_rate_limits is not built; ignored", p.Harness, p.Alias))
+			}
 			real := realPath(p.Dir)
 			taken[p.Harness+"\x00"+real] = true
 			aliases[p.Harness+"\x00"+p.Alias] = true

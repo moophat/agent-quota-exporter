@@ -662,3 +662,26 @@ func BenchmarkCycle(b *testing.B) {
 	b.ReportMetric(float64(peak)/(1<<20), "peak-heap-MiB")
 	b.ReportMetric(batch, "rows/cycle")
 }
+
+// A connection name is used as the account label only if, lowercased, it is label-safe and does not look like a
+// credential; otherwise the label is the hash of the connection id, so a key pasted into a name never becomes
+// a label value.
+func TestConnLabelRefusesKeyLikeNames(t *testing.T) {
+	s := &Source{}
+	for name, wantName := range map[string]bool{
+		"work-a":                      true,
+		"sk-abc123":                   false,
+		"SK-AbC123":                   false, // lowercased first, then refused
+		"aizasyexampleexample":        false,
+		"team-0123456789abcdefghijkl": false, // 22-char run
+		"openai.main_2":               true,
+	} {
+		got := s.connLabel("00000000-0000-4000-8000-000000000042", name, "", map[string]bool{})
+		if (got == name) != wantName {
+			t.Errorf("name %q: label %q, want name used=%v", name, got, wantName)
+		}
+		if !wantName && !strings.HasPrefix(got, "acct-") {
+			t.Errorf("name %q: want hash label, got %q", name, got)
+		}
+	}
+}

@@ -636,3 +636,13 @@ func TestAllowRefusesEverythingElse(t *testing.T) {
 		}
 	}
 }
+
+// A missing provider reads "unknown", like the router; an unsafe one "other". Both plugins then agree on what a
+// consumer sees for the same situation.
+func TestProviderLabelMatchesRouter(t *testing.T) {
+	for in, want := range map[string]string{"": "unknown", "  ": "unknown", "OpenAI": "openai", "bad provider!": "other"} {
+		if got := providerLabel(in); got != want {
+			t.Errorf("providerLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

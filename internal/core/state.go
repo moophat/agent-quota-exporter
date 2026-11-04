@@ -13,9 +13,12 @@ import (
 
 // InstState is the persisted part of one source instance.
 type InstState struct {
-	LastAttempt  int64           `json:"last_attempt,omitempty"` // unix seconds
-	LastSuccess  int64           `json:"last_success,omitempty"`
-	BackoffUntil int64           `json:"backoff_until,omitempty"`
+	LastAttempt  int64 `json:"last_attempt,omitempty"` // unix seconds
+	LastSuccess  int64 `json:"last_success,omitempty"`
+	BackoffUntil int64 `json:"backoff_until,omitempty"`
+	// LocalBackoff marks a backoff that applies to this instance only (a failed run, a tripped guard), not to its
+	// gate group. v0.1 only backed off on a 429, so a state without it keeps blocking the group as before.
+	LocalBackoff bool            `json:"local_backoff,omitempty"`
 	Plugin       json.RawMessage `json:"plugin,omitempty"`
 }
 

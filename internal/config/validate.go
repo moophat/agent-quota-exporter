@@ -21,8 +21,9 @@ const (
 // Harnesses lists every harness with a plugin, so a typo in config fails loudly.
 var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRouter, HarnessAgy}
 
-// quotaKeys are the opt-in quota sources a profile may enable, by harness.
-var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "agy_usage": HarnessAgy}
+// quotaKeys are the opt-in quota sources a profile may enable, by harness. codex_rate_limits is reserved: v0.1
+// accepted it, no plugin reads it yet, and Resolve warns that it is ignored.
+var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "agy_usage": HarnessAgy, "codex_rate_limits": HarnessCodex}
 
 // Floors are the vendor-safe minimums (specs/plan.md, "Scrape-time collection").
 var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
@@ -126,9 +127,6 @@ func (c *Config) Validate() error {
 		}
 		if p.Alias == "" {
 			add("profiles[%d].alias: required", i)
-		}
-		if p.Harness != "" && !contains(Harnesses, p.Harness) {
-			add("profiles[%d].harness: %q is not one of %s", i, p.Harness, strings.Join(Harnesses, ", "))
 		}
 		if contains(Harnesses, p.Harness) && p.Dir == "" {
 			add("profiles[%d].dir: required for %s", i, p.Harness)

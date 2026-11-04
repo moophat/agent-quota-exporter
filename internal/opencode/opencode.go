@@ -361,10 +361,14 @@ var (
 	modelOK    = regexp.MustCompile(`^[a-z0-9._:/@\[\]-]{1,64}$`)
 )
 
-// providerLabel bounds the stored provider id: lowercase, safe charset, ≤ 48 bytes, else "other".
+// providerLabel bounds the stored provider id: lowercase, safe charset, ≤ 48 bytes; missing is "unknown" (as for
+// the router and the contract's model rule), anything else unsafe is "other".
 func providerLabel(p string) string {
 	p = strings.ToLower(strings.TrimSpace(p))
-	if !providerOK.MatchString(p) {
+	switch {
+	case p == "":
+		return "unknown"
+	case !providerOK.MatchString(p):
 		return "other"
 	}
 	return p

@@ -47,6 +47,7 @@ type instance struct {
 	lastAttempt  time.Time
 	lastSuccess  time.Time
 	backoffUntil time.Time
+	localBackoff bool // backoffUntil applies to this instance only, not its gate group
 	lastOK       bool
 	readSeconds  float64
 	errors       map[string]float64
@@ -97,9 +98,11 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		}
 		if ps.BackoffUntil > 0 {
 			in.backoffUntil = time.Unix(ps.BackoffUntil, 0)
+			in.localBackoff = ps.LocalBackoff
 		}
 		if st.Quarantined && src.Network() {
 			in.backoffUntil = now.Add(QuarantineBackoff)
+			in.localBackoff = false
 			quarantined = true
 		}
 		// Host-wide spacing survives a restart: the newest persisted vendor attempt counts as the last call.
@@ -111,7 +114,7 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 				in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
 			}
 		}
-		if g := netGroup(src); src.Network() && in.backoffUntil.After(s.netBlock[g]) {
+		if g := netGroup(src); src.Network() && !in.localBackoff && in.backoffUntil.After(s.netBlock[g]) {
 			s.netBlock[g] = in.backoffUntil
 		}
 		s.insts = append(s.insts, in)
@@ -286,6 +289,7 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 			reason = se.Reason
 			if se.Backoff > 0 {
 				in.backoffUntil = start.Add(se.Backoff)
+				in.localBackoff = reason != ReasonRateLimited
 				if g := netGroup(in.src); in.src.Network() && reason == ReasonRateLimited && in.backoffUntil.After(s.netBlock[g]) {
 					s.netBlock[g] = in.backoffUntil
 				}
@@ -313,6 +317,7 @@ func (s *Scheduler) persistLocked(in *instance) {
 	ps.LastAttempt = unixOrZero(in.lastAttempt)
 	ps.LastSuccess = unixOrZero(in.lastSuccess)
 	ps.BackoffUntil = unixOrZero(in.backoffUntil)
+	ps.LocalBackoff = in.localBackoff && !in.backoffUntil.IsZero()
 	s.state.Put(in.key, ps)
 }
 

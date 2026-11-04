@@ -94,11 +94,24 @@ func (s *Source) readConns(db *sqlro.DB, now time.Time, errs map[string]int) (ma
 	return labels, nil
 }
 
+// keyLike reports a name that may be a credential pasted as a label: a common key prefix, or a run of 20 or more
+// letters and digits. Such a connection is labelled by the hash of its id instead.
+func keyLike(n string) bool {
+	for _, p := range []string{"sk-", "sk_", "key-", "pk-", "rk-", "ghp_", "gho_", "xox", "aiza"} {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return longAlnum.MatchString(n)
+}
+
+var longAlnum = regexp.MustCompile(`[a-z0-9]{20,}`)
+
 // connLabel picks the first free label of: the connection's name if label-safe, its email in email mode, the
 // hash of its id. "" means all are taken.
 func (s *Source) connLabel(id, name, email string, used map[string]bool) string {
 	var cand []string
-	if n := strings.ToLower(strings.TrimSpace(name)); labelRe.MatchString(n) {
+	if n := strings.ToLower(strings.TrimSpace(name)); labelRe.MatchString(n) && !keyLike(n) {
 		cand = append(cand, n)
 	}
 	if e := strings.ToLower(strings.TrimSpace(email)); s.EmailMode && emailRe.MatchString(e) {

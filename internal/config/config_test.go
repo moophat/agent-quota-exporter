@@ -160,10 +160,8 @@ func TestDiscoveryCodexAndOpencode(t *testing.T) {
 
 func TestValidateHarnessesAndQuotaKeys(t *testing.T) {
 	for name, body := range map[string]string{
-		"unknown harness":         "version: 1\nprofiles: [{harness: cursor, alias: a, dir: /x}]\n",
 		"dir required":            "version: 1\nprofiles: [{harness: codex, alias: a}]\n",
 		"quota key wrong harness": "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {claude_oauth_usage: true}}]\n",
-		"unbuilt quota key":       "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {codex_rate_limits: true}}]\n",
 	} {
 		c := Default()
 		if err := decode([]byte(body), c); err == nil {
@@ -207,5 +205,27 @@ func TestDiscoveryModes(t *testing.T) {
 	c.Discovery.Mode = "only"
 	if got, _ := c.Resolve(none); len(got) != 1 || got[0].Alias != "u" {
 		t.Fatalf("only: %+v", got)
+	}
+}
+
+// v0.1 configs keep loading: an unknown harness is warned about and skipped, and the reserved codex_rate_limits key
+// is accepted with a warning that nothing reads it yet.
+func TestV01ConfigsStillLoad(t *testing.T) {
+	c := Default()
+	body := "version: 1\ndiscovery: {mode: \"off\"}\nprofiles:\n" +
+		"  - {harness: cursor, alias: cu, dir: /x}\n" +
+		"  - {harness: codex, alias: cx, dir: /y, quota: {codex_rate_limits: true}}\n"
+	if err := decode([]byte(body), c); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a v0.1 config was rejected: %v", err)
+	}
+	got, warns := c.Resolve(func(string) string { return "" })
+	if len(got) != 1 || got[0].Harness != HarnessCodex {
+		t.Fatalf("want only the codex profile resolved, got %+v", got)
+	}
+	if len(warns) != 2 || !strings.Contains(warns[0], "cursor") || !strings.Contains(warns[1], "codex_rate_limits") {
+		t.Fatalf("want a skip warning and a reserved-key warning, got %v", warns)
 	}
 }
