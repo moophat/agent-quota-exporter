@@ -23,7 +23,8 @@ the plan in one important way, below.
 ## Principle: the vendor's own client, passive first
 
 Read what the vendor's own client already wrote to disk. Failing that, ask the vendor's own client, the way a person would.
-This tool holds no token, makes no vendor call of its own, and impersonates nothing. Anything active is opt-in and gated.
+The new sources hold no token, make no vendor call of their own, and impersonate nothing. Anything active is opt-in and gated.
+`claude-oauth-usage` from v0.1 differs: it reads the profile's current token and calls a private endpoint, opt-in. It stays as it is.
 
 ## What the on-prem reading found (2026-11-04, Codex CLI 0.163.0)
 
