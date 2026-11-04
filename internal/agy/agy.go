@@ -2,7 +2,7 @@
 //
 // The exporter never calls the vendor and never touches a token: it spawns the vendor's official client with a
 // fixed argv, the way a person would type it, and reads the JSON it prints. The client may refresh its own login
-// while doing so, as any agy run does (specs/sources.md, "agy").
+// while doing so, as any agy run does, so it always runs as the owner of the profile HOME (specs/sources.md, "agy").
 package agy
 
 import (
@@ -82,9 +82,10 @@ func (s *UsageSource) Network() bool              { return true }
 // NetGroup keeps agy's spacing and backoff apart from Claude's endpoint: a lock on one never pauses the other.
 func (s *UsageSource) NetGroup() string { return Harness }
 
-// ReadTimeout covers waiting for another profile's run, this run, and both grace periods.
+// ReadTimeout covers waiting for another profile's run and this run, each with its two grace periods (one for the
+// client after the timeout, one for whatever of its process group outlives it).
 func (s *UsageSource) ReadTimeout() time.Duration {
-	return 2*(s.timeout()+s.grace()) + 5*time.Second
+	return 2*(s.timeout()+2*s.grace()) + 5*time.Second
 }
 
 func (s *UsageSource) timeout() time.Duration {
@@ -177,6 +178,10 @@ func (s *UsageSource) run(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	cred, err := s.credential()
+	if err != nil {
+		return nil, err
+	}
 	select {
 	case runSlot <- struct{}{}:
 	case <-ctx.Done():
@@ -197,8 +202,8 @@ func (s *UsageSource) run(ctx context.Context) ([]byte, error) {
 	cmd.Stdin = nil
 	cmd.Stdout = stdout
 	cmd.Stderr = nil // discarded: it may carry anything, and is never logged
-	// Own process group, so a wrapper script's children get the signals too.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Own process group, so a wrapper script's children get the signals too; run as the HOME's owner (credential).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: cred}
 	// On timeout: SIGTERM first, so the client can finish writing its token file; SIGKILL after the grace.
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = s.grace()
@@ -207,9 +212,10 @@ func (s *UsageSource) run(ctx context.Context) ([]byte, error) {
 		return nil, core.Fail(core.ErrReason(err))
 	}
 	werr := cmd.Wait()
+	// Wait also returns when the client exited but a child of it still holds stdout (after WaitDelay), so the
+	// group is cleared after every run, not only on timeout.
+	s.reapGroup(cmd.Process.Pid)
 	if rctx.Err() != nil {
-		// Whatever of the group outlived the grace goes now (the leader was already killed by WaitDelay).
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		if ctx.Err() != nil {
 			return nil, core.Fail(core.ReasonTimeout) // shutdown, not a hung client: no backoff to persist
 		}
@@ -226,6 +232,57 @@ func (s *UsageSource) run(ctx context.Context) ([]byte, error) {
 		return nil, core.Fail(core.ReasonParse)
 	}
 	return stdout.buf.Bytes(), nil
+}
+
+// credential checks the profile HOME and returns the identity the client runs as: always the HOME's owner, so a
+// login refresh rewrites the token file under the owner's uid and never locks the owner out of their own agy. Nil
+// means "as the exporter" (the exporter is the owner). The HOME must be a real directory, not a link.
+func (s *UsageSource) credential() (*syscall.Credential, error) {
+	fi, err := os.Lstat(s.Dir)
+	if err != nil {
+		return nil, core.Fail(core.ErrReason(err))
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || !fi.IsDir() {
+		return nil, core.Fail(core.ReasonPermission) // a link or a file where the HOME should be: refuse to run
+	}
+	euid := uint32(os.Geteuid())
+	uid, ok := runAs(euid, st.Uid)
+	if !ok {
+		return nil, core.Fail(core.ReasonPermission)
+	}
+	if uid == euid {
+		return nil, nil
+	}
+	// Supplementary groups are dropped (Groups empty): the exporter's own (root's) groups must not reach the client,
+	// and the owner's are not looked up. The gid is the HOME's group.
+	return &syscall.Credential{Uid: uid, Gid: st.Gid, Groups: []uint32{}}, nil
+}
+
+// runAs decides which uid the client runs as for a HOME owned by owner, given the exporter's effective uid: always
+// the owner. A root exporter switches to the owner (stays root for root's own HOME); any other exporter runs only
+// its own HOME, since it cannot switch user.
+func runAs(euid, owner uint32) (uint32, bool) {
+	if euid != 0 && euid != owner {
+		return 0, false
+	}
+	return owner, true
+}
+
+// reapGroup ends whatever of the client's process group is still running: SIGTERM, then the grace to finish
+// writing a token file, then SIGKILL. An empty group (the usual case) costs one kill(2) returning ESRCH.
+func (s *UsageSource) reapGroup(pgid int) {
+	if syscall.Kill(-pgid, syscall.SIGTERM) == syscall.ESRCH {
+		return
+	}
+	deadline := time.Now().Add(s.grace())
+	for time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		if syscall.Kill(-pgid, 0) == syscall.ESRCH {
+			return
+		}
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 }
 
 func (s *UsageSource) backoff() time.Duration {

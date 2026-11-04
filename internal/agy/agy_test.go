@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +35,11 @@ func TestMain(m *testing.M) {
 
 func fakeAgy() int {
 	home := os.Getenv("HOME")
+	if len(os.Args) > 1 && os.Args[1] == "grandchild" { // left behind by mode "linger", holding stdout open
+		time.Sleep(30 * time.Second)
+		return 0
+	}
+	_ = os.WriteFile(filepath.Join(home, "uid.txt"), []byte(strconv.Itoa(os.Getuid())), 0o600)
 	mode := "ok"
 	if b, err := os.ReadFile(filepath.Join(home, "mode")); err == nil {
 		mode = strings.TrimSpace(string(b))
@@ -85,6 +93,13 @@ func fakeAgy() int {
 	case "big":
 		os.Stdout.Write(make([]byte, maxStdout+1))
 		return 0
+	case "linger": // exits at once, leaving a grandchild in its process group that keeps stdout open
+		gc := exec.Command(os.Args[0], "grandchild")
+		gc.Env, gc.Stdout = os.Environ(), os.Stdout
+		if gc.Start() != nil {
+			return 4
+		}
+		_ = os.WriteFile(filepath.Join(home, "grandchild.pid"), []byte(strconv.Itoa(gc.Process.Pid)), 0o600)
 	}
 	b, _ := os.ReadFile(filepath.Join(home, "out.json"))
 	os.Stdout.Write(b)
@@ -458,5 +473,158 @@ func TestMissingClientIsNotFound(t *testing.T) {
 	}
 	if exists(filepath.Join(home, "ran")) {
 		t.Error("nothing may run when agy is not on PATH")
+	}
+}
+
+// gone reports whether pid has exited: no such process, or a zombie its new parent has not reaped yet.
+func gone(pid int) bool {
+	if syscall.Kill(pid, 0) == syscall.ESRCH {
+		return true
+	}
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return true
+	}
+	f := strings.Fields(string(b[strings.LastIndexByte(string(b), ')')+1:]))
+	return len(f) > 0 && f[0] == "Z"
+}
+
+func TestLingeringGrandchildIsReaped(t *testing.T) {
+	s, home := newSource(t, "linger", fixture(t))
+	s.Grace = 300 * time.Millisecond
+	_, _, _ = s.Collect(context.Background(), t0, nil) // the result does not matter here, only what is left running
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(t, filepath.Join(home, "grandchild.pid"))))
+	if err != nil || pid <= 0 {
+		t.Fatalf("grandchild pid: %v", err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	deadline := time.Now().Add(2 * time.Second)
+	for !gone(pid) {
+		if time.Now().After(deadline) {
+			t.Fatal("a grandchild holding stdout outlived Collect: the process group was not cleared")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// ownedTree builds, under a world-traversable root of its own, a copy of the fake client and a HOME owned by uid,
+// so the client can run as that user (t.TempDir and the go build cache may be closed to other users).
+func ownedTree(t *testing.T, uid int) (bin, home string) {
+	t.Helper()
+	root, err := os.MkdirTemp("", "agy-owner-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := os.Open(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	bin = filepath.Join(root, "agy")
+	out, err := os.OpenFile(bin, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	home = filepath.Join(root, "home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(home, "out.json"), fixture(t))
+	for _, p := range []string{home, filepath.Join(home, "out.json")} {
+		if err := os.Chown(p, uid, uid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return bin, home
+}
+
+func ownedSource(t *testing.T, uid int) (*UsageSource, string) {
+	t.Helper()
+	bin, home := ownedTree(t, uid)
+	s := Build(config.Default(), config.Resolved{Harness: config.HarnessAgy, Alias: "p1", Dir: home, Account: "acct-a1",
+		Quota: map[string]bool{"agy_usage": true}}, "node-a")[0].(*UsageSource)
+	s.Bin = bin
+	return s, home
+}
+
+func TestClientRunsAsHomeOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching the client's user needs root")
+	}
+	const nobody = 65534
+	for _, owner := range []int{nobody, 0} {
+		t.Run(strconv.Itoa(owner), func(t *testing.T) {
+			s, home := ownedSource(t, owner)
+			if _, _, err := s.Collect(context.Background(), t0, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := readFile(t, filepath.Join(home, "uid.txt")); got != strconv.Itoa(owner) {
+				t.Errorf("client ran as uid %s, want the HOME's owner %d", got, owner)
+			}
+			// what the client wrote in the HOME belongs to the owner, as a token-file rewrite would
+			fi, err := os.Stat(filepath.Join(home, "uid.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st := fi.Sys().(*syscall.Stat_t); st.Uid != uint32(owner) || st.Gid != uint32(owner) {
+				t.Errorf("file written by the client is owned by %d:%d, want %d:%d", st.Uid, st.Gid, owner, owner)
+			}
+		})
+	}
+}
+
+func TestHomeMustBeARealDirectory(t *testing.T) {
+	s, home := newSource(t, "ok", fixture(t))
+	link := filepath.Join(t.TempDir(), "home-link")
+	if err := os.Symlink(home, link); err != nil {
+		t.Fatal(err)
+	}
+	s.Dir = link
+	if _, _, err := s.Collect(context.Background(), t0, nil); sourceErr(t, err).Reason != core.ReasonPermission {
+		t.Errorf("HOME behind a link: want permission, got %v", err)
+	}
+	s.Dir = filepath.Join(home, "out.json")
+	if _, _, err := s.Collect(context.Background(), t0, nil); sourceErr(t, err).Reason != core.ReasonPermission {
+		t.Errorf("HOME is a file: want permission, got %v", err)
+	}
+	s.Dir = filepath.Join(home, "missing")
+	if _, _, err := s.Collect(context.Background(), t0, nil); sourceErr(t, err).Reason != core.ReasonNotFound {
+		t.Errorf("HOME missing: want not_found, got %v", err)
+	}
+	if exists(filepath.Join(home, "ran")) {
+		t.Error("the client was spawned without a valid HOME")
+	}
+}
+
+func TestRunAs(t *testing.T) {
+	for _, c := range []struct {
+		euid, owner, want uint32
+		ok                bool
+	}{
+		{0, 0, 0, true},             // root exporter, root's own HOME: root
+		{0, 1000, 1000, true},       // root exporter switches to the owner
+		{1000, 1000, 1000, true},    // the exporter's own HOME
+		{1000, 1001, 0, false},      // another user's HOME: a non-root exporter cannot switch
+		{1000, 0, 0, false},         // root's HOME from a non-root exporter
+		{65534, 65534, 65534, true}, // any non-root exporter in its own HOME
+	} {
+		got, ok := runAs(c.euid, c.owner)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("runAs(%d, %d) = %d, %v; want %d, %v", c.euid, c.owner, got, ok, c.want, c.ok)
+		}
 	}
 }

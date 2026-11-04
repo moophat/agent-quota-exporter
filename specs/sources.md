@@ -158,6 +158,9 @@ Known data-quality traps (from observed instances):
 Never-read (hard blocklist, enforced by the query allow-list): tables `account`, `control_account`, `credential`
 (`access_token`, `refresh_token`, `value`), `permission`, `part` (message text), and `/provider` response keys
 `key` and `options`.
+- Known limit: `message` has a text primary key, so its rowid is implicit. If the newest rows are deleted (a
+  session removed) and new ones arrive before the next collect, SQLite can reuse rowids at or below the cursor and
+  those rows are not counted. This can only undercount, never double count.
 
 ## agy (harness `agy`, provider `google`)
 
@@ -182,12 +185,23 @@ Rules specific to `agy-usage`:
   `HOME` = the profile, environment exactly `HOME`, `PATH` (the exporter's own, `/usr/local/bin:/usr/bin:/bin` if
   unset) and `LANG=C`, stdin from `/dev/null`,
   stdout capped at 256 KiB (more is a `parse` error), stderr discarded and never logged.
+- **The client runs as the owner of the profile `HOME`, never as anyone else.** A login refresh rewrites the token file;
+  run as another user (root, say) it would leave that file owned by the wrong user and could lock the owner out of
+  their own agy. Before each run the exporter `lstat`s the `HOME`: it must be a real directory, not a link (else
+  `reason="permission"`, nothing spawned; a missing `HOME` is `not_found`). An exporter running as root runs the client
+  with the `HOME`'s owner uid and group gid and no supplementary groups (root only for a root-owned `HOME`). An exporter
+  running as any other user runs the client only for a `HOME` it owns itself; for any other `HOME` it spawns nothing and
+  reports `reason="permission"` on every attempt. So a dedicated, unprivileged exporter user cannot read agy quota for
+  other users' profiles: run the exporter as root, or as the profile's own user. The client binary must be executable
+  by the `HOME`'s owner (an unreadable one is `reason="permission"`).
 - **Token refresh is the client's.** A run with an expired access token refreshes it and rewrites the token file, as any
   agy run does; two runs with a live token changed nothing (on-prem, by hash and mtime only). So each poll can trigger the
   client's normal refresh. Whether the refresh token itself rotates is re-checked on-prem on an rc before `v0.2.0`; if it
   rotates, the source stays out of the release.
 - **Timeout:** 30 s per run. The client runs in its own process group; on timeout the group gets `SIGTERM`, then 5 s to
-  finish writing its token file, then `SIGKILL`. Never `SIGKILL` first.
+  finish writing its token file, then `SIGKILL`. Never `SIGKILL` first. After every run, timeout or not, whatever is
+  left of the group (a child that outlived the client, for instance one still holding its stdout) gets the same
+  `SIGTERM`, grace, `SIGKILL`.
 - **One client at a time** per exporter, across all profiles. agy has its own gate group (`agy`) for spacing and backoff,
   so a backoff on Claude's endpoint never pauses agy and the reverse. `sources.agy-usage.backoff_429` sets the backoff after
   a non-zero exit or timeout (floor 60 min).
@@ -262,6 +276,10 @@ Never-read (enforced by the query allow-list and tested): `usageHistory.apiKey`,
 `usageHistory.meta`, `usageHistory.endpoint`, `providerConnections.data` as a whole and every path in it except the two
 above (it holds `accessToken`, `refreshToken`, `idToken`, `apiKey`), `providerConnections.email` unless
 `account_label: email`, and every other table.
+- Known limit: labels are recomputed each cycle. If a connection is deleted or renamed and another connection takes
+  its label, the newcomer's usage continues that label's counters instead of starting from zero (counters stay
+  monotonic; the attribution moves). A connection name that looks like a credential (a common key prefix, or a run
+  of 20 or more letters and digits) is never used as a label; the hash of its id is used instead.
 
 ## Other providers (later, by plugin)
 
