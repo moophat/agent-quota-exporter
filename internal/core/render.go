@@ -32,6 +32,7 @@ var families = []family{
 	{"agent_account_info", "gauge", "Slow-changing account facts."},
 	{"agent_credential_expiry_timestamp_seconds", "gauge", "Access-token expiry time, Unix seconds (never the token)."},
 	{"agent_sessions", "gauge", "Live sessions by state."},
+	{"agent_router_connection_enabled", "gauge", "1 if the operator enabled the router connection, 0 if disabled."},
 	{"agent_router_connection_up", "gauge", "1 if the router connection is active, its last test passed and it is not rate-limited."},
 	{"agent_router_rate_limited_until_timestamp_seconds", "gauge", "When the router's own rate limit on the connection ends, Unix seconds."},
 	{"agent_source_up", "gauge", "1 if the last read of the source succeeded or a fresh cache entry exists."},

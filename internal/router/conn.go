@@ -139,7 +139,9 @@ func connHealth(label string, r []any, errs map[string]int) health {
 	if !known {
 		errs[core.ReasonParse]++
 	}
-	h.OK = active == 1 && testPass[ts]
+	enabled := active == 1
+	h.Enabled = &enabled
+	h.OK = enabled && testPass[ts]
 	until, ok := untilSeconds(r[5])
 	if !ok {
 		errs[core.ReasonParse]++

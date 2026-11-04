@@ -136,6 +136,7 @@ func usage(want map[string]float64, acct, prov, model string, in, out, ok, errs,
 
 func up(want map[string]float64, acct, prov string, v float64) {
 	want["agent_router_connection_up{account="+acct+",provider="+prov+"}"] = v
+	want["agent_router_connection_enabled{account="+acct+",provider="+prov+"}"] = 1
 }
 
 func until(want map[string]float64, acct, prov string, v float64) {
@@ -149,8 +150,9 @@ func goldenHealth() map[string]float64 {
 	up(w, hash(c2), "codex", 0) // rate-limited until 13:00
 	until(w, hash(c2), "codex", 1793797200)
 	up(w, "or-key", "openrouter", 0) // last test failed
-	up(w, "glm-1", "glm", 0)         // inactive; its rate limit is over, so no until series
-	up(w, "gem-1", "gemini", 0)      // rate-limited until 14:00 (epoch ms)
+	w["agent_router_connection_enabled{account=glm-1,provider=glm}"] = 0
+	w["agent_router_connection_up{account=glm-1,provider=glm}"] = 0 // inactive; its rate limit is over, so no until series
+	up(w, "gem-1", "gemini", 0)                                     // rate-limited until 14:00 (epoch ms)
 	until(w, "gem-1", "gemini", 1793800800)
 	up(w, hash(c6), "claude", 1) // duplicate name: hash
 	up(w, "kiro-1", "kiro", 1)   // data not JSON: no failure recorded
@@ -704,6 +706,42 @@ func TestConnLabelRefusesKeyLikeNames(t *testing.T) {
 		}
 		if !wantName && !strings.HasPrefix(got, "acct-") {
 			t.Errorf("name %q: want hash label, got %q", name, got)
+		}
+	}
+}
+
+// Enabled distinguishes an operator disable from a failing test, survives restart,
+// and follows re-enabling without changing the existing up semantics.
+func TestConnectionEnabled(t *testing.T) {
+	dir := t.TempDir()
+	_, w := writer(t, dir, false)
+	defer w.Close()
+	execAll(t, w, "rows.sql")
+	s := newSource(dir, nil)
+	_, st := run(t, s, t0, nil)
+	for _, active := range []int{0, 1, 0} {
+		execAll(t, w, fmt.Sprintf("UPDATE providerConnections SET isActive=%d WHERE id='%s'", active, c1))
+		s = newSource(dir, nil)
+		res, next := run(t, s, t0, st)
+		st = next
+		got := series(t, res.Samples)
+		key := "agent_router_connection_enabled{account=work-a,provider=claude}"
+		if v, ok := got[key]; !ok || v != float64(active) {
+			t.Fatalf("enabled=%v present=%v, want %d", v, ok, active)
+		}
+		if got["agent_router_connection_up{account=work-a,provider=claude}"] != float64(active) {
+			t.Fatal("up must follow operator enable for a passing connection")
+		}
+		// Persisted samples must carry the signal even if the DB cannot be read next time.
+		restored := newSource(dir, nil)
+		restored.st = restored.load(st)
+		equalSeries(t, series(t, restored.samples(t0)), got)
+	}
+	// Older state has no enabled field: do not invent an operator setting.
+	s.st.Health = []health{{Label: "legacy", Provider: "claude", OK: false}}
+	for k := range series(t, s.samples(t0)) {
+		if strings.HasPrefix(k, "agent_router_connection_enabled{") {
+			t.Fatal("legacy state invented enabled status")
 		}
 	}
 }

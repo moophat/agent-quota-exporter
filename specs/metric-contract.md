@@ -99,6 +99,7 @@ agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="
 | `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported, bounded to `pro`, `max`, `team`; any other or missing value is `unknown` |
 | `agent_credential_expiry_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | access-token expiry time (a timestamp only, never the token); absent if unknown |
 | `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state: `active`, `idle`, `other`. A count: no session ids |
+| `agent_router_connection_enabled` | gauge | 0/1 | `host harness profile account provider` | 1 if `isActive=1`, else 0; distinguishes operator-disabled connections from failures; absent from legacy cached health until a successful database read |
 | `agent_router_connection_up` | gauge | 0/1 | `host harness profile account provider` | a router's upstream connection (`account` = its alias or hash): 1 if active, its last test did not fail and it is not rate-limited now |
 | `agent_router_rate_limited_until_timestamp_seconds` | gauge | Unix seconds | same | when the router's own rate limit on the connection ends; absent when none |
 
@@ -142,6 +143,8 @@ Same metric names and attributes; counters map to monotonic sums, gauges to gaug
 Units are carried in the OTLP unit field (`s`, `1`, `{token}`). Off by default.
 
 ## Versioning
+
+The router enabled gauge is additive (contract stays 0). Existing connection-up semantics remain unchanged; alert on down connections only when `agent_router_connection_enabled == 1`.
 
 `contract` in `agent_quota_exporter_build_info` is an integer. Adding a metric or a label value is non-breaking.
 Removing or renaming a metric, changing a type, unit or label set is breaking and bumps it.

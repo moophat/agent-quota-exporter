@@ -80,8 +80,9 @@ type Source struct {
 type health struct {
 	Label    string `json:"l"`
 	Provider string `json:"p"`
-	OK       bool   `json:"ok"`          // active and last test not failed
-	Until    int64  `json:"u,omitempty"` // rateLimitedUntil, Unix seconds; 0 = none
+	Enabled  *bool  `json:"enabled,omitempty"` // nil in state written before this signal existed
+	OK       bool   `json:"ok"`                // active and last test not failed
+	Until    int64  `json:"u,omitempty"`       // rateLimitedUntil, Unix seconds; 0 = none
 }
 
 type total struct {
@@ -286,6 +287,13 @@ func (s *Source) labels(account, provider string, extra ...core.Label) []core.La
 func (s *Source) samples(now time.Time) []core.Sample {
 	var out []core.Sample
 	for _, h := range s.st.Health {
+		if h.Enabled != nil {
+			enabled := 0.0
+			if *h.Enabled {
+				enabled = 1
+			}
+			out = append(out, core.Sample{Name: "agent_router_connection_enabled", Labels: s.labels(h.Label, h.Provider), Value: enabled})
+		}
 		up, limited := 0.0, h.Until > now.Unix()
 		if h.OK && !limited {
 			up = 1
