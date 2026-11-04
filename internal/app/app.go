@@ -6,9 +6,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/moophat/agent-quota-exporter/internal/agy"
 	"github.com/moophat/agent-quota-exporter/internal/claude"
+	"github.com/moophat/agent-quota-exporter/internal/codex"
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/opencode"
+	"github.com/moophat/agent-quota-exporter/internal/router"
 )
 
 const (
@@ -30,7 +34,22 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 	b := Built{Profiles: map[[2]string]int{}}
 	cache := claude.NewQuotaCache()
 	for _, r := range profiles {
+		var srcs []core.Source
+		switch r.Harness {
+		case config.HarnessCodex:
+			srcs = codex.Build(cfg, r, host)
+		case config.HarnessOpencode:
+			srcs = opencode.Build(cfg, r, host)
+		case config.HarnessRouter:
+			srcs = router.Build(cfg, r, host)
+		case config.HarnessAgy:
+			srcs = agy.Build(cfg, r, host)
+		}
 		if r.Harness != config.HarnessClaude {
+			if len(srcs) > 0 {
+				b.Profiles[[2]string{r.Harness, r.Origin}]++
+				b.Sources = append(b.Sources, srcs...)
+			}
 			continue
 		}
 		b.Profiles[[2]string{r.Harness, r.Origin}]++

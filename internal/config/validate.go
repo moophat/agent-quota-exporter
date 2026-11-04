@@ -10,7 +10,19 @@ import (
 )
 
 // Harness names this build has a plugin for.
-const HarnessClaude = "claude-code"
+const (
+	HarnessClaude   = "claude-code"
+	HarnessCodex    = "codex"
+	HarnessOpencode = "opencode"
+	HarnessRouter   = "9router"
+	HarnessAgy      = "agy"
+)
+
+// Harnesses lists every harness with a plugin, so a typo in config fails loudly.
+var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRouter, HarnessAgy}
+
+// quotaKeys are the opt-in quota sources a profile may enable, by harness.
+var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "agy_usage": HarnessAgy}
 
 // Floors are the vendor-safe minimums (specs/plan.md, "Scrape-time collection").
 var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
@@ -18,6 +30,10 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 	"claude-transcripts": {30 * time.Second, 0},
 	"claude-sessions":    {5 * time.Second, 0},
 	"claude-account":     {30 * time.Second, 0},
+	"codex-rollouts":     {30 * time.Second, 0},
+	"opencode-db":        {30 * time.Second, 0},
+	"router-9router":     {30 * time.Second, 0},
+	"agy-usage":          {15 * time.Minute, 60 * time.Minute},
 }
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
@@ -111,8 +127,11 @@ func (c *Config) Validate() error {
 		if p.Alias == "" {
 			add("profiles[%d].alias: required", i)
 		}
-		if p.Harness == HarnessClaude && p.Dir == "" {
-			add("profiles[%d].dir: required for %s", i, HarnessClaude)
+		if p.Harness != "" && !contains(Harnesses, p.Harness) {
+			add("profiles[%d].harness: %q is not one of %s", i, p.Harness, strings.Join(Harnesses, ", "))
+		}
+		if contains(Harnesses, p.Harness) && p.Dir == "" {
+			add("profiles[%d].dir: required for %s", i, p.Harness)
 		}
 		key := p.Harness + "/" + p.Alias
 		if seen[key] {
@@ -120,8 +139,12 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = true
 		for q := range p.Quota {
-			if q != "claude_oauth_usage" && q != "codex_rate_limits" {
+			h, ok := quotaKeys[q]
+			switch {
+			case !ok:
 				add("profiles[%d].quota.%s: unknown quota source", i, q)
+			case h != p.Harness:
+				add("profiles[%d].quota.%s: only for harness %s", i, q, h)
 			}
 		}
 	}
@@ -129,6 +152,15 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config invalid:\n  %s", strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // SourceInterval returns the effective min interval for a source: config override, else def.

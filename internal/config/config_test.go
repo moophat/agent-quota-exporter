@@ -118,12 +118,67 @@ func TestDiscovery(t *testing.T) {
 	for _, p := range got {
 		aliases = append(aliases, p.Origin+":"+p.Alias)
 	}
-	want := "config:dee discovered:x discovered:a discovered:claude-work discovered:root"
+	want := "config:dee config:cx discovered:x discovered:a discovered:claude-work discovered:root"
 	if strings.Join(aliases, " ") != want {
 		t.Fatalf("got %q want %q", strings.Join(aliases, " "), want)
 	}
-	if len(warns) != 1 || !strings.Contains(warns[0], "codex") {
-		t.Fatalf("want one codex skip warning, got %v", warns)
+	if len(warns) != 0 {
+		t.Fatalf("codex has a plugin now; want no warnings, got %v", warns)
+	}
+}
+
+// Codex homes and opencode data dirs are discovered beside Claude dirs. Aliases are per harness, so the same home
+// yields "root" for each harness instead of "root-2"; a linked .local is not followed (as root, a user's link could
+// expose another profile under their name).
+func TestDiscoveryCodexAndOpencode(t *testing.T) {
+	r := t.TempDir()
+	mkdirs(t, r, "root/.claude/projects", "root/.codex/sessions/2026/11/04", "root/.local/share/opencode",
+		"home/u/.codex", "home/v/.local/share/opencode", "target/share/opencode")
+	for _, f := range []string{"root/.local/share/opencode/opencode.db", "target/share/opencode/opencode.db"} {
+		if err := os.WriteFile(filepath.Join(r, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// home/w/.local is a link to a dir holding a real opencode.db: must not be discovered.
+	mkdirs(t, r, "home/w")
+	if err := os.Symlink(filepath.Join(r, "target"), filepath.Join(r, "home/w/.local")); err != nil {
+		t.Fatal(err)
+	}
+	c := Default()
+	c.Discovery.Roots = []string{filepath.Join(r, "root"), filepath.Join(r, "home/*")}
+	got, _ := c.Resolve(func(string) string { return "" })
+	var hs []string
+	for _, p := range got {
+		hs = append(hs, p.Harness+":"+p.Alias)
+	}
+	// u/.codex has no sessions/ and v's opencode dir has no opencode.db: neither is a profile.
+	want := "claude-code:root codex:root opencode:root"
+	if strings.Join(hs, " ") != want {
+		t.Fatalf("got %q want %q", strings.Join(hs, " "), want)
+	}
+}
+
+func TestValidateHarnessesAndQuotaKeys(t *testing.T) {
+	for name, body := range map[string]string{
+		"unknown harness":         "version: 1\nprofiles: [{harness: cursor, alias: a, dir: /x}]\n",
+		"dir required":            "version: 1\nprofiles: [{harness: codex, alias: a}]\n",
+		"quota key wrong harness": "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {claude_oauth_usage: true}}]\n",
+		"unbuilt quota key":       "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {codex_rate_limits: true}}]\n",
+	} {
+		c := Default()
+		if err := decode([]byte(body), c); err == nil {
+			if err := c.Validate(); err == nil {
+				t.Errorf("%s: accepted", name)
+			}
+		}
+	}
+	c := Default()
+	ok := "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, quota: {agy_usage: true}}]\n"
+	if err := decode([]byte(ok), c); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
 	}
 }
 

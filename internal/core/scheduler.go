@@ -61,8 +61,8 @@ type Scheduler struct {
 	clock     Clock
 	log       *slog.Logger
 	sem       chan struct{}
-	netBlock  time.Time // host-wide 429 backoff for network sources
-	netLast   time.Time // last vendor call start
+	netBlock  map[string]time.Time // host-wide 429 backoff per gate group (NetGrouper)
+	netLast   map[string]time.Time // last vendor call start per gate group
 	wg        sync.WaitGroup
 	saveError string
 	// saveFailing blocks vendor calls while the state cannot be written: an attempt or a 429 backoff that is
@@ -73,7 +73,8 @@ type Scheduler struct {
 // NewScheduler builds a scheduler. staleFloor is defaults.stale_after; the effective staleness per source is
 // max(staleFloor, 3 × its interval) (contract, "Cardinality rules" 5).
 func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, staleFloor time.Duration) *Scheduler {
-	s := &Scheduler{state: st, clock: clock, log: log, sem: make(chan struct{}, MaxConcurrentReads)}
+	s := &Scheduler{state: st, clock: clock, log: log, sem: make(chan struct{}, MaxConcurrentReads),
+		netBlock: map[string]time.Time{}, netLast: map[string]time.Time{}}
 	now := clock.Now()
 	quarantined := false
 	for _, src := range srcs {
@@ -102,16 +103,16 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 			quarantined = true
 		}
 		// Host-wide spacing survives a restart: the newest persisted vendor attempt counts as the last call.
-		if src.Network() && in.lastAttempt.After(s.netLast) {
-			s.netLast = in.lastAttempt
+		if g := netGroup(src); src.Network() && in.lastAttempt.After(s.netLast[g]) {
+			s.netLast[g] = in.lastAttempt
 		}
 		if r, ok := src.(Restorer); ok && len(ps.Plugin) > 0 {
 			if res := r.Restore(ps.Plugin); !res.ObservedAt.IsZero() && len(res.Samples) > 0 {
 				in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
 			}
 		}
-		if src.Network() && in.backoffUntil.After(s.netBlock) {
-			s.netBlock = in.backoffUntil
+		if g := netGroup(src); src.Network() && in.backoffUntil.After(s.netBlock[g]) {
+			s.netBlock[g] = in.backoffUntil
 		}
 		s.insts = append(s.insts, in)
 		if quarantined {
@@ -130,7 +131,8 @@ func (s *Scheduler) due(in *instance, now time.Time, force bool) bool {
 		return false
 	}
 	if in.src.Network() {
-		if s.saveFailing || now.Before(s.netBlock) || (!s.netLast.IsZero() && now.Sub(s.netLast) < NetSpacing) {
+		g := netGroup(in.src)
+		if s.saveFailing || now.Before(s.netBlock[g]) || (!s.netLast[g].IsZero() && now.Sub(s.netLast[g]) < NetSpacing) {
 			return false
 		}
 		// Network sources never bypass their interval, not even when forced (--once).
@@ -162,13 +164,13 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 		if !s.due(in, now, force) {
 			continue
 		}
-		prev[in] = gate{in.lastAttempt, in.attempted, s.netLast}
+		prev[in] = gate{in.lastAttempt, in.attempted, s.netLast[netGroup(in.src)]}
 		in.inflight = true
 		in.lastAttempt = now
 		in.attempted = true
 		s.persistLocked(in)
 		if in.src.Network() {
-			s.netLast = now
+			s.netLast[netGroup(in.src)] = now
 		}
 		started = append(started, in)
 	}
@@ -185,7 +187,8 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 			if in.src.Network() {
 				// not run: undo the attempt so it is due again once the state is writable
 				g := prev[in]
-				in.inflight, in.lastAttempt, in.attempted, s.netLast = false, g.lastAttempt, g.attempted, g.netLast
+				in.inflight, in.lastAttempt, in.attempted = false, g.lastAttempt, g.attempted
+				s.netLast[netGroup(in.src)] = g.netLast
 				s.persistLocked(in)
 				continue
 			}
@@ -228,7 +231,11 @@ func (s *Scheduler) Loop(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
-	rctx, cancel := context.WithTimeout(ctx, ReadTimeout)
+	timeout := ReadTimeout
+	if t, ok := in.src.(Timeouter); ok && t.ReadTimeout() > 0 {
+		timeout = t.ReadTimeout()
+	}
+	rctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ps := s.state.Get(in.key)
 
@@ -279,8 +286,8 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 			reason = se.Reason
 			if se.Backoff > 0 {
 				in.backoffUntil = start.Add(se.Backoff)
-				if in.src.Network() && reason == ReasonRateLimited && in.backoffUntil.After(s.netBlock) {
-					s.netBlock = in.backoffUntil
+				if g := netGroup(in.src); in.src.Network() && reason == ReasonRateLimited && in.backoffUntil.After(s.netBlock[g]) {
+					s.netBlock[g] = in.backoffUntil
 				}
 			}
 		}
@@ -357,8 +364,8 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 			network: in.src.Network(), attempted: in.attempted, lastOK: in.lastOK, hasCache: in.hasCache,
 			observedAt: in.observedAt, lastSuccess: in.lastSuccess, backoffUntil: in.backoffUntil,
 			readSeconds: in.readSeconds, errors: map[string]float64{}}
-		if in.src.Network() && s.netBlock.After(sn.backoffUntil) {
-			sn.backoffUntil = s.netBlock
+		if g := netGroup(in.src); in.src.Network() && s.netBlock[g].After(sn.backoffUntil) {
+			sn.backoffUntil = s.netBlock[g]
 		}
 		sn.fresh = in.hasCache && now.Sub(in.observedAt) <= in.staleAfter
 		if sn.fresh {

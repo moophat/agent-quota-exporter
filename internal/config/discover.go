@@ -16,7 +16,8 @@ type Resolved struct {
 	Dir        string // real path (symlinks resolved)
 	ConfigDir  string // the path as configured or discovered
 	Account    string // operator alias, "" = derive
-	QuotaOptIn bool
+	QuotaOptIn bool   // claude_oauth_usage
+	Quota      map[string]bool
 	Origin     string // config | discovered
 }
 
@@ -25,38 +26,38 @@ type Resolved struct {
 func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 	var out []Resolved
 	var warns []string
-	taken := map[string]bool{} // real dir paths
-	aliases := map[string]bool{}
+	taken := map[string]bool{}   // harness + real dir path
+	aliases := map[string]bool{} // harness + alias
 
 	if c.Discovery.Mode != "only" {
 		for _, p := range c.Profiles {
 			if p.Disable {
 				continue
 			}
-			if p.Harness != HarnessClaude {
-				warns = append(warns, fmt.Sprintf("profile %s/%s: harness %q has no plugin in this version; skipped", p.Harness, p.Alias, p.Harness))
-				continue
-			}
 			real := realPath(p.Dir)
-			taken[real] = true
-			aliases[p.Alias] = true
+			taken[p.Harness+"\x00"+real] = true
+			aliases[p.Harness+"\x00"+p.Alias] = true
 			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, ConfigDir: p.Dir, Account: p.Account,
-				QuotaOptIn: p.Quota["claude_oauth_usage"], Origin: "config"})
+				QuotaOptIn: p.Quota["claude_oauth_usage"], Quota: p.Quota, Origin: "config"})
 		}
 	}
 	// A disabled config profile also suppresses discovery of the same dir.
 	for _, p := range c.Profiles {
 		if p.Disable {
-			taken[realPath(p.Dir)] = true
+			taken[p.Harness+"\x00"+realPath(p.Dir)] = true
 		}
 	}
 	if c.Discovery.Mode == "off" {
 		return out, warns
 	}
 
-	var found []string
+	type hit struct{ harness, dir, alias string }
+	var found []hit
 	if d := env("CLAUDE_CONFIG_DIR"); d != "" && isClaudeDir(d) {
-		found = append(found, d)
+		found = append(found, hit{HarnessClaude, d, discoveredAlias(d)})
+	}
+	if d := env("CODEX_HOME"); d != "" && isCodexDir(d) {
+		found = append(found, hit{HarnessCodex, d, Slug(filepath.Base(filepath.Dir(d)))})
 	}
 	for _, root := range c.Discovery.Roots {
 		homes, err := filepath.Glob(root)
@@ -71,39 +72,52 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 			}
 			for _, e := range ents {
 				n := e.Name()
-				if n != ".claude" && !strings.HasPrefix(n, ".claude-") {
-					continue
-				}
 				d := filepath.Join(h, n)
 				// A discovered entry must be a real directory: as root, following a user's link could expose
 				// another profile under their name. Operator-listed dirs (config, CLAUDE_CONFIG_DIR) may be links.
 				if e.Type()&os.ModeSymlink != 0 {
 					continue
 				}
-				if isClaudeDir(d) {
-					found = append(found, d)
+				switch {
+				case n == ".claude" || strings.HasPrefix(n, ".claude-"):
+					if isClaudeDir(d) {
+						found = append(found, hit{HarnessClaude, d, discoveredAlias(d)})
+					}
+				case n == ".codex":
+					if isCodexDir(d) {
+						found = append(found, hit{HarnessCodex, d, Slug(filepath.Base(h))})
+					}
+				case n == ".local":
+					if od := filepath.Join(d, "share", "opencode"); noLinks(d, od) && isOpencodeDir(od) {
+						found = append(found, hit{HarnessOpencode, od, Slug(filepath.Base(h))})
+					}
 				}
 			}
 		}
 	}
-	type cand struct{ dir, real, alias string }
+	type cand struct{ harness, dir, real, alias string }
 	var cands []cand
-	for _, d := range found {
-		r := realPath(d)
-		if taken[r] {
+	for _, f := range found {
+		r := realPath(f.dir)
+		if taken[f.harness+"\x00"+r] {
 			continue
 		}
-		taken[r] = true
-		cands = append(cands, cand{d, r, discoveredAlias(d)})
+		taken[f.harness+"\x00"+r] = true
+		cands = append(cands, cand{f.harness, f.dir, r, f.alias})
 	}
-	sort.Slice(cands, func(i, j int) bool { return cands[i].real < cands[j].real })
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].harness != cands[j].harness {
+			return cands[i].harness < cands[j].harness
+		}
+		return cands[i].real < cands[j].real
+	})
 	for _, cd := range cands {
 		a := cd.alias
-		for i := 2; aliases[a]; i++ {
+		for i := 2; aliases[cd.harness+"\x00"+a]; i++ {
 			a = fmt.Sprintf("%s-%d", cd.alias, i)
 		}
-		aliases[a] = true
-		out = append(out, Resolved{Harness: HarnessClaude, Alias: a, Dir: cd.real, ConfigDir: cd.dir, Origin: "discovered"})
+		aliases[cd.harness+"\x00"+a] = true
+		out = append(out, Resolved{Harness: cd.harness, Alias: a, Dir: cd.real, ConfigDir: cd.dir, Origin: "discovered"})
 	}
 	return out, warns
 }
@@ -120,6 +134,35 @@ func isClaudeDir(d string) bool {
 		}
 	}
 	return false
+}
+
+// isCodexDir: a CODEX_HOME holding Codex session rollouts.
+func isCodexDir(d string) bool {
+	st, err := os.Stat(filepath.Join(d, "sessions"))
+	return err == nil && st.IsDir()
+}
+
+// isOpencodeDir: an opencode data dir holding its database.
+func isOpencodeDir(d string) bool {
+	st, err := os.Stat(filepath.Join(d, "opencode.db"))
+	return err == nil && st.Mode().IsRegular()
+}
+
+// noLinks reports whether every component of sub below base (and base itself) is a real directory, not a link.
+func noLinks(base, sub string) bool {
+	rel, err := filepath.Rel(base, sub)
+	if err != nil {
+		return false
+	}
+	p := base
+	for _, c := range append([]string{""}, strings.Split(rel, string(filepath.Separator))...) {
+		p = filepath.Join(p, c)
+		st, err := os.Lstat(p)
+		if err != nil || st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func realPath(p string) string {

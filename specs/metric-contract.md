@@ -51,7 +51,9 @@ constant per exporter, so they add no cardinality. Total label count per series 
 | `agent_quota_utilization_ratio` | gauge | ratio 0..1 (may exceed 1 only if the vendor reports >100%) | `host harness profile account provider window scope` | share of the window consumed, as reported by the vendor |
 | `agent_quota_reset_timestamp_seconds` | gauge | Unix seconds | same | when the window resets; absent if the vendor gives none |
 | `agent_quota_limit_info` | gauge (info) | constant 1 | same + `severity` | vendor-reported limit state, one series per active limit entry (`severity`: `normal`, `warning`, `critical`, ...). Only the current severity is exposed |
-| `agent_quota_observed_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | when the vendor was last successfully asked (not when Prometheus scraped); basis for staleness alerts |
+| `agent_quota_observed_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | when the vendor was last successfully asked (not when Prometheus scraped); basis for staleness alerts. For a passive source (below) it is the time of the reading in local state |
+| `agent_quota_credits_available` | gauge | 0/1 | `host harness profile account provider scope` | 1 if the vendor reports credits left or unlimited, else 0. **0 is also what a plan with no credits in use reports**, so alert on a fall from 1 to 0, not on the value |
+| `agent_quota_credits_balance` | gauge | the vendor's credit unit | same | balance as reported; absent if unlimited or not reported |
 
 Example:
 
@@ -96,6 +98,8 @@ agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="
 | `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported, bounded to `pro`, `max`, `team`; any other or missing value is `unknown` |
 | `agent_credential_expiry_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | access-token expiry time (a timestamp only, never the token); absent if unknown |
 | `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state: `active`, `idle`, `other`. A count: no session ids |
+| `agent_router_connection_up` | gauge | 0/1 | `host harness profile account provider` | a router's upstream connection (`account` = its alias or hash): 1 if active, its last test did not fail and it is not rate-limited now |
+| `agent_router_rate_limited_until_timestamp_seconds` | gauge | Unix seconds | same | when the router's own rate limit on the connection ends; absent when none |
 
 ## Exporter health metrics
 
@@ -121,6 +125,13 @@ healthy ones.
 
 - A quota value older than its `stale_after` is dropped, not served (rule 5 above). Alert on
   `time() - agent_quota_observed_timestamp_seconds > 3600`, or on `absent_over_time(...)`.
+- **Passive sources are the one exception** (v0.2: `codex-rollouts`). They read a quota the vendor's own client wrote
+  to disk at its last turn, so an idle profile's reading is old but still true. Such a window is served until its own
+  `resets_at` passes, then goes absent; a window with no reset time falls back to `stale_after` from the reading. Credits
+  are served until a newer reading replaces them, at most until the longest window of the same reading resets (7 days
+  when the reading has none). `agent_quota_observed_timestamp_seconds` is the reading's own time, so the age alert above
+  fires on any idle passive profile: for these, show the age ("as of") instead of alerting on it. While the files can
+  be read, `agent_source_cache_age_seconds` stays near 0, because it measures the read, not the reading.
 - `agent_source_up == 0` with `agent_source_errors_total{reason="auth_expired"}` rising means the real client has to
   refresh its login; the exporter does nothing about it by design.
 

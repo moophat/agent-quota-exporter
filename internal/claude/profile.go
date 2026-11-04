@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -124,31 +123,6 @@ func ClaudeJSONPath(dir, configDir string) string {
 func (p *Profile) labels(account string, extra ...core.Label) []core.Label {
 	ls := []core.Label{{Name: "host", Value: p.Host}, {Name: "harness", Value: Harness}, {Name: "profile", Value: p.Alias}, {Name: "account", Value: account}}
 	return append(ls, extra...)
-}
-
-// openRegular opens a file read-only: no link followed on any path component (safefs.go), no blocking on FIFOs
-// or devices, and anything but a regular file is refused.
-func openRegular(path string) (*os.File, os.FileInfo, error) {
-	dir, err := openDir(filepath.Dir(path))
-	if err != nil {
-		return nil, nil, err
-	}
-	fd, err := syscall.Openat(int(dir.Fd()), filepath.Base(path), syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
-	dir.Close()
-	if err != nil {
-		return nil, nil, fsReason(err)
-	}
-	f := os.NewFile(uintptr(fd), path)
-	fi, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, nil, core.Fail(core.ReasonOther)
-	}
-	if !fi.Mode().IsRegular() {
-		f.Close()
-		return nil, nil, core.Fail(core.ReasonPermission)
-	}
-	return f, fi, nil
 }
 
 // readSmall reads a whole regular file of at most max bytes.

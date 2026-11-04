@@ -73,3 +73,22 @@ func Fail(reason string) error { return &SourceError{Reason: reason} }
 type Restorer interface {
 	Restore(state json.RawMessage) Result
 }
+
+// NetGrouper is implemented by network sources that must not share the host-wide gate (spacing and 429 backoff)
+// with the default "vendor" group: a lock or 429 from one vendor never pauses another's calls.
+type NetGrouper interface {
+	NetGroup() string
+}
+
+func netGroup(s Source) string {
+	if g, ok := s.(NetGrouper); ok && g.NetGroup() != "" {
+		return g.NetGroup()
+	}
+	return "vendor"
+}
+
+// Timeouter is implemented by sources whose read needs a different bound than ReadTimeout (e.g. a spawned
+// client that must be allowed to finish rewriting its own files).
+type Timeouter interface {
+	ReadTimeout() time.Duration
+}
