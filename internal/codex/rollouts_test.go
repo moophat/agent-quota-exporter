@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -354,5 +355,44 @@ func TestModelFoundBeforeStartOffset(t *testing.T) {
 	equal(t, "model before the start offset", counters(h.collect()), want)
 	if h.parse != 0 {
 		t.Fatalf("parse errors: %d", h.parse)
+	}
+}
+
+// A read that fails after the file was listed (too many open files, an NFS I/O error) leaves the file without a
+// model and counts nothing, so the search runs again next time: a passing failure must not put calls under
+// "unknown". Either every open fails, or only the search's while the count read would work.
+func TestModelSearchRetriedAfterReadFailure(t *testing.T) {
+	orig := openRollout
+	defer func() { openRollout = orig }()
+	for name, failures := range map[string]int{"every read fails": 1 << 30, "only the search fails": 1} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			var b bytes.Buffer
+			b.Write(turnContext(tStart, "gpt-5-codex"))
+			for b.Len() < scanTail+scanTail/2 {
+				b.WriteString(`{"timestamp":"2026-11-04T08:00:00Z","type":"response_item","payload":{"content":"CANARY-CONTENT ` +
+					strings.Repeat("x", 4000) + `"}}` + "\n")
+			}
+			p := h.path("2026/11/04/rollout-flaky.jsonl")
+			write(t, p, b.Bytes())
+			h.collect()
+			appendFile(t, p, tokenLine(tNow.Add(time.Minute), tu{10, 0, 0, 1, 0}, tu{10, 0, 0, 1, 0}, "null"))
+
+			left := failures
+			openRollout = func(path string) (*os.File, os.FileInfo, error) {
+				if left > 0 {
+					left--
+					return nil, nil, syscall.EMFILE
+				}
+				return orig(path)
+			}
+			h.now = tNow.Add(2 * time.Minute)
+			if got := counters(h.collect()); len(got) != 0 {
+				t.Fatalf("counted without a model: %v", got)
+			}
+			openRollout = orig
+			h.now = tNow.Add(3 * time.Minute)
+			equal(t, "after the read works again", counters(h.collect()), tokens("gpt-5-codex", 10, 1, 0, 0, 0, 1))
+		})
 	}
 }
