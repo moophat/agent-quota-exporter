@@ -172,6 +172,61 @@ Rules specific to `agy-usage`:
 - Never-read: every file in the agy home; in the output, `response`, every `name` and `description`, and every field not
   listed above.
 
+## 9router (harness `9router`, provider as recorded per row)
+
+A *profile* is one `.9router` directory. Router profiles are never discovered: they exist only when declared in config,
+since enabling a named product is the operator's choice. Its database `<dir>/db/data.sqlite` is live, usually in WAL
+mode, and can pass 900 MB.
+
+| Source | What | How | Cadence | Evidence |
+|---|---|---|---|---|
+| `router-9router` | requests, tokens and cost per connection; connection health | `data.sqlite` read-only through `internal/sqlro`, one connection opened and closed per cycle. `usageHistory`: `id`, `provider`, `model`, `connectionId`, `promptTokens`, `completionTokens`, `cost`, `status`, rows after a persisted `id` cursor (primary key, so no scan), at most 5000 rows per cycle; a backlog is read over the next cycles. `providerConnections`: `id`, `provider`, `name`, `isActive`, `email` (only with `account_label: email`), and from the JSON column `data` only the scalars `$.testStatus` and `$.rateLimitedUntil`; the whole table every cycle (at most 1000 rows). Schema in `fixtures/router/router.schema.sql`, rows in `fixtures/router/rows.sql` | `defaults.usage_interval` (floor 30 s) | verified (schema, on-prem 2026-11-04); value words documented (9router source, 2026-11-04) |
+
+Mapping:
+
+- **Counters:** `agent_tokens_total{type="input"}` = `promptTokens`, `{type="output"}` = `completionTokens`.
+  9router fills `promptTokens` from the upstream's `prompt_tokens` or `input_tokens`, so for an OpenAI-shaped upstream
+  `input` includes cached input; the router keeps no separate column for it. `agent_requests_total{outcome}`: `ok` when
+  `status` is NULL, empty, `ok`, `success` or an HTTP 2xx code (9router writes `ok` unless a caller sets another value,
+  and reads a missing one as `ok`), else `error`. 9router mostly records successful calls, so `error` undercounts.
+  `agent_cost_usd_total` = sum of `cost` (negative read as 0); it is exported only once a non-zero cost has been seen for
+  the series, since 9router writes 0 for a model it has no price for.
+- **First start** sets the cursor to the newest `id`: nothing already in the table is counted. If the newest `id` falls
+  below the cursor (the table was replaced or its newest rows deleted), the cursor moves down to it without counting.
+- **`account`** = the connection: its `name` lowercased if it matches `^[a-z0-9._-]{1,48}$`, else (with
+  `account_label: email` only) its `email` lowercased if well formed, else `acct-` + the first 8 hex digits of
+  sha256(connection id), the same rule as `claude-code`. A label already taken in the profile (two connections with
+  one name), and the reserved words `other` and `unknown`, fall through to the next candidate. A row without a
+  `connectionId` is `account="unknown"`; one whose connection is gone is `account="other"`.
+- **Connection cap:** the 50 connections seen first in a profile have their own label; the rest count into
+  `account="other"` and get no health series. Deleting a labelled connection frees its slot for the next one; the
+  deleted label's counters end (a label that comes back restarts from 0, a counter reset).
+- **`provider`** = the row's (or connection's) provider lowercased if it matches `^[a-z0-9._-]{1,48}$`, else `other`;
+  empty is `unknown`. **`model`** is lowercased and bounded as for `claude-code`, capped per profile across all
+  connections at `metrics.max_models_per_profile`; a model past the cap counts into `model="other"`, and one unused for
+  a day gives its slot to a new one.
+- **Health:** `agent_router_connection_up` = 1 if `isActive` is 1, `testStatus` is a passing word and the connection is
+  not rate-limited now, else 0. `testStatus` words follow 9router's own code: `error`, `expired`, `unavailable` mean
+  the last test failed; `active`, `ok`, `success`, `unknown`, `testing` and none do not. Any other word reads as failed
+  and counts in `agent_source_errors_total{reason="parse"}` every cycle, so a new upstream state shows instead of
+  passing silently. `rateLimitedUntil` is an RFC 3339 time (what 9router writes); a Unix time in ms (above 1e11) or s,
+  number or numeric string, is accepted too; anything else is a parse error and no limit.
+  `agent_router_rate_limited_until_timestamp_seconds` is that time while it is in the future, absent otherwise. A
+  `data` value that is not JSON reads as no test result and no limit. `errorCode` and `lastErrorAt` are not read: the
+  router's own `testStatus` already reflects them.
+- **Idle database:** a WAL database without `-wal` or `-shm` has no writer, so it is not opened (opening it would create
+  both files in the router's directory). The cycle succeeds and serves the persisted counters and the persisted health,
+  re-evaluated against the current time (a rate limit that ended reads up).
+- **Errors:** a missing database is `not_found`; a lock held by the router is `timeout` (no wait beyond 200 ms; retried
+  next cycle). Either way the previous values are served until stale.
+- **Measured:** 5000 rows per cycle take about 20 ms with a 3 MiB peak heap (`BenchmarkCycle`, 200k-row table, a
+  4-vCPU cloud VM; the read itself is single-threaded). On-prem has not measured it against a real router database.
+
+Never-read (enforced by the query allow-list and tested): `usageHistory.apiKey`, `usageHistory.tokens`,
+`usageHistory.meta`, `usageHistory.endpoint`, `providerConnections.data` as a whole and every path in it except the two
+above (it holds `accessToken`, `refreshToken`, `idToken`, `apiKey`), `providerConnections.email` unless
+`account_label: email`, and every other table.
+
 ## Other providers (later, by plugin)
 
 | Provider | Official surface | Scope |
