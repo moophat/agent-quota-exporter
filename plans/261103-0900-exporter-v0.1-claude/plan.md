@@ -1,7 +1,7 @@
 ---
 title: agent-quota-exporter v0.1 (Claude Code only)
 description: First working exporter binary: core, Claude local-file plugins and the opt-in Claude quota plugin, with CI and a tag release.
-status: in-progress
+status: done
 priority: P1
 effort: 6 phases
 branch: feat/phase1-core
@@ -97,7 +97,7 @@ construction-time dedupe (R6); design §3.2 flat 45 m (R12); phase-06 "`--once` 
 Also void: phase-03 `accessToken json.RawMessage` (S4); phase-05 "Transport: proxy from env" and 401/403 equivalence (S7); phase-02 gate keyed only per profile for 429 (S2).
 No unresolved contradiction remains.
 
-### Open questions for Tu (do not block v0.1)
+### Open questions for Tu (do not block v0.1) — 1 and 2 answered in D5; 3 answered in part in D6 (the NFS server node not yet inspected; `specs/decisions.md`)
 1. Allow-list `.credentials.json` `subscriptionType` so `agent_account_info{plan}` is real? (R21)
 2. Add `agent_quota_exporter_state_epoch` and `process_start_time_seconds` rows to the contract health table? (R10)
 3. Are any fleet `CLAUDE_CONFIG_DIR`s on NFS? (R20)

@@ -1,7 +1,8 @@
 # Example configuration for agent-quota-exporter (Claude Code profiles only in this version).
 # Path: --config FILE or AGENT_QUOTA_EXPORTER_CONFIG. Every key is optional except version.
 version: 1
-listen: "127.0.0.1:9877"        # expose beyond localhost only behind your scraper's network
+listen: "127.0.0.1:9877"        # default port 9877; set it to what your scraper expects. A port in use fails startup (exit 1).
+                                # Expose beyond localhost only behind your scraper's network.
 # host: node-a                  # label value; default = OS hostname
 state_dir: /var/lib/agent-quota-exporter
 labels: {}                      # constant labels on every series, e.g. {env: lab}
