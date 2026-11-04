@@ -411,33 +411,30 @@ func sidecars(path string) []string {
 	return out
 }
 
-// A WAL database no writer has open cannot have changed: the persisted counters are served, the cycle succeeds,
-// and the exporter creates no -wal or -shm in opencode's directory. Once a writer is back, counting resumes.
-func TestIdleServesPersisted(t *testing.T) {
+// The last writer closing checkpoints its final rows into the main file and removes -wal and -shm. Such an idle WAL
+// database is still read (sqlro opens it immutable, creating nothing), so a session's final usage is counted
+// without waiting for opencode's next launch, and the exporter leaves no -wal or -shm in opencode's directory.
+func TestIdleDatabaseStillCounted(t *testing.T) {
 	path, w := emptyDB(t, true)
 	r := &run{}
 	s := source(path, 20)
 	r.collect(t, s, t0)
 	insert(t, w, "m1", done("provider-a", "model-y", 10, 1, 0, 0, 0, 0.5))
-	want := r.collect(t, s, t0.Add(time.Minute))
-	if len(want) == 0 {
-		t.Fatal("nothing counted while the writer was live")
+	if got := r.collect(t, s, t0.Add(time.Minute)); got["agent_tokens_total{provider-a,model-y,input}"] != 10 {
+		t.Fatalf("nothing counted while the writer was live: %v", got)
 	}
-	w.Close() // opencode exits: SQLite checkpoints and removes both sidecars
+	insert(t, w, "m-final", done("provider-a", "model-y", 7, 0, 0, 0, 0, 0)) // written just before exit
+	w.Close()                                                                // opencode exits
 	if sc := sidecars(path); len(sc) != 0 {
 		t.Fatalf("precondition: sidecars after the writer closed: %v", sc)
 	}
 
-	// A restarted exporter with only the persisted blob serves the same counters.
+	// A restarted exporter, with only the persisted blob, counts the final row from the idle database.
 	s2 := source(path, 20)
-	res, st, err := s2.Collect(context.Background(), t0.Add(2*time.Minute), r.state)
-	if err != nil {
-		t.Fatalf("idle database must not fail the source: %v", err)
+	got := r.collect(t, s2, t0.Add(2*time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 17 {
+		t.Fatalf("final usage of an idle database not counted: %v", got)
 	}
-	if st != nil {
-		t.Fatal("idle cycle must leave the persisted state as it is")
-	}
-	eq(t, "idle", series(res), want)
 	if sc := sidecars(path); len(sc) != 0 {
 		t.Fatalf("the exporter created %v next to an idle database", sc)
 	}
@@ -445,8 +442,8 @@ func TestIdleServesPersisted(t *testing.T) {
 	w2 := writer(t, path, true)
 	defer w2.Close()
 	insert(t, w2, "m2", done("provider-a", "model-y", 5, 0, 0, 0, 0, 0))
-	got := r.collect(t, s2, t0.Add(3*time.Minute))
-	if got["agent_tokens_total{provider-a,model-y,input}"] != 15 {
+	got = r.collect(t, s2, t0.Add(3*time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 22 {
 		t.Fatalf("counting after the writer returned: %v", got)
 	}
 }

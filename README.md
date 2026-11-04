@@ -82,8 +82,9 @@ agent-quota-exporter --version
   | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
   | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |
 
-  Read-only SQLite sources skip a cycle when a WAL database has no `-wal`/`-shm` (no writer has it open), so the
-  exporter never creates them; with a writer present they attach to the existing `-shm` like any SQLite reader.
+  Read-only SQLite sources read a WAL database that no writer has open (no `-wal`/`-shm`) in SQLite's immutable
+  mode, which creates nothing; with a writer present they attach to the existing `-shm` like any SQLite reader. A
+  `-wal`/`-shm` that is a link, a hard link or not a regular file is refused before SQLite runs.
 - systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service).
 - `--once` takes the same state-dir lock as the daemon, so it refuses to run next to a running exporter. Point it
   at a copy of the config with its own `state_dir` for ad-hoc checks; the quota endpoint is still asked at most once

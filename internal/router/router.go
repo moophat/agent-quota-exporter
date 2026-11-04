@@ -138,7 +138,7 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 
 	db, err := sqlro.Open(s.DB, allow)
 	if errors.Is(err, sqlro.ErrIdle) {
-		// No writer has the database open, so nothing changed since the last read: serve what is persisted.
+		// An odd state (one sidecar missing): serve what is persisted this cycle rather than open it.
 		return s.result(now, errs), nil, nil
 	}
 	if err != nil {

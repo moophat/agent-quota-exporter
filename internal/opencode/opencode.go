@@ -17,8 +17,9 @@
 //     flight at that moment, is not counted. Later rows are always counted, however old, so an exporter outage
 //     loses nothing. If the last rowid falls below the cursor (the database was replaced or vacuumed), the cursor
 //     moves back to it, again without replay.
-//   - A database in WAL mode that no writer has open (sqlro.ErrIdle) cannot have changed: the persisted counters
-//     are served and the file is not opened, so no -wal or -shm is created.
+//   - A WAL database that no writer has open is read immutable by sqlro (no -wal or -shm is created), so the final
+//     rows a closing opencode checkpointed are still counted. sqlro.ErrIdle now means only an odd state with one
+//     sidecar missing: the persisted counters are served for that cycle.
 package opencode
 
 import (

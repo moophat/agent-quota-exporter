@@ -533,7 +533,7 @@ func TestRateLimitEnds(t *testing.T) {
 	}
 }
 
-// An idle WAL database (no -wal/-shm) is not opened: the persisted counters and health are served, also after a
+// An idle WAL database (no -wal/-shm) is read immutable by sqlro: counters and health are served, also after a
 // restart, and no sidecar is created in the router's directory.
 func TestIdleWALServesPersisted(t *testing.T) {
 	dir := t.TempDir()

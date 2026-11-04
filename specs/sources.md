@@ -142,9 +142,10 @@ How `opencode-db` reads and counts (v0.2):
   `max_models_per_profile` (provider, model) pairs with their own series. Further pairs count into `model="other"` under
   their provider, and a pair unused for 24 h gives up its slot. `account` = the profile's configured `account`, else
   its alias.
-- **Idle database.** If the database is in WAL mode and has no `-wal` or `-shm` file, no opencode has it open, so it
-  cannot have changed. The persisted counters are served, the read succeeds, and the file is not opened, because
-  opening it would create both sidecars in opencode's directory. Busy or locked: `reason="timeout"`, retried next
+- **Idle database.** If the database is in WAL mode and has no `-wal` or `-shm` file, no opencode has it open. It is
+  read with `immutable=1`, which opens only the main file read-only and creates nothing (strace, 2026-11-04), so the
+  final rows a closing opencode checkpointed are still counted. With exactly one sidecar missing (an odd state) the
+  persisted counters are served for that cycle. Busy or locked: `reason="timeout"`, retried next
   cycle. Missing: `reason="not_found"`. The connection is opened and closed every cycle.
 
 Known data-quality traps (from observed instances):
@@ -264,9 +265,9 @@ Mapping:
   `agent_router_rate_limited_until_timestamp_seconds` is that time while it is in the future, absent otherwise. A
   `data` value that is not JSON reads as no test result and no limit. `errorCode` and `lastErrorAt` are not read: the
   router's own `testStatus` already reflects them.
-- **Idle database:** a WAL database without `-wal` or `-shm` has no writer, so it is not opened (opening it would create
-  both files in the router's directory). The cycle succeeds and serves the persisted counters and the persisted health,
-  re-evaluated against the current time (a rate limit that ended reads up).
+- **Idle database:** a WAL database without `-wal` or `-shm` has no writer, so it is read with `immutable=1`, which
+  creates nothing in the router's directory. With exactly one sidecar missing, the cycle serves the persisted counters
+  and the persisted health, re-evaluated against the current time (a rate limit that ended reads up).
 - **Errors:** a missing database is `not_found`; a lock held by the router is `timeout` (no wait beyond 200 ms; retried
   next cycle). Either way the previous values are served until stale.
 - **Measured:** 5000 rows per cycle take about 20 ms with a 3 MiB peak heap (`BenchmarkCycle`, 200k-row table, a

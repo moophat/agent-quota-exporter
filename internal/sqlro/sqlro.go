@@ -17,11 +17,41 @@
 //     scalar field it needs instead.
 //   - Errors are *core.SourceError carrying a reason only: no driver text, path or SQL ever leaves the package.
 //
-// Open refuses a path with a symlink in any component or a target that is not a regular file, then opens
-// file:<path>?mode=ro (never immutable: the database is live, often in WAL mode) with query_only, a 200 ms busy
-// timeout, a 256 KiB page cache, no mmap and a single connection. Callers open once per collect cycle and Close
-// after, so no file handle or cache outlives the cycle. A lock held by the owning program surfaces as
-// core.ReasonTimeout: the caller retries next cycle instead of waiting.
+// Opening (measured with modernc.org/sqlite v1.40.1, SQLite 3.50.4, under strace; 2026-11-04). The exporter may
+// run as root over directories owned by untrusted users, and SQLite opens the database, -wal and -shm by path
+// name: the database O_RDONLY|O_NOFOLLOW, both sidecars O_RDWR|O_CREAT|O_NOFOLLOW, and as root it fchowns each
+// sidecar to the database's owner. O_NOFOLLOW covers the last component only. Open therefore, before SQLite runs:
+//
+//   - walks the path from "/" without following any link (internal/safefs) and requires a regular file;
+//   - checks -wal and -shm in that same pinned directory: each must be absent, or a regular file with one link.
+//     A link, directory, FIFO or hard link there is refused with core.ReasonPermission, whatever the header says
+//     (SQLite enters WAL mode whenever a -wal exists);
+//   - picks the mode from the header (bytes 18 and 19 are 2 for WAL) and the sidecars:
+//     a rollback-journal database, or a WAL database with both sidecars (a writer has it open), opens as
+//     file:<path>?mode=ro; a WAL database with neither sidecar (no writer; the last one checkpointed everything
+//     into the file and removed both on close) opens as mode=ro&immutable=1, which takes no lock and opens
+//     nothing but the database, O_RDONLY (measured: no sidecar is looked up, created or written); a WAL
+//     database with exactly one sidecar is an odd state and returns ErrIdle.
+//
+// Every connection gets query_only, a 200 ms busy timeout, a 256 KiB page cache, no mmap and a single
+// connection. Callers open once per collect cycle and Close after, so no file handle or cache outlives the cycle.
+// A lock held by the owning program surfaces as core.ReasonTimeout: the caller retries next cycle instead of
+// waiting.
+//
+// Residual risks, stated plainly:
+//
+//   - Path swap. Pinning the checked directory for SQLite does not work: given /proc/self/fd/<dirfd>/<name>,
+//     SQLite canonicalises the path in user space (lstat on each component, readlink on each link) and opens the
+//     original path string again (measured). So the checks above and SQLite's open are separate path walks. After
+//     SQLite has opened the database, Open walks the path again without following links and requires the same
+//     device and inode it checked; a mismatch closes the connection and fails with core.ReasonPermission. A
+//     component swapped for a link and swapped back within SQLite's open, or a sidecar swapped for a hard link in
+//     that window (only possible where fs.protected_hardlinks is 0), is not caught.
+//   - Immutable read. A writer that starts while an immutable read runs is ignored by it (stale values until next
+//     cycle); if that writer also checkpoints into the file during the read, pages can be torn and rows may parse
+//     as errors. Reads are bounded (see maxLimit) and connections live one cycle, which keeps the window short.
+//   - A writer that closes between the sidecar check and SQLite's open can leave fresh sidecars behind (created by
+//     this reader, owned by the database's owner); the window is one open.
 package sqlro
 
 import (
@@ -30,23 +60,24 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/safefs"
 )
 
 // pragmas are applied to every connection (busy_timeout first, by the driver).
 const pragmas = "_pragma=busy_timeout(200)&_pragma=query_only(1)&_pragma=cache_size(-256)&_pragma=mmap_size(0)"
 
-// ErrIdle means the database is in WAL mode but its -wal or -shm is absent: no writer has it open, so nothing
-// can have changed since the owner last closed it. Opening it now would make SQLite create both sidecars in the
-// owner's directory (as root, chowned to the owner) and leave them behind, so Open refuses and the caller keeps
-// its previous values for this cycle. It is not a failure and carries no path.
-var ErrIdle = errors.New("sqlro: WAL database not open by any writer")
+// ErrIdle means the database is in WAL mode and exactly one of -wal and -shm exists. A writer creates both and
+// its last close removes both, so this is an odd state (a crash mid-close, a stray copy): opening it would make
+// SQLite create the missing sidecar in the owner's directory, so Open refuses and the caller keeps its previous
+// values for this cycle. A WAL database with neither sidecar is not ErrIdle: it is read immutable (see the
+// package doc). It is not a failure and carries no path.
+var ErrIdle = errors.New("sqlro: WAL database with only one of -wal and -shm")
 
 // DB is one read-only connection bound to an allow-list.
 type DB struct {
@@ -54,26 +85,25 @@ type DB struct {
 	allow Allow
 }
 
-// Open opens the SQLite database at path read-only, bound to allow.
-//
-// The symlink check is a walk with Lstat before SQLite opens the path itself (SQLite must also open -wal and
-// -shm by name, so a descriptor-based open is not possible); a link swapped in between the check and the open
-// is not caught.
+// fileID identifies a file across two path walks.
+type fileID struct{ dev, ino uint64 }
+
+// Open opens the SQLite database at path read-only, bound to allow. The checks it makes before and after SQLite
+// opens the path are described in the package doc.
 func Open(path string, allow Allow) (*DB, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, core.Fail(core.ReasonOther)
 	}
-	if err := checkPath(abs); err != nil {
+	id, immutable, err := inspect(abs)
+	if err != nil {
 		return nil, err
 	}
-	if idle, err := walIdle(abs); err != nil {
-		return nil, err
-	} else if idle {
-		return nil, ErrIdle
+	mode := "?mode=ro&"
+	if immutable {
+		mode = "?mode=ro&immutable=1&"
 	}
-	dsn := "file:" + (&url.URL{Path: abs}).EscapedPath() + "?mode=ro&" + pragmas
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", "file:"+(&url.URL{Path: abs}).EscapedPath()+mode+pragmas)
 	if err != nil {
 		return nil, core.Fail(core.ReasonOther)
 	}
@@ -84,6 +114,11 @@ func Open(path string, allow Allow) (*DB, error) {
 	if err := db.QueryRow("PRAGMA schema_version").Scan(&v); err != nil {
 		db.Close()
 		return nil, reason(err)
+	}
+	// SQLite walked the path itself: require that it still leads, without links, to the file checked above.
+	if err := sameFile(abs, id); err != nil {
+		db.Close()
+		return nil, err
 	}
 	return &DB{db: db, allow: allow}, nil
 }
@@ -96,48 +131,89 @@ func (d *DB) Close() error {
 	return nil
 }
 
-// walIdle reports whether the file header says WAL (bytes 18 and 19 are 2) while -wal or -shm is missing. A
-// writer that closes between this check and SQLite's open can still leave fresh sidecars behind; the window is
-// one open.
-func walIdle(abs string) (bool, error) {
-	f, err := os.OpenFile(abs, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+// inspect checks abs and its sidecars before SQLite runs and decides how to open it: it returns the database's
+// identity, whether to open it immutable, or the failure (ErrIdle included).
+func inspect(abs string) (fileID, bool, error) {
+	dir, err := safefs.OpenDir(filepath.Dir(abs))
 	if err != nil {
-		return false, fsReason(err)
+		return fileID{}, false, err
+	}
+	defer dir.Close()
+	base := filepath.Base(abs)
+	f, st, err := openAt(dir, base)
+	if err != nil {
+		return fileID{}, false, safefs.Reason(err)
 	}
 	defer f.Close()
-	var h [20]byte
-	if n, _ := f.ReadAt(h[:], 0); n < len(h) || h[18] != 2 || h[19] != 2 {
-		return false, nil // rollback-journal database (or too short to be one): SQLite creates no sidecar
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		return fileID{}, false, core.Fail(core.ReasonPermission)
 	}
-	for _, s := range []string{"-wal", "-shm"} {
-		if _, err := os.Lstat(abs + s); err != nil {
-			return true, nil
-		}
-	}
-	return false, nil
-}
+	id := fileID{uint64(st.Dev), st.Ino}
 
-// checkPath requires every component of the absolute path to be a non-link and the target a regular file.
-func checkPath(abs string) error {
-	p := "/"
-	var fi os.FileInfo
-	for _, c := range strings.Split(abs, "/") {
-		if c == "" {
+	// SQLite opens a -wal whatever the header says, and creates -shm next to it, so both are checked for every
+	// database: absent, or a regular file with a single link.
+	present := 0
+	for _, s := range []string{"-wal", "-shm"} {
+		sf, sst, err := openAt(dir, base+s)
+		if errors.Is(err, syscall.ENOENT) {
 			continue
 		}
-		p = filepath.Join(p, c)
-		var err error
-		if fi, err = os.Lstat(p); err != nil {
-			return fsReason(err)
+		if err != nil { // ELOOP: a link; anything else is refused as well
+			return fileID{}, false, core.Fail(core.ReasonPermission)
 		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return core.Fail(core.ReasonPermission)
+		sf.Close()
+		if sst.Mode&syscall.S_IFMT != syscall.S_IFREG || sst.Nlink != 1 {
+			return fileID{}, false, core.Fail(core.ReasonPermission)
 		}
+		present++
 	}
-	if fi == nil || !fi.Mode().IsRegular() {
+
+	var h [20]byte
+	if n, _ := f.ReadAt(h[:], 0); n < len(h) || h[18] != 2 || h[19] != 2 {
+		return id, false, nil // rollback-journal database (or too short to be one)
+	}
+	switch present {
+	case 2:
+		return id, false, nil // a writer has it open
+	case 0:
+		return id, true, nil // no writer: everything is in the file
+	default:
+		return fileID{}, false, ErrIdle
+	}
+}
+
+// sameFile walks abs again without following links and requires the file checked before SQLite opened it.
+func sameFile(abs string, want fileID) error {
+	dir, err := safefs.OpenDir(filepath.Dir(abs))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	f, st, err := openAt(dir, filepath.Base(abs))
+	if err != nil {
+		return safefs.Reason(err)
+	}
+	f.Close()
+	if (fileID{uint64(st.Dev), st.Ino}) != want {
 		return core.Fail(core.ReasonPermission)
 	}
 	return nil
+}
+
+// openAt opens name in dir read-only without following a link (a link fails with ELOOP) and without blocking on
+// a FIFO, and returns its metadata. Errors are the raw errno, for the caller to map.
+func openAt(dir *os.File, name string) (*os.File, *syscall.Stat_t, error) {
+	fd, err := syscall.Openat(int(dir.Fd()), name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	f := os.NewFile(uintptr(fd), name)
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return f, &st, nil
 }
 
 // fsReason maps a file system error to a contract reason without its text (which can carry a path).
