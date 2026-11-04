@@ -145,6 +145,10 @@ func (c *Config) Validate() error {
 				add("profiles[%d].quota.%s: only for harness %s", i, q, h)
 			}
 		}
+		if p.Harness == HarnessAgy && p.Quota["agy_usage"] && p.Account == "" {
+			// one agy login sits on many machines; the operator names the account to read it from one host only
+			add("profiles[%d].account: required for agy with quota.agy_usage", i)
+		}
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("config invalid:\n  %s", strings.Join(errs, "\n  "))

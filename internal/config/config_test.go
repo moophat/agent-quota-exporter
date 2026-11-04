@@ -160,8 +160,9 @@ func TestDiscoveryCodexAndOpencode(t *testing.T) {
 
 func TestValidateHarnessesAndQuotaKeys(t *testing.T) {
 	for name, body := range map[string]string{
-		"dir required":            "version: 1\nprofiles: [{harness: codex, alias: a}]\n",
-		"quota key wrong harness": "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {claude_oauth_usage: true}}]\n",
+		"dir required":              "version: 1\nprofiles: [{harness: codex, alias: a}]\n",
+		"quota key wrong harness":   "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {claude_oauth_usage: true}}]\n",
+		"agy usage without account": "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, quota: {agy_usage: true}}]\n",
 	} {
 		c := Default()
 		if err := decode([]byte(body), c); err == nil {
@@ -171,7 +172,7 @@ func TestValidateHarnessesAndQuotaKeys(t *testing.T) {
 		}
 	}
 	c := Default()
-	ok := "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, quota: {agy_usage: true}}]\n"
+	ok := "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, account: agy-a1, quota: {agy_usage: true}}]\n"
 	if err := decode([]byte(ok), c); err != nil {
 		t.Fatal(err)
 	}

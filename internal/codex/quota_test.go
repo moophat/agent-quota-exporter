@@ -311,3 +311,18 @@ func TestWindowAndScopeLabels(t *testing.T) {
 		}
 	}
 }
+
+// A resets_at no Codex would write (beyond int64 as a float, negative after conversion, or before 2000) is treated
+// as absent: the window falls back to stale_after instead of being served forever.
+func TestQuotaImplausibleResetFallsBackToStaleAfter(t *testing.T) {
+	for _, reset := range []string{"1e300", "9.3e18", "-5", "12345"} {
+		h := newHarness(t)
+		h.collect()
+		at := tNow.Add(time.Minute)
+		write(t, h.path("2026/11/04/rollout-q.jsonl"), tokenLine(at, tu{1, 0, 0, 0, 0}, tu{1, 0, 0, 0, 0}, limits("", "50,300,"+reset, "", "")))
+		h.now = at.Add(46 * time.Minute)
+		if got := quota(h.collect()); len(got) != 0 {
+			t.Errorf("resets_at %s: still served past stale_after: %v", reset, got)
+		}
+	}
+}

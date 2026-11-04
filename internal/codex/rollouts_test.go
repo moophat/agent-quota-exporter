@@ -296,3 +296,29 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("overrides: %+v", s)
 	}
 }
+
+// A collect cut short (read timeout or shutdown) must keep the state of the files it did not reach. Before the fix
+// their offsets were pruned, so the next collect re-read them from 0 and counted the last hour twice: here turn A,
+// counted a minute before the cut-short collect, would be counted again.
+func TestCutShortCollectKeepsUnreadFiles(t *testing.T) {
+	h := newHarness(t)
+	h.copyTree()
+	h.collect() // baseline: history not counted
+	appendFile(t, h.path(fixtureDay4), tokenLine(tNow.Add(time.Minute), tu{100, 40, 0, 20, 5}, tu{2160, 1540, 200, 335, 125}, "null"))
+	h.now = tNow.Add(2 * time.Minute)
+	afterA := tokens("gpt-5-codex", 60, 15, 40, 0, 5, 1)
+	equal(t, "turn A", counters(h.collect()), afterA)
+
+	appendFile(t, h.path(fixtureDay4), tokenLine(tNow.Add(3*time.Minute), tu{10, 0, 0, 1, 0}, tu{2170, 1540, 200, 336, 125}, "null"))
+	h.now = tNow.Add(4 * time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, st, err := h.src.Collect(ctx, h.now, h.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.st = st
+	h.restart() // the next collect sees only what was persisted
+	h.now = tNow.Add(5 * time.Minute)
+	equal(t, "turn A once, then turn B", counters(h.collect()), tokens("gpt-5-codex", 70, 16, 40, 0, 5, 2))
+}

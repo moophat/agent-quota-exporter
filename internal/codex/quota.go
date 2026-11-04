@@ -109,6 +109,9 @@ func parseBalance(raw json.RawMessage) (float64, bool) {
 	return v, true
 }
 
+// Bounds of a plausible resets_at, Unix seconds: 2000-01-01 and 2200-01-01.
+const earliestReset, latestReset = 946684800, 7258118400
+
 func newReading(rl *rateLimits, at time.Time) *reading {
 	r := &reading{AtMs: at.UnixMilli(), Scope: scopeLabel(rl.LimitID)}
 	longest, longestReset := -1.0, int64(0)
@@ -117,7 +120,9 @@ func newReading(rl *rateLimits, at time.Time) *reading {
 			continue
 		}
 		qw := qWindow{Window: windowLabel(w.WindowMinutes), Used: *w.UsedPercent}
-		if w.ResetsAt != nil && finite(*w.ResetsAt) && *w.ResetsAt > 0 {
+		// A reset outside 2000..2200 is not a Unix time Codex would write (and a float beyond int64 would convert
+		// to a negative value that never expires): treat it as absent, so the stale_after fallback applies.
+		if w.ResetsAt != nil && finite(*w.ResetsAt) && *w.ResetsAt >= earliestReset && *w.ResetsAt <= latestReset {
 			qw.Reset = int64(*w.ResetsAt)
 		}
 		r.Windows = append(r.Windows, qw)

@@ -646,3 +646,21 @@ func TestProviderLabelMatchesRouter(t *testing.T) {
 		}
 	}
 }
+
+// When the database is replaced, ids pending in the old one must not survive the cursor reset: a replacement row
+// that reuses a pending id is history of the new database, not the completion of the old message.
+func TestReplacementDoesNotCompleteOldPending(t *testing.T) {
+	path, w := emptyDB(t, false)
+	s, r := source(path, 20), &run{}
+	r.collect(t, s, t0)
+	insert(t, w, "a", done("provider-a", "model-y", 1, 0, 0, 0, 0, 0))
+	insert(t, w, "b", done("provider-a", "model-y", 1, 0, 0, 0, 0, 0))
+	insert(t, w, "p", streaming("provider-a", "model-y", 0))
+	r.collect(t, s, t0.Add(time.Minute)) // a, b counted; p pending
+	exec(t, w, "DELETE FROM message")
+	insert(t, w, "p", done("provider-a", "model-y", 500, 0, 0, 0, 0, 0)) // replacement history reusing id p
+	got := r.collect(t, s, t0.Add(2*time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 2 {
+		t.Fatalf("a replacement row reusing a pending id was counted: %v", got)
+	}
+}

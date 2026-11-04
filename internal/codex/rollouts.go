@@ -206,10 +206,14 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 	if since == 0 {
 		since = now.Unix()
 	}
+	// Every listed file is live, read or not: a read cut short by the timeout must keep the offsets of the files it
+	// did not reach, or they would be re-read from 0 next time and counted twice.
 	live := map[string]bool{}
 	for _, f := range files {
+		live[hashKey(f.rel)] = true
+	}
+	for _, f := range files {
 		k := hashKey(f.rel)
-		live[k] = true
 		if first {
 			st.Files[k] = &fileState{Off: f.size, Ino: f.ino}
 			continue

@@ -210,7 +210,10 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, now time.Time, errs m
 		return nil
 	}
 	if last < st.Cursor {
+		// The database was replaced (or its newest rows deleted): no replay, and the pending ids belong to the old
+		// database, so a replacement row reusing one of them must not be counted as its completion.
 		st.Cursor = last
+		st.Pending = map[string]*pend{}
 	}
 	for {
 		rows, err := db.After(table, "rowid", st.Cursor, cols, pageSize)
