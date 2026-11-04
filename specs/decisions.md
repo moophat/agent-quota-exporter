@@ -76,6 +76,28 @@ profile is ever placed on a shared mount, and re-check when the NFS server node 
   rewritten. Checked on `main` after the v0.2 merge (14aeb20):
 `git log -1 --format=%b` shows none.
 
+## D8. SQLite read-marks in a live writer's -shm: ACCEPTED (Tu, 2026-11-04)
+
+With a writer present, a read-only SQLite reader attaches to the existing `-shm` and writes read-marks into it, as
+every SQLite reader does; it never writes the database or `-wal`. Accepted as SQLite's own coordination, not a write
+of agent state. The exporter still never creates a sidecar (an idle WAL database is read immutable) and refuses a
+sidecar that is a link, a hard link or not a regular file. Running the exporter as each database's owner is not
+required. Measured (strace, `internal/sqlro`, 2026-11-04): when the exporter cannot open the live `-shm` read-write
+(another owner, mode 0644, run as `nobody`), SQLite gets `EACCES`, falls back to a read-only open and mapping, and the
+read succeeds, with a live writer and after it was killed. So a non-owner exporter reads without writing there at all.
+
+## D9. Provider balances: NOT BUILT (Tu, 2026-11-04)
+
+No balance plugin. The vendors' prices are not known in real time, so a balance cannot be turned into anything the
+fleet can act on, and it would carry money and a unit label the contract forbids. Codex credits (a vendor-reported
+credit count in the rollouts) are unaffected.
+
+## D10. Idle memory target: ~16 MB (Tu, 2026-11-04)
+
+The v0.2 plan's "under 15 MB" is replaced by about 16 MB, with a ceiling of 17 MB RSS on that load (11 profiles, a
+300k-row router DB): above 17 MB is a regression to investigate. Measured: 15.7 to 16.9 MB plateau; the extra over v0.1 is the pure-Go SQLite driver's fixed cost. A cgo driver (smaller, but no
+static release build) is not wanted.
+
 ## Also recorded in `plan.md`, not yet ruled
 
 Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always

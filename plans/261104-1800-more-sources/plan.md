@@ -69,7 +69,7 @@ Each is shippable alone. Stop and release at any point.
 4. **`router-9router`:** per-connection requests and tokens from `usageHistory`, and connection health as new gauges
    (`agent_router_connection_up`, `agent_router_rate_limited_until_timestamp_seconds`). Label by connection id or alias,
    hashing an email by the existing account rule. Off by default; it's a named product, so enabling it is a choice.
-5. **Provider balances:** the plugin in `specs/sources.md`: GET plus JSON path, keys via `env:`/`file:`. Configurable per
+5. **Provider balances (not built, D9):** the plugin in `specs/sources.md`: GET plus JSON path, keys via `env:`/`file:`. Configurable per
    provider, so it covers an account-usage endpoint as well as the OpenRouter, DeepSeek and GLM kind.
 6. **`agy-usage`:** see "agy". Worth doing early if the build goes well: it's small, and an operator with many agy accounts
    has no other way to see them.
@@ -120,7 +120,8 @@ Same bar as v0.1.
 - Missing or unreadable state gives `agent_source_up 0`, never a zero value.
 - `strace` on a real node, on-prem: no writes outside the state dir, and no network from local-state plugins.
 - Counters equal an independent recount on a real node, as v0.1 did for Claude.
-- Idle cost: under 15 MB and negligible CPU with a large router DB and a dozen profiles.
+- Idle cost: about 16 MB, at most 17 MB (was "under 15 MB"; D10), and negligible CPU with a large router DB and a dozen
+  profiles.
 
 ## On-prem (not the cloud lane's)
 
