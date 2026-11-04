@@ -138,7 +138,7 @@ Rules specific to `agy-usage`:
 | Anthropic API keys (billing) | Admin usage and cost reports API | in scope as an optional provider plugin; hourly-bucket data, daily-lagged; needs an admin key (a secret the operator provides via env or file reference) |
 | OpenAI API keys (billing) | organization usage/costs API | same pattern |
 | OpenRouter, DeepSeek, GLM and similar | balance endpoints with an API key | optional plugin, GET + JSON path pattern, multiple accounts via numbered key references |
-| Google AI subscription windows | none known without a private endpoint | out of scope |
+| Google AI subscription windows | the agy client's own `/usage` command | in scope as `agy-usage` (opt-in), see the agy section; nothing calls the private endpoint itself |
 
 Keys for these plugins are referenced from config as `env:NAME` or `file:/path` and are never inlined in the config
 file.

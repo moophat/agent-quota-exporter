@@ -34,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", os.Getenv("AGENT_QUOTA_EXPORTER_CONFIG"), "config file (YAML)")
 	once := fs.Bool("once", false, "collect local sources once, print /metrics to stdout and exit")
-	onceQuota := fs.Bool("once-with-quota", false, "with --once, also ask the vendor quota endpoint if its 15 min gate allows")
+	onceQuota := fs.Bool("once-with-quota", false, "with --once, also run the opt-in quota sources (Claude's quota endpoint, the agy client) if their gates allow")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2

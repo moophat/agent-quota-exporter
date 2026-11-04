@@ -33,7 +33,7 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 	"codex-rollouts":     {30 * time.Second, 0},
 	"opencode-db":        {30 * time.Second, 0},
 	"router-9router":     {30 * time.Second, 0},
-	"agy-usage":          {15 * time.Minute, 60 * time.Minute},
+	"agy-usage":          {15 * time.Minute, 60 * time.Minute}, // backoff_429 is its backoff after any failed run
 }
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
