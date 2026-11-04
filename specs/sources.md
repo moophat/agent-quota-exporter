@@ -12,7 +12,8 @@ General rules for every source:
 - Parse structural fields only; drop every content field at the parser.
 - A credential file is opened **only** by a plugin that declares it, for **one** request's lifetime, and its value is
   never logged or labelled. Prefer reading just the expiry timestamp when that is all a metric needs.
-- Never write to any agent directory. Never invoke an agent CLI that can start sessions or refresh logins, unless the
+- Never write to any agent directory. (The one accepted exception: SQLite read-marks in a live writer's existing
+  `-shm`, `specs/decisions.md` D8.) Never invoke an agent CLI that can start sessions or refresh logins, unless the
   source below says so and it is opt-in.
 
 ## Claude Code (harness `claude-code`, provider `anthropic`)
@@ -288,7 +289,7 @@ above (it holds `accessToken`, `refreshToken`, `idToken`, `apiKey`), `providerCo
 |---|---|---|
 | Anthropic API keys (billing) | Admin usage and cost reports API | in scope as an optional provider plugin; hourly-bucket data, daily-lagged; needs an admin key (a secret the operator provides via env or file reference) |
 | OpenAI API keys (billing) | organization usage/costs API | same pattern |
-| OpenRouter, DeepSeek, GLM and similar | balance endpoints with an API key | optional plugin, GET + JSON path pattern, multiple accounts via numbered key references |
+| OpenRouter, DeepSeek, GLM and similar | balance endpoints with an API key | not built (`specs/decisions.md` D9: prices are not known in real time) |
 | Google AI subscription windows | the agy client's own `/usage` command | in scope as `agy-usage` (opt-in), see the agy section; nothing calls the private endpoint itself |
 
 Keys for these plugins are referenced from config as `env:NAME` or `file:/path` and are never inlined in the config
