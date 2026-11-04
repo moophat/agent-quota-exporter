@@ -25,7 +25,7 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 | `claude-transcripts` | per-message token usage and model | tail `<config>/projects/**/*.jsonl` (including `subagents/*.jsonl`) by byte offset; from each `assistant` line take `message.id`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_creation.ephemeral_1h_input_tokens}`, `timestamp`; skip `model == "<synthetic>"`; dedupe by `message.id` (keep the highest `output_tokens`, a message can be logged more than once while streaming) | 1 to 5 min, incremental | verified |
 | `claude-sessions` | live session count and state | read `<config>/sessions/<pid>.json`: `status`, `updatedAt`, `startedAt`, `pid` (check the pid is alive). Count by `status`. Do not read `cwd`/`name` | each scrape (cheap, local) | verified |
 | `claude-account` | account identity, plan | `<config>/.claude.json` `oauthAccount` object: account uuid/email domain only if needed to derive the alias hash; **never** other keys of that file. `<config>/.credentials.json` `claudeAiOauth`: `expiresAt`, whether `accessToken` is a non-empty string (never its value), and `subscriptionType` for the `plan` label (bounded to `pro`, `max`, `team`, else `unknown`) | at start, on change | verified (file shape) |
-| `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (separate model-family limits), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account**; 60 min after a 429; stop for the profile after two consecutive 401s until the credential file changes | verified (field names), **undocumented endpoint** |
+| `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (model-family limits, and windows of unstated length), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account**; 60 min after a 429; stop for the profile after two consecutive 401s until the credential file changes | verified (field names), **undocumented endpoint** |
 
 Rules specific to `claude-oauth-usage`:
 
@@ -37,6 +37,18 @@ Rules specific to `claude-oauth-usage`:
   endpoint counts toward the rate lock.
 - **Never refresh.** On 401 the token is stale (an idle client stops refreshing; the next real session revives it). Report
   `agent_source_errors_total{reason="auth_expired"}` and wait for the credential file's mtime or expiry to change.
+- **Mapping to series** (`agent_quota_utilization_ratio` = `utilization` / 100, `agent_quota_reset_timestamp_seconds`
+  only when `resets_at` is given; a null object or null `utilization` is absent, never zero):
+  - `five_hour` → `window="5h"`, `seven_day` → `7d`, scope `all`; `five_hour_X` / `seven_day_X` → scope `X`.
+  - Any other top-level object with a numeric `utilization` (seen: `iguana_necktie`, `extra_usage`) → `window="other"`,
+    scope = the key. Its length is not given and not guessed. At most 8 such keys per response, the first by key name,
+    so a vendor adding keys cannot grow the series; a key over 48 characters is dropped. `extra_usage` is the paid
+    allowance used past the subscription limits, a credits figure rather than a quota window; only its `utilization`
+    ratio is exposed, under the same rule, never an amount (D9).
+  - `limits[]`: `kind` `session` → `5h/all`, `weekly_all` → `7d/all`, `weekly_X` → `7d/X` (so `weekly_scoped` →
+    `7d/scoped`). Its numeric `percent` gives the ratio of that window and scope, whether the limit is active or not,
+    unless a top-level object already gave it (that one is more precise and carries the reset). Only an active entry
+    gives `agent_quota_limit_info` with its `severity`.
 - One request per **account**, not per profile, when two profiles hold the same grant (they should not; see the profile
   principle). If detected, warn once and query only one.
 - Never-read columns/files: `.credentials.json` other than `accessToken`, `expiresAt` and `subscriptionType`; `.claude.json` other than the

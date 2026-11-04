@@ -284,21 +284,31 @@ func tokenShaped(t string) bool {
 
 var scopeSafe = regexp.MustCompile(`[^a-z0-9_-]+`)
 
-// windowOf maps a response key to the contract window and scope. Only five_hour* and seven_day* keys are quota
-// windows; anything else (credits, extra usage, future keys) is ignored rather than invented as a window.
-func windowOf(key string) (string, string, bool) {
+// maxOtherWindows bounds the windows of unknown length one response may add (see windowOf).
+const maxOtherWindows = 8
+
+// scopeOf makes a vendor word a scope label: lowercase, [a-z0-9_-] with runs of anything else as "_", ≤ 48 bytes.
+func scopeOf(word string) (string, bool) {
+	sc := strings.Trim(scopeSafe.ReplaceAllString(strings.ToLower(word), "_"), "_")
+	return sc, sc != "" && len(sc) <= 48
+}
+
+// windowOf maps a response key to the contract window and scope: five_hour* is 5h and seven_day* is 7d, with the
+// rest of the key as scope. Any other key is a window whose length the vendor does not give: window "other", the key
+// as scope (known is false). No length is guessed for it.
+func windowOf(key string) (window, scope string, known, ok bool) {
 	key = strings.ToLower(key)
 	for _, w := range []struct{ prefix, window string }{{"five_hour", "5h"}, {"seven_day", "7d"}} {
 		if key == w.prefix {
-			return w.window, "all", true
+			return w.window, "all", true, true
 		}
 		if rest, ok := strings.CutPrefix(key, w.prefix+"_"); ok {
-			if sc := strings.Trim(scopeSafe.ReplaceAllString(rest, "_"), "_"); sc != "" && len(sc) <= 48 {
-				return w.window, sc, true
-			}
+			sc, ok := scopeOf(rest)
+			return w.window, sc, true, ok
 		}
 	}
-	return "", "", false
+	sc, ok := scopeOf(key)
+	return "other", sc, false, ok
 }
 
 // limitWindow maps a limits[].kind to window and scope: session → 5h/all, weekly_all → 7d/all, weekly_X → 7d/X.
@@ -310,7 +320,7 @@ func limitWindow(kind string) (string, string, bool) {
 	case kind == "weekly_all" || kind == "weekly":
 		return "7d", "all", true
 	case strings.HasPrefix(kind, "weekly_"):
-		if sc := strings.Trim(scopeSafe.ReplaceAllString(kind[len("weekly_"):], "_"), "_"); sc != "" && len(sc) <= 48 {
+		if sc, ok := scopeOf(kind[len("weekly_"):]); ok {
 			return "7d", sc, true
 		}
 	}
@@ -325,17 +335,24 @@ func parseUsage(body []byte) (parsedQuota, error) {
 		return parsedQuota{}, err
 	}
 	var q parsedQuota
-	for k, v := range top {
-		w, sc, ok := windowOf(k)
-		if !ok {
+	keys := make([]string, 0, len(top))
+	for k := range top {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)        // which unknown keys fit under maxOtherWindows must not depend on map order
+	have := map[string]bool{} // window/scope already served
+	others := 0
+	for _, k := range keys {
+		w, sc, known, ok := windowOf(k)
+		if !ok || have[w+"/"+sc] || (!known && others >= maxOtherWindows) {
 			continue
 		}
 		var o *struct {
 			Utilization *float64 `json:"utilization"`
 			ResetsAt    *string  `json:"resets_at"`
 		}
-		if json.Unmarshal(v, &o) != nil || o == nil || o.Utilization == nil {
-			continue // null window or null utilization: absent, never zero
+		if json.Unmarshal(top[k], &o) != nil || o == nil || o.Utilization == nil {
+			continue // not an object, null, or null utilization: absent, never zero
 		}
 		qw := qWindow{Window: w, Scope: sc, Ratio: *o.Utilization / 100}
 		if o.ResetsAt != nil {
@@ -343,19 +360,33 @@ func parseUsage(body []byte) (parsedQuota, error) {
 				qw.Reset = t.Unix()
 			}
 		}
+		if !known {
+			others++
+		}
+		have[w+"/"+sc] = true
 		q.Windows = append(q.Windows, qw)
 	}
 	if lr, ok := top["limits"]; ok {
 		var ls []struct {
-			Kind     string `json:"kind"`
-			Severity string `json:"severity"`
-			IsActive bool   `json:"is_active"`
+			Kind     string   `json:"kind"`
+			Percent  *float64 `json:"percent"`
+			Severity string   `json:"severity"`
+			IsActive bool     `json:"is_active"`
 		}
 		if json.Unmarshal(lr, &ls) == nil {
 			seen := map[string]bool{}
 			for _, l := range ls {
 				w, sc, ok := limitWindow(l.Kind)
-				if !l.IsActive || !ok {
+				if !ok {
+					continue
+				}
+				// A limit's percent is a reading of its window, active or not; a top-level window with the same
+				// window and scope is more precise (decimals, reset time) and wins.
+				if l.Percent != nil && !have[w+"/"+sc] {
+					have[w+"/"+sc] = true
+					q.Windows = append(q.Windows, qWindow{Window: w, Scope: sc, Ratio: *l.Percent / 100})
+				}
+				if !l.IsActive {
 					continue
 				}
 				sev := strings.ToLower(l.Severity)

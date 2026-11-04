@@ -1,7 +1,23 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-04T14:20:00Z
+**Last-Updated:** 2026-11-04T16:50:00Z
 
-## Active — Exporter v0.2, more sources | 2026-11-04
+## Active — Claude quota: unprefixed windows and limit percents | 2026-11-04
+<!-- BEGIN STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
+### Claude quota: unprefixed windows and limit percents | 2026-11-04
+**Meta:** fix/claude-other-windows | opus | issue #16
+**Model:** opus
+**Outcome:** in progress: parser, fixture, tests and spec done; PR, review, release pending
+**Key:** unknown top-level window → window="other", scope=key, max 8 per response by key name, no length guessed; limits[].percent → ratio of its window/scope whether active or not, top-level wins; extra_usage = paid allowance past the limits (credits), ratio only
+**Pending:** PR into main, Qodo, merge, release with #14 fixes, comment and close #16
+<!-- END STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
+- [x] Parser, fixture, tests (4 mutants caught), spec and contract note
+- [ ] PR, review, merge, release, issue comment
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-04 | Exporter v0.2, more sources -->
 ### Exporter v0.2, more sources | 2026-11-04
 **Meta:** feat/v0.2-sources | claude-opus-5-5 | `plans/261104-1800-more-sources/plan.md`
@@ -10,15 +26,6 @@
 **Key:** passive quota served until its own reset; credits 0 is not "out"; one Codex reading per scope; WAL DB without sidecars skipped so nothing is created in agent dirs; agy disables itself if /usage spends a turn; provider balances deferred
 **Pending:** on-prem test of v0.2.0-rc.2 (`plans/handoffs/v0.2-rc-test-20261104.md`), then v0.2.0. Ruled 2026-11-04: -shm read-marks accepted (D8), balances not built (D9), idle ~16 MB accepted (D10)
 <!-- END STUB: 2026-11-04 | Exporter v0.2, more sources -->
-- [x] Brief read and deleted; design + red-team
-- [x] Scaffold, sqlro, safefs, codex, agy, router, opencode
-- [x] PR #10 (Qodo: 13 + 8 + 1 findings fixed or answered), merged as 14aeb20; v0.2.0-rc.1 and rc.2 released and verified
-- [ ] On-prem test results, v0.2.0
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-03 | Exporter v0.1, Claude only -->
 ### Exporter v0.1, Claude only | 2026-11-03
