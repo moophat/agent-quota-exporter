@@ -24,7 +24,8 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
 | `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet` | `all` when the window covers everything |
 
-`window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`).
+`window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`);
+`other` when the vendor reports a window without its length (the vendor's word is then the `scope`).
 `scope` is never empty.
 
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are

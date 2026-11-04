@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -84,7 +86,8 @@ func TestOAuthUsageParsesFixture(t *testing.T) {
 	for _, c := range []struct {
 		window, scope string
 		v             float64
-	}{{"5h", "all", 0.42}, {"7d", "all", 0.185}, {"7d", "model_family_example", 0.07}} {
+	}{{"5h", "all", 0.42}, {"7d", "all", 0.185}, {"7d", "model_family_example", 0.07},
+		{"other", "iguana_necktie", 0.125}, {"other", "extra_usage", 0}, {"7d", "scoped", 0.31}} {
 		if v, ok := find(res.Samples, "agent_quota_utilization_ratio", "window", c.window, "scope", c.scope, "provider", "anthropic"); !ok || v != c.v {
 			t.Fatalf("%s/%s = %v %v", c.window, c.scope, v, ok)
 		}
@@ -98,6 +101,19 @@ func TestOAuthUsageParsesFixture(t *testing.T) {
 	if _, ok := find(res.Samples, "agent_quota_limit_info", "window", "7d", "scope", "all", "severity", "normal"); !ok {
 		t.Fatal("weekly limit missing")
 	}
+	// A window of unknown length has no reset invented; an inactive limit gives its percent but no limit state.
+	for _, sc := range []string{"iguana_necktie", "extra_usage", "scoped"} {
+		if _, ok := find(res.Samples, "agent_quota_reset_timestamp_seconds", "scope", sc); ok {
+			t.Fatalf("%s: reset time invented", sc)
+		}
+	}
+	if _, ok := find(res.Samples, "agent_quota_limit_info", "scope", "scoped"); ok {
+		t.Fatal("inactive limit exposed as a limit state")
+	}
+	// A limit's percent never replaces a top-level window of the same window and scope.
+	if n := count(res.Samples, "agent_quota_utilization_ratio", "window", "5h", "scope", "all"); n != 1 {
+		t.Fatalf("5h/all: %d series", n)
+	}
 	if v, _ := find(res.Samples, "agent_quota_observed_timestamp_seconds"); v != float64(t0.Unix()) {
 		t.Fatal("observed timestamp")
 	}
@@ -107,42 +123,116 @@ func TestOAuthUsageParsesFixture(t *testing.T) {
 	noCanary(t, res.Samples, err)
 }
 
-// Credits and unknown keys are not quota windows; null windows are absent, never zero; duplicate limits collapse.
-func TestOAuthUsageIgnoresNonWindowsAndNulls(t *testing.T) {
+// Null windows and null utilization are absent, never zero; duplicate limits collapse; a key of unknown length is
+// window "other" with a reset time only if the vendor gives one; an unknown limit kind is no series.
+func TestOAuthUsageNullsAndOtherWindows(t *testing.T) {
 	body := []byte(`{"five_hour":{"utilization":10,"resets_at":null},"seven_day":null,"seven_day_opus":{"utilization":null},
-	"extra_usage":{"is_enabled":true,"utilization":55},"seven_day_oauth_apps":null,
+	"extra_usage":{"utilization":55},"iguana_necktie":{"utilization":null},"Odd Key!":{"utilization":5,"resets_at":"2026-01-02T00:00:00Z"},
+	"seven_day_oauth_apps":null,"not_a_window":"text","a_number":3,
 	"limits":[{"kind":"session","severity":"warning","is_active":true},{"kind":"session","severity":"normal","is_active":true},
-	{"kind":"weekly_all","severity":"normal","is_active":false},{"kind":"mystery","severity":"normal","is_active":true}]}`)
+	{"kind":"weekly_all","severity":"normal","is_active":false},{"kind":"weekly_x","percent":null,"is_active":false},
+	{"kind":"mystery","percent":90,"severity":"normal","is_active":true}]}`)
 	st := newStub(t, body)
 	res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
+	got := map[string]float64{}
 	for _, s := range res.Samples {
 		if s.Name == "agent_quota_utilization_ratio" {
-			n++
+			got[label(s, "window")+"/"+label(s, "scope")] = s.Value
 		}
-		for _, l := range s.Labels {
-			if l.Name == "window" && l.Value != "5h" && l.Value != "7d" {
-				t.Fatalf("non-contract window %q", l.Value)
+	}
+	want := map[string]float64{"5h/all": 0.1, "other/extra_usage": 0.55, "other/odd_key": 0.05}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ratios %v, want %v", got, want)
+	}
+	if v, ok := find(res.Samples, "agent_quota_reset_timestamp_seconds", "scope", "odd_key"); !ok || v != 1767312000 {
+		t.Fatalf("vendor reset of an other window: %v %v", v, ok)
+	}
+	if n := count(res.Samples, "agent_quota_reset_timestamp_seconds"); n != 1 {
+		t.Fatalf("null resets_at must be absent, got %d resets", n)
+	}
+	if n := count(res.Samples, "agent_quota_limit_info"); n != 1 {
+		t.Fatalf("want one deduplicated active limit, got %d", n)
+	}
+}
+
+// Two keys that normalise to one scope keep both readings: the second gets a stable hash suffix, never silently lost.
+func TestOAuthUsageCollidingScopesKept(t *testing.T) {
+	body := []byte(`{"foo.bar":{"utilization":1},"foo_bar":{"utilization":2},"seven_day_x.y":{"utilization":3},"seven_day_x_y":{"utilization":4}}`)
+	got := map[string]float64{}
+	for range 2 {
+		st := newStub(t, body)
+		res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range res.Samples {
+			if s.Name == "agent_quota_utilization_ratio" {
+				got[label(s, "window")+"/"+label(s, "scope")] = s.Value
 			}
 		}
 	}
-	if n != 1 {
-		t.Fatalf("want only five_hour, got %d ratio series", n)
+	if len(got) != 4 {
+		t.Fatalf("want 4 stable series, got %v", got)
 	}
-	if _, ok := find(res.Samples, "agent_quota_reset_timestamp_seconds"); ok {
-		t.Fatal("null resets_at must be absent")
+	vals := map[float64]bool{}
+	for k, v := range got {
+		if !strings.Contains(k, "foo_bar") && !strings.Contains(k, "x_y") {
+			t.Errorf("scope lost its readable part: %s", k)
+		}
+		vals[v] = true
 	}
-	limits := 0
+	if len(vals) != 4 {
+		t.Fatalf("a reading was lost or merged: %v", got)
+	}
+}
+
+// A key that equals the scope generated for a colliding key does not take that reading's series either.
+func TestOAuthUsageGeneratedScopeNotReused(t *testing.T) {
+	taken := strings.ToUpper(distinctScope("foo_bar", "foo_bar")) // sorts first, so it claims the generated scope
+	body := []byte(`{"` + taken + `":{"utilization":1},"foo.bar":{"utilization":2},"foo_bar":{"utilization":3}}`)
+	st := newStub(t, body)
+	res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes, vals := map[string]bool{}, map[float64]bool{}
 	for _, s := range res.Samples {
-		if s.Name == "agent_quota_limit_info" {
-			limits++
+		if s.Name == "agent_quota_utilization_ratio" {
+			scopes[label(s, "scope")], vals[s.Value] = true, true
 		}
 	}
-	if limits != 1 {
-		t.Fatalf("want one deduplicated active limit, got %d", limits)
+	if len(scopes) != 3 || len(vals) != 3 {
+		t.Fatalf("want three distinct series, got scopes %v values %v", scopes, vals)
+	}
+}
+
+// However many unknown keys the vendor adds, one profile gets at most maxOtherWindows "other" series, the same ones
+// on every call.
+func TestOAuthUsageOtherWindowsBounded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"five_hour":{"utilization":1}`)
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, `,"key_%02d":{"utilization":%d}`, 49-i, i)
+	}
+	b.WriteString(`,"` + strings.Repeat("k", 49) + `":{"utilization":1}}`)
+	st := newStub(t, []byte(b.String()))
+	res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scopes []string
+	for _, s := range res.Samples {
+		if s.Name == "agent_quota_utilization_ratio" && label(s, "window") == "other" {
+			scopes = append(scopes, label(s, "scope"))
+		}
+	}
+	sort.Strings(scopes)
+	want := []string{"key_00", "key_01", "key_02", "key_03", "key_04", "key_05", "key_06", "key_07"}
+	if !reflect.DeepEqual(scopes, want) {
+		t.Fatalf("other windows %v, want %v", scopes, want)
 	}
 }
 
@@ -321,4 +411,24 @@ func TestOAuthUsagePerAccountGateSurvivesRestart(t *testing.T) {
 	if _, ok := find(res.Samples, "agent_quota_utilization_ratio", "profile", "b"); !ok {
 		t.Fatal("restored answer not served under the sibling profile")
 	}
+}
+
+// count is the number of samples of name whose labels include every kv pair.
+func count(ss []core.Sample, name string, kv ...string) int {
+	n := 0
+	for i := range ss {
+		if _, ok := find(ss[i:i+1], name, kv...); ok {
+			n++
+		}
+	}
+	return n
+}
+
+func label(s core.Sample, name string) string {
+	for _, l := range s.Labels {
+		if l.Name == name {
+			return l.Value
+		}
+	}
+	return ""
 }

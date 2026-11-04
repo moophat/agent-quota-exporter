@@ -1,24 +1,31 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-04T16:40:00Z
 
-## Active — v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
-<!-- BEGIN STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
-### v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
-**Meta:** fix/v0.2-labels | opus | issue #14, `plans/handoffs/v0.2-rc-test-result-20261104.md`
+## Active — Claude quota: unprefixed windows and limit percents | 2026-11-04
+<!-- BEGIN STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
+### Claude quota: unprefixed windows and limit percents | 2026-11-04
+**Meta:** fix/claude-other-windows | opus | issue #16
 **Model:** opus
-**Outcome:** in progress: both fixes and docs done, tests pass (root and non-root); PR, review, next rc pending
-**Key:** Codex file started at its end takes the model of its last turn_context before that offset (backward search, 16 MiB cap); router provider id over 48 chars keeps prefix minus uuid plus 8-hex hash; state saved per source kept (durability); agy unit needs PATH, ReadWritePaths for its HOME, MemoryMax 512M
-**Pending:** PR into main, Qodo, merge, v0.2.0-rc.3, comment and close #14
-<!-- END STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
-- [x] Codex model search before the start offset, test with two mutants
-- [x] Router provider label prefix plus hash, test with a mutant
-- [x] Docs: specs/sources.md, example unit
-- [ ] PR, review, merge, rc.3, issue comment
+**Outcome:** in progress: parser, fixture, tests and spec done; PR, review, release pending
+**Key:** unknown top-level window → window="other", scope=key, max 8 per response by key name, no length guessed; limits[].percent → ratio of its window/scope whether active or not, top-level wins; extra_usage = paid allowance past the limits (credits), ratio only
+**Pending:** PR into main, Qodo, merge, release with #14 fixes, comment and close #16
+<!-- END STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
+- [x] Parser, fixture, tests (4 mutants caught), spec and contract note
+- [ ] PR, review, merge, release, issue comment
 
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
+### v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
+**Meta:** fix/v0.2-labels | opus | issue #14, `plans/handoffs/v0.2-rc-test-result-20261104.md`
+**Model:** opus
+**Outcome:** merged (PR #15, e2333ec): Codex model search before the start offset, retried after a failed read; router provider prefix plus hash; docs. Qodo findings fixed; tests pass as root and non-root
+**Key:** Codex file started at its end takes the model of its last turn_context before that offset (backward search, 16 MiB cap); router provider id over 48 chars keeps prefix minus uuid plus 8-hex hash; state saved per source kept (durability); agy unit needs PATH, ReadWritePaths for its HOME, MemoryMax 512M
+**Pending:** v0.2.0-rc.3 with #16, comment and close #14
+<!-- END STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
 
 <!-- BEGIN STUB: 2026-11-04 | Exporter v0.2, more sources -->
 ### Exporter v0.2, more sources | 2026-11-04

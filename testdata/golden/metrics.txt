@@ -3,6 +3,9 @@
 agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",env="lab"} 0.42
 agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="all",env="lab"} 0.185
 agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="model_family_example",env="lab"} 0.07
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="7d",scope="scoped",env="lab"} 0.31
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="other",scope="extra_usage",env="lab"} 0
+agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="other",scope="iguana_necktie",env="lab"} 0.125
 # HELP agent_quota_reset_timestamp_seconds When the quota window resets, Unix seconds.
 # TYPE agent_quota_reset_timestamp_seconds gauge
 agent_quota_reset_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",env="lab"} 1767243600

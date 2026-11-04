@@ -11,6 +11,12 @@
     "utilization": 7.0,
     "resets_at": "2026-01-06T09:00:00+00:00"
   },
+  "iguana_necktie": {
+    "utilization": 12.5
+  },
+  "extra_usage": {
+    "utilization": 0.0
+  },
   "limits": [
     {
       "kind": "session",
@@ -23,6 +29,12 @@
       "percent": 18,
       "severity": "normal",
       "is_active": true
+    },
+    {
+      "kind": "weekly_scoped",
+      "percent": 31,
+      "severity": "normal",
+      "is_active": false
     }
   ]
 }
