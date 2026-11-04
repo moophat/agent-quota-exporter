@@ -644,8 +644,8 @@ func TestProviderLabelMatchesRouter(t *testing.T) {
 	}
 }
 
-// When the database is replaced, ids pending in the old one must not survive the cursor reset: a replacement row
-// that reuses a pending id is history of the new database, not the completion of the old message.
+// When the database is replaced (a different file), ids pending in the old one must not survive: a row in the new
+// file that reuses a pending id is history of the new database, not the completion of the old message.
 func TestReplacementDoesNotCompleteOldPending(t *testing.T) {
 	path, w := emptyDB(t, false)
 	s, r := source(path, 20), &run{}
@@ -654,10 +654,37 @@ func TestReplacementDoesNotCompleteOldPending(t *testing.T) {
 	insert(t, w, "b", done("provider-a", "model-y", 1, 0, 0, 0, 0, 0))
 	insert(t, w, "p", streaming("provider-a", "model-y", 0))
 	r.collect(t, s, t0.Add(time.Minute)) // a, b counted; p pending
-	exec(t, w, "DELETE FROM message")
-	insert(t, w, "p", done("provider-a", "model-y", 500, 0, 0, 0, 0, 0)) // replacement history reusing id p
+	w.Close()
+
+	other, w2 := emptyDB(t, false) // the replacement: a new file renamed over the old one
+	insert(t, w2, "p", done("provider-a", "model-y", 500, 0, 0, 0, 0, 0))
+	w2.Close()
+	if err := os.Rename(other, path); err != nil {
+		t.Fatal(err)
+	}
 	got := r.collect(t, s, t0.Add(2*time.Minute))
 	if got["agent_tokens_total{provider-a,model-y,input}"] != 2 {
 		t.Fatalf("a replacement row reusing a pending id was counted: %v", got)
+	}
+}
+
+// Deleting the newest rows of the same database (a session removed) lowers the last rowid, but a message still in
+// flight in another session must stay pending and be counted when it completes.
+func TestDeletionKeepsOtherPending(t *testing.T) {
+	path, w := emptyDB(t, false)
+	s, r := source(path, 20), &run{}
+	r.collect(t, s, t0)
+	insert(t, w, "x", streaming("provider-a", "model-y", 0)) // in flight
+	insert(t, w, "y1", done("provider-a", "model-y", 1, 0, 0, 0, 0, 0))
+	insert(t, w, "y2", done("provider-a", "model-y", 1, 0, 0, 0, 0, 0))
+	r.collect(t, s, t0.Add(time.Minute)) // y1, y2 counted; x pending
+	exec(t, w, "DELETE FROM message WHERE id IN ('y1','y2')")
+	r.collect(t, s, t0.Add(2*time.Minute)) // last rowid fell below the cursor
+	if _, err := w.Exec(`UPDATE message SET data = ? WHERE id = 'x'`, done("provider-a", "model-y", 40, 0, 0, 0, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	got := r.collect(t, s, t0.Add(3*time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 42 {
+		t.Fatalf("an in-flight message was lost when newer rows were deleted: %v", got)
 	}
 }

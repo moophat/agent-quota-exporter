@@ -27,11 +27,13 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
@@ -137,6 +139,7 @@ type total struct {
 type dbState struct {
 	Init    bool             `json:"init"`
 	Cursor  int64            `json:"cursor"`            // last rowid read
+	Ino     uint64           `json:"ino,omitempty"`     // inode of the database file; a change means it was replaced
 	Pending map[string]*pend `json:"pending,omitempty"` // key: message id
 	// Totals and Named are keyed by provider \x00 model label, decided when a message is counted and never
 	// changed afterwards, so no total moves between series.
@@ -184,7 +187,7 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 		return core.Result{}, nil, err
 	}
 	errs := map[string]int{}
-	err = s.read(ctx, db, now, errs)
+	err = s.read(ctx, db, fileIno(s.Path), now, errs)
 	if cerr := db.Close(); err == nil {
 		err = cerr
 	}
@@ -200,21 +203,40 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 	return res, blob, err
 }
 
-func (s *DBSource) read(ctx context.Context, db *sqlro.DB, now time.Time, errs map[string]int) error {
+// fileIno is the database file's inode (0 if unknown). sqlro has already refused a path with a link on it.
+func fileIno(path string) uint64 {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return 0
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return st.Ino
+	}
+	return 0
+}
+
+func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.Time, errs map[string]int) error {
 	st := s.st
 	last, err := db.MaxRowid(table)
 	if err != nil {
 		return err
 	}
 	if !st.Init {
-		st.Init, st.Cursor = true, last
+		st.Init, st.Cursor, st.Ino = true, last, ino
 		return nil
 	}
-	if last < st.Cursor {
-		// The database was replaced (or its newest rows deleted): no replay, and the pending ids belong to the old
-		// database, so a replacement row reusing one of them must not be counted as its completion.
+	if ino != 0 && st.Ino != 0 && ino != st.Ino {
+		// A different file: the database was replaced. No replay, and the pending ids belong to the old database, so
+		// a replacement row reusing one of them must not be counted as its completion.
 		st.Cursor = last
 		st.Pending = map[string]*pend{}
+	} else if last < st.Cursor {
+		// Same file, newest rows deleted (a session removed): move the cursor back without replay, but keep the
+		// pending ids. Messages still in flight in other sessions complete later; deleted ones drop out on re-read.
+		st.Cursor = last
+	}
+	if ino != 0 {
+		st.Ino = ino
 	}
 	for {
 		rows, err := db.After(table, "rowid", st.Cursor, cols, pageSize)
