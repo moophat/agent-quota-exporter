@@ -120,7 +120,8 @@ Same bar as v0.1.
 - Missing or unreadable state gives `agent_source_up 0`, never a zero value.
 - `strace` on a real node, on-prem: no writes outside the state dir, and no network from local-state plugins.
 - Counters equal an independent recount on a real node, as v0.1 did for Claude.
-- Idle cost: about 16 MB (was "under 15 MB"; D10) and negligible CPU with a large router DB and a dozen profiles.
+- Idle cost: about 16 MB, at most 17 MB (was "under 15 MB"; D10), and negligible CPU with a large router DB and a dozen
+  profiles.
 
 ## On-prem (not the cloud lane's)
 
