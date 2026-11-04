@@ -158,6 +158,37 @@ func TestOAuthUsageNullsAndOtherWindows(t *testing.T) {
 	}
 }
 
+// Two keys that normalise to one scope keep both readings: the second gets a stable hash suffix, never silently lost.
+func TestOAuthUsageCollidingScopesKept(t *testing.T) {
+	body := []byte(`{"foo.bar":{"utilization":1},"foo_bar":{"utilization":2},"seven_day_x.y":{"utilization":3},"seven_day_x_y":{"utilization":4}}`)
+	got := map[string]float64{}
+	for range 2 {
+		st := newStub(t, body)
+		res, _, err := collect(t, st.source(newProfile(t, "a")), t0, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range res.Samples {
+			if s.Name == "agent_quota_utilization_ratio" {
+				got[label(s, "window")+"/"+label(s, "scope")] = s.Value
+			}
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("want 4 stable series, got %v", got)
+	}
+	vals := map[float64]bool{}
+	for k, v := range got {
+		if !strings.Contains(k, "foo_bar") && !strings.Contains(k, "x_y") {
+			t.Errorf("scope lost its readable part: %s", k)
+		}
+		vals[v] = true
+	}
+	if len(vals) != 4 {
+		t.Fatalf("a reading was lost or merged: %v", got)
+	}
+}
+
 // However many unknown keys the vendor adds, one profile gets at most maxOtherWindows "other" series, the same ones
 // on every call.
 func TestOAuthUsageOtherWindowsBounded(t *testing.T) {

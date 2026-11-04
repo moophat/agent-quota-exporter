@@ -2,6 +2,8 @@ package claude
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -293,6 +295,13 @@ func scopeOf(word string) (string, bool) {
 	return sc, sc != "" && len(sc) <= 48
 }
 
+// distinctScope is the scope of a key whose normalised scope another key already took: the scope cut to 39 bytes,
+// "_" and 8 hex digits of sha256 of the raw key, so it stays ≤ 48, stable and apart from the first.
+func distinctScope(sc, key string) string {
+	h := sha256.Sum256([]byte(key))
+	return strings.TrimRight(sc[:min(len(sc), 39)], "_-") + "_" + hex.EncodeToString(h[:4])
+}
+
 // windowOf maps a response key to the contract window and scope: five_hour* is 5h and seven_day* is 7d, with the
 // rest of the key as scope. Any other key is a window whose length the vendor does not give: window "other", the key
 // as scope (known is false). No length is guessed for it.
@@ -344,8 +353,11 @@ func parseUsage(body []byte) (parsedQuota, error) {
 	others := 0
 	for _, k := range keys {
 		w, sc, known, ok := windowOf(k)
-		if !ok || have[w+"/"+sc] || (!known && others >= maxOtherWindows) {
+		if !ok || (!known && others >= maxOtherWindows) {
 			continue
+		}
+		if have[w+"/"+sc] {
+			sc = distinctScope(sc, k) // another key normalised to the same scope: keep both readings
 		}
 		var o *struct {
 			Utilization *float64 `json:"utilization"`
