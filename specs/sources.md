@@ -47,9 +47,50 @@ A *profile* is one `CODEX_HOME` (default `~/.codex`). Observed layout (names onl
 
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
-| `codex-rate-limits` | primary and secondary window `usedPercent`, `resetsAt`, reset credits | JSON-RPC over stdio to `codex app-server`: `account/read`, `account/rateLimits/read` (shape in `fixtures/codex/rate-limits-response.json`, synthetic) | at most once per account per 15 min | documented, **unverified** (the node used for fixtures is not logged in) |
-| `codex-state` | sessions, usage | `<CODEX_HOME>/state_*.sqlite` (and `logs_*.sqlite`): schema not yet inspected; read-only, explicit columns | 1 to 5 min | **unverified**, schema discovery is a phase task |
+| `codex-rollouts` (on by default, passive) | quota windows, credits, per-call tokens and model | tail `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl` by byte offset. Only two line kinds are decoded: `type=="turn_context"` (`payload.model` only) and `type=="event_msg"` with `payload.type=="token_count"` (`timestamp`, `payload.info.{total_token_usage,last_token_usage}`, `payload.rate_limits.{limit_id, primary, secondary, credits}`). See `fixtures/codex/rollouts/` and `fixtures/codex/home/` | the usage interval (1 min), incremental | verified (shape, Codex CLI 0.163.0, 2026-11-04 on-prem); token arithmetic **documented** from the Codex source (below) |
+| `codex-rate-limits` | primary and secondary window `usedPercent`, `resetsAt`, reset credits | JSON-RPC over stdio to `codex app-server`: `account/read`, `account/rateLimits/read` (shape in `fixtures/codex/rate-limits-response.json`, synthetic) | at most once per account per 15 min | documented, **unverified** (the node used for fixtures is not logged in). **Not built** (v0.2 plan item 7: only if the passive reading proves too stale) |
+| `codex-state` | sessions, usage | `<CODEX_HOME>/state_*.sqlite` (and `logs_*.sqlite`): read-only, explicit columns | 1 to 5 min | **Not built** in v0.2; `threads` holds prompt-adjacent text columns |
 | `codex-auth` (presence only) | logged-in state | check that `<CODEX_HOME>/auth.json` exists and its mtime; do not read its contents | each scrape | verified (name) |
+
+Rules specific to `codex-rollouts`:
+
+- **Token types.** Codex's `TokenUsage` copies the Responses API usage: `input_tokens` *includes*
+  `cached_input_tokens` and `cache_write_input_tokens`, and `output_tokens` *includes* `reasoning_output_tokens`
+  (`total_tokens` = input + output). Source, `openai/codex` `main` read 2026-11-04: `codex-rs/codex-api/src/sse/responses.rs`
+  (`From<ResponseCompletedUsage> for TokenUsage` maps `input_tokens_details.{cached_tokens, cache_write_tokens}` and
+  `output_tokens_details.reasoning_tokens`; its test `parses_cache_write_token_usage` has input 100 = cached 40 + cache
+  write 60, total 110 = input 100 + output 10 with reasoning 5) and `codex-rs/protocol/src/protocol.rs`
+  (`TokenUsage::non_cached_input()` = input − cached). So the contract types are, each floored at 0:
+  `input` = input − cached − cache write, `cache_read` = cached, `cache_write` = cache write,
+  `output` = output − reasoning, `reasoning` = reasoning.
+- **Counting.** A `token_count` counts its `last_token_usage` only when its `total_token_usage` differs from the
+  previous total in the same file (Codex writes the same event twice); `agent_requests_total{outcome="ok"}` +1 per
+  counted event. The model is the file's latest `turn_context` model (kept per file), `unknown` before one, capped per
+  profile like Claude. No replay: files present at the first collect start at their end; files appearing later are read
+  from the start, skipping lines older than their first sighting minus one hour (history copied on fork or resume).
+- **Quota is a gauge, one reading per scope**: `scope` = `all` for `limit_id` `codex` or none, the id itself if it
+  matches `^[a-z0-9_-]{1,32}$`, else `other`. Each scope keeps the `token_count` with non-null `rate_limits` whose own
+  `timestamp` is newest for that scope across all files, so Codex alternating between limits never hides one of them.
+  A null `rate_limits` never replaces a reading. At most 8 scopes per profile; a new one beyond that evicts the scope
+  whose newest reading is oldest (not an error). At the first collect the tails (last 1 MiB) of the 20 newest files by
+  mtime are searched the same way, so an idle profile has its readings at once; they are persisted.
+  `primary`/`secondary` give `agent_quota_utilization_ratio` (`used_percent` / 100) and
+  `agent_quota_reset_timestamp_seconds`; `window` from `window_minutes` (300 → `5h`, 10080 → `7d`, else `<n>d`, `<n>h`
+  or `<n>m` by the largest whole unit, missing → `other`). Two windows of a scope with the same labels merge (max
+  utilization, earliest reset).
+- **Passive staleness** (contract, "Passive sources are the one exception"), per scope: a window is served until its
+  `resets_at` passes; one without `resets_at` for `stale_after` from its reading. `agent_quota_observed_timestamp_seconds`
+  has no `scope` label: it is one series per profile, the newest reading time among the scopes still served, and is
+  absent when none is.
+- **Credits**, per scope: `agent_quota_credits_available` = `has_credits || unlimited`; `agent_quota_credits_balance` =
+  `balance` (a string in Codex, a number accepted) when not unlimited and numeric. A reading with null `credits` keeps
+  the scope's previous credits; credits are served at most until the longest window of their own reading resets
+  (reading + 7 days with none).
+- Never decoded or kept: any other line type (`response_item`, `session_meta`, other `event_msg`), and in the two
+  decoded kinds every field not listed above (`cwd`, instructions, `limit_name`, message text). A relevant line over
+  4 MiB is skipped and counted as a parse error; an irrelevant line is never buffered.
+- Missing or linked `sessions/` is `not_found` / `permission`, never zero values. Links at any level are refused.
+- Not exported: session counts (no live-session signal with a pid), Codex `error` events (no real sample of their shape yet).
 
 Rules specific to `codex-rate-limits`:
 
