@@ -281,7 +281,7 @@ file.
 - Calling a model (no inference to "test" an account; no tokens spent by the exporter).
 - Reading any prompt, completion, tool input/output or file content from any agent's state.
 - Reading any credential file beyond the one value or timestamp a declared plugin needs.
-- Router and gateway internals (per-account health inside a proxy such as a model router) are a separate class of
-  source: possible later as plugins, always with a column allow-list (their tables hold provider tokens and API keys).
+- Router and gateway internals other than 9router (see its section). Each would be its own plugin, always behind a
+  column allow-list, since their tables hold provider tokens and API keys.
 - Host CPU/memory/disk metrics: use `node_exporter`.
 - Writing to or modifying any agent configuration.
