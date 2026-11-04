@@ -25,7 +25,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 
 ## Known issues / deviations (v0.1)
 - Release triggers have no repository-side control (no ruleset on `v*` / `release/*`); not needed while the repo is private with one writer, PR #3.
-- Config dirs on NFS (D6): none is on a shared mount today (on-prem, 2026-11-04); the one-exporter-per-dir rule is the guard if one ever is.
+- Config dirs on NFS (D6): none found on the shared mount, and none on the five nodes inspected (on-prem, 2026-11-04); the NFS server node was not inspected by command. The one-exporter-per-dir rule stays the guard.
 - Discovered alias = home name for `~/.claude` (spec says directory-name slug, which collides); `.claude-X` → `claude-x`.
 - Session liveness = `/proc/<pid>` exists (pid reuse not detected). Status words seen on real installs: `busy`, `idle`, `shell`; `shell` (meaning unknown) counts as `other`.
 - Not tested anywhere yet: the arm64 binary, systemd runtime (the unit passes `systemd-analyze verify`), VictoriaMetrics ingestion.

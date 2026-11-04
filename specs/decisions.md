@@ -56,10 +56,15 @@ so fleet totals are multiplied by the number of nodes. Proposed rule, pending a 
 is read by exactly one exporter (the node that owns the session); on the other nodes, narrow `discovery.roots`
 or use `discovery.mode: only` with roots that leave it out. The config has no per-dir exclude today.
 
-On-prem inspection, 2026-11-04 (`plans/handoffs/onprem-test-result-20261104-0400.md`): every Claude config dir that
-holds credentials, `projects/` or `sessions/` is on a node-local disk, none is on the shared mount, and a depth-5
-search of the mount found no profile dir. No config dir is visible to two exporters, so the rule is not needed yet;
-it stays here as the guard to apply if a profile is ever placed on a shared mount.
+On-prem inspection, 2026-11-04 (`plans/handoffs/onprem-test-result-20261104-0400.md`):
+- On the five nodes inspected, every Claude config dir that holds credentials, `projects/` or `sessions/` is on a
+  node-local disk, and none is on the shared mount.
+- A depth-5 search of the shared mount found no profile dir.
+- Not inspected by command: the NFS server node itself. A profile there would be visible to other exporters only if
+  placed under the export, and the mount search found none. Its node-local profiles were not checked.
+
+So no shared config dir is known today, and the rule is not applied yet. It stays OPEN as the guard: apply it if a
+profile is ever placed on a shared mount, and re-check when the NFS server node is inspected.
 
 ## Also recorded in `plan.md`, not yet ruled
 
