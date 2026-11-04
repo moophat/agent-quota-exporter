@@ -80,8 +80,9 @@ Each is shippable alone. Stop and release at any point.
 
 - **Staleness of passive quota.** The contract drops a quota value past `stale_after`. For a passive reading that would hide
   a true number on any idle profile. Decision: a passive quota series stays until its own `resets_at` passes, then goes
-  absent; `agent_quota_observed_timestamp_seconds` carries its true age so the consumer can say "as of". Document it in the
-  contract as a source property. Adding this is non-breaking.
+  absent; `agent_quota_observed_timestamp_seconds` carries its true age so the consumer can say "as of". This is a deliberate
+  exception to the contract's staleness rules, so the same PR changes them to name it: passive sources only, per source, in
+  `specs/metric-contract.md`. Live sources keep `stale_after`. Series and types don't change, so contract stays 0.
 - **Contract stays 0** if everything is additive. If it isn't, bump it and say why.
 - **Fixed vocabulary, bounded cardinality:** same rules. No per-session labels.
 - **No fleet data in this repo:** names, addresses and mappings stay on the on-prem side.
@@ -95,7 +96,7 @@ Each is shippable alone. Stop and release at any point.
 - `agent_quota_utilization_ratio` = `1 - remaining_fraction`.
 - `window` from the bucket's `window` (`weekly`, `5h`). `scope` from the bucket id's group: `gemini` and `3p`.
 - `agent_quota_reset_timestamp_seconds` from `reset_time`.
-- Every other field is ignored. Unknown bucket ids are exported by their id, not dropped.
+- Every other field is ignored. Bucket ids outside the fixed vocabulary go to `scope="other"` and a health counter, so a vendor can't grow label values.
 - Default interval 30 minutes, floor 15. Normal staleness rules apply, since this is a live reading.
 - Serialise calls across profiles, and back off on any non-zero exit.
 - One account may be logged in on several machines, so config must let an operator read each account from one host only.
@@ -104,15 +105,18 @@ Why not the alternatives. CLIProxyAPI's management UI and cockpit-tools both rea
 `retrieveUserQuotaSummary` themselves, with their own identity headers and tokens they hold; the agy binary contains that
 same call, so `/usage` is the client making it.
 
-Add this to `specs/sources.md`, replacing "no quota surface". On-prem measures whether a call rewrites the token file, by hash
-and mtime only. Fixture: `fixtures/agy/usage-command.json`.
+Add this to `specs/sources.md`, replacing "no quota surface". It ships off by default. Measured on-prem on 2026-11-04, one account, by hash and mtime only: a call
+with an expired access token refreshes it and rewrites the token file, as any agy run does; two calls with a live token changed
+nothing. So each poll can trigger the client's normal refresh, and the docs must say so. Whether the refresh token itself rotates
+wasn't captured at that call; earlier on-prem testing found it doesn't. On-prem repeats that check on an rc before `v0.2.0`, and
+if it rotates, the source stays out of the release. Fixture: `fixtures/agy/usage-command.json`.
 
 ## Acceptance
 
 Same bar as v0.1.
 
 - Each source has a golden-metrics test against a fixture, and a test that the secret columns and files are never read
-  (the query allow-list, as in `specs/sources.md`). A test must fail if someone adds `first_user_message` or `data` to a query.
+  (the query allow-list, as in `specs/sources.md`). The tests are per table: selecting `threads.first_user_message`, `providerConnections.data` as a whole or `usageHistory.apiKey` must fail; `message.data` and `json_extract` of the listed health fields are allowed.
 - Missing or unreadable state gives `agent_source_up 0`, never a zero value.
 - `strace` on a real node, on-prem: no writes outside the state dir, and no network from local-state plugins.
 - Counters equal an independent recount on a real node, as v0.1 did for Claude.
@@ -122,6 +126,11 @@ Same bar as v0.1.
 
 - Test each rc on real nodes and write results to `plans/handoffs/`.
 - Fleet side, in its own repo: profile config for every account, label map, scrape rules, the page's Usage screen.
+
+## Claude stays on polling
+
+The maintainer, 2026-11-04: "Ok stay polling for cc then". `claude -p /usage` was tried on-prem: it works with 0 tokens, but returns
+English text with fewer windows and less precision. `claude-oauth-usage` stays the source for Claude.
 
 ## Out of scope
 
