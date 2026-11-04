@@ -29,6 +29,8 @@ const (
 	scanFiles = 20      // first start: newest rollouts (by mtime) searched for the last quota reading
 	scanTail  = 1 << 20 // ... reading at most this many bytes from the end of each
 	walkDepth = 3       // sessions/YYYY/MM/DD
+	modelStep = 1 << 20 // model search back from a file's offset: window step; a window spans two steps
+	modelScan = 16 << 20
 )
 
 // RolloutsSource is `codex-rollouts`: token and request counters, quota windows and credits from
@@ -233,6 +235,13 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 		if ctx.Err() != nil {
 			break // partial success: progress so far is kept, the rest is read next time
 		}
+		if fst.Model == "" && fst.Off > 0 {
+			// started inside the file (first collect): its last turn_context lies before the offset
+			s.findModel(ctx, f.path, fst)
+			if ctx.Err() != nil {
+				break // search cut short: count nothing under a guessed model, retry next time
+			}
+		}
 		n, perr := s.readRange(ctx, f.path, fst.Off, f.size, false, func(ln []byte) bool {
 			return s.handle(ln, fst, true, now)
 		})
@@ -335,6 +344,36 @@ func (s *RolloutsSource) scanForQuota(ctx context.Context, files []rollout, now 
 		parseErr += perr
 	}
 	return parseErr
+}
+
+// findModel sets the model of a file that was first read from an offset inside it: the model of the last
+// turn_context before that offset, searched backwards in windows of two steps that overlap by one step (a
+// turn_context line up to modelStep long is never cut by a window edge), at most modelScan bytes back. If none is
+// found the model is "unknown" until the file's next turn_context, so the search runs once per file. Lines here are
+// history: a malformed one is not counted as a parse error (windows overlap, it would count twice).
+func (s *RolloutsSource) findModel(ctx context.Context, path string, fst *fileState) {
+	for hi := fst.Off; hi > 0 && fst.Off-hi < modelScan; hi -= modelStep {
+		lo := max(0, hi-modelStep)
+		model := ""
+		s.readRange(ctx, path, lo, min(fst.Off, lo+2*modelStep), lo > 0, func(ln []byte) bool {
+			var l rolloutLine
+			if json.Unmarshal(ln, &l) != nil {
+				return false
+			}
+			if l.Type == "turn_context" && l.Payload != nil {
+				model = modelLabel(l.Payload.Model)
+			}
+			return true
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		if model != "" {
+			fst.Model = model
+			return
+		}
+	}
+	fst.Model = "unknown"
 }
 
 // readRange reads the complete lines between from and to and passes the relevant ones to fn, which reports
