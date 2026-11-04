@@ -108,8 +108,44 @@ The deployment norm is several instances, one per lane/account.
 
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
-| `opencode-db` | per-message tokens, cost, model, provider, error | `opencode.db` SQLite, read-only. `message.data` is JSON with `role`, `providerID`, `modelID`, `cost`, `tokens{total,input,output,reasoning,cache{read,write}}`, `finish`, `time`; pull these with `json_extract` so no other part of the JSON leaves SQLite. Incremental by `message.time_created` / rowid. Session roll-ups: `session.tokens_*`, `session.cost`, `session.model`, `session.agent`. Schema in `fixtures/opencode/opencode.schema.sql` | 1 to 5 min | verified |
+| `opencode-db` | per-message tokens, cost, model, provider, error | `opencode.db` SQLite, read-only. `message.data` is JSON with `role`, `providerID`, `modelID`, `cost`, `tokens{total,input,output,reasoning,cache{read,write}}`, `finish`, `time`; pull these with `json_extract` so no other part of the JSON leaves SQLite. Incremental by rowid, plus re-reads by id of messages still in flight (below). Schema in `fixtures/opencode/opencode.schema.sql` | usage interval (default 60 s, floor 30 s) | verified |
 | `opencode-http` | live sessions, connected providers | `GET /session` on the instance (tokens, cost, model per session); `GET /provider` for connected providers: **read only the provider ids and the `connected` list** | each scrape, cached 30 s | documented, partly verified |
+
+How `opencode-db` reads and counts (v0.2):
+
+- **What it selects.** Table `message` only: the rowid, `id`, and `json_extract` of `data` at `$.role`,
+  `$.providerID`, `$.modelID`, `$.cost`, `$.tokens.input`, `$.tokens.output`, `$.tokens.reasoning`,
+  `$.tokens.cache.read`, `$.tokens.cache.write`, `$.time.completed`, `$.error.name` and `$.error.data.statusCode`.
+  `message.data` is never selected whole. The error's `message`, `responseBody` and headers are never read. No other
+  table is listed, including `session` (its roll-ups are not needed). Any other expression fails before SQL is built
+  (`internal/opencode` tests).
+- **When a message counts.** opencode inserts an assistant row when the call starts and updates the same row while it
+  streams and when it ends. A row is complete when `time.completed` is set, or when `error.name` is set, since an error
+  ends the call. Only complete `assistant` rows count, each exactly once, with the values of the complete row. New rows
+  come from a rowid cursor. An incomplete row goes into a persisted pending set and is re-read by id each cycle until it
+  completes. The set is capped at 2000, dropping the oldest, and a row still incomplete after 24 h is dropped (its
+  writer died). Each drop counts as `agent_source_errors_total{reason="other"}`. A row whose `data` is not JSON counts
+  as `reason="parse"`.
+- **No replay.** The first collect for a profile puts the cursor at the current last rowid. Existing rows are history
+  and are not counted, including calls still in flight then. Rows written later always count, so an exporter outage
+  loses nothing. If the last rowid falls below the cursor (the database was replaced), the cursor moves down to it,
+  again without replay.
+- **Tokens** map one to one, and nothing is subtracted: `tokens.input` → `input`, `output` → `output`, `reasoning` →
+  `reasoning`, `cache.read` → `cache_read`, `cache.write` → `cache_write`. opencode already stores input without
+  cached tokens (`nonCachedInputTokens`) and output without reasoning (`visibleOutputTokens`). Source:
+  `packages/core/src/session/usage.ts` in opencode `dev`, read 2026-11-04. `tokens.total` is not read.
+- **Requests and errors.** `agent_requests_total{outcome="error"}` when `error.name` is set, else `ok`. `code`:
+  `ProviderAuthError` → `auth`. `APIError` maps by `statusCode`: 429 → `rate_limited`, 401 or 403 → `auth`, 503 or
+  529 → `overloaded`. Everything else is `other`, including a user abort (`MessageAbortedError`).
+- **Labels.** `provider` = `providerID` lowercased if it matches `^[a-z0-9._-]{1,48}$`, else `other`. `model` =
+  `modelID` lowercased under the Claude model rule: `unknown` if missing, `other` if unsafe. Each profile has at most
+  `max_models_per_profile` (provider, model) pairs with their own series. Further pairs count into `model="other"` under
+  their provider, and a pair unused for 24 h gives up its slot. `account` = the profile's configured `account`, else
+  its alias.
+- **Idle database.** If the database is in WAL mode and has no `-wal` or `-shm` file, no opencode has it open, so it
+  cannot have changed. The persisted counters are served, the read succeeds, and the file is not opened, because
+  opening it would create both sidecars in opencode's directory. Busy or locked: `reason="timeout"`, retried next
+  cycle. Missing: `reason="not_found"`. The connection is opened and closed every cycle.
 
 Known data-quality traps (from observed instances):
 

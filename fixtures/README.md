@@ -48,3 +48,7 @@ grep -rEn 's[k]-|e[y]J|Bea[r]er|r[e]fresh_token"\s*:\s*"[A-Za-z0-9]' fixtures
 sqlite3 :memory: ".read fixtures/opencode/opencode.schema.sql" ".read fixtures/opencode/rows.sql" \
   "select json_extract(data,'$.providerID'), json_extract(data,'$.tokens.total') from message where json_extract(data,'$.role')='assistant';"
 ```
+
+The `internal/opencode` tests build a database in a temp dir from both files. They add their own synthetic rows inline:
+in-flight rows, error rows, extra models, and canary values in content and account tables. Those rows are not
+fixture files.
