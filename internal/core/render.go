@@ -22,12 +22,18 @@ var families = []family{
 	{"agent_quota_reset_timestamp_seconds", "gauge", "When the quota window resets, Unix seconds."},
 	{"agent_quota_limit_info", "gauge", "Vendor-reported limit state, one series per active limit entry."},
 	{"agent_quota_observed_timestamp_seconds", "gauge", "When the vendor was last successfully asked, Unix seconds."},
+	{"agent_quota_credits_available", "gauge", "1 if the vendor reports credits left or unlimited, 0 if out."},
+	{"agent_quota_credits_balance", "gauge", "Credit balance as reported, in the vendor's own credit unit."},
 	{"agent_tokens_total", "counter", "Tokens consumed, read from local agent state."},
 	{"agent_requests_total", "counter", "Model calls, read from local agent state."},
+	{"agent_request_errors_total", "counter", "Model calls that failed, by bounded class."},
+	{"agent_cost_usd_total", "counter", "Cost as reported by the harness, USD. Not a bill."},
 	{"agent_account_logged_in", "gauge", "1 if the profile holds a usable login (credential present and not known-expired)."},
 	{"agent_account_info", "gauge", "Slow-changing account facts."},
 	{"agent_credential_expiry_timestamp_seconds", "gauge", "Access-token expiry time, Unix seconds (never the token)."},
 	{"agent_sessions", "gauge", "Live sessions by state."},
+	{"agent_router_connection_up", "gauge", "1 if the router connection is active, its last test passed and it is not rate-limited."},
+	{"agent_router_rate_limited_until_timestamp_seconds", "gauge", "When the router's own rate limit on the connection ends, Unix seconds."},
 	{"agent_source_up", "gauge", "1 if the last read of the source succeeded or a fresh cache entry exists."},
 	{"agent_source_last_success_timestamp_seconds", "gauge", "Last successful read of the source, Unix seconds."},
 	{"agent_source_cache_age_seconds", "gauge", "Age of the value being served, seconds."},
@@ -64,7 +70,21 @@ type Exposition struct {
 func (e *Exposition) Render(w io.Writer) error {
 	now := e.Clock.Now()
 	by := map[string][]Sample{}
-	add := func(s Sample) { by[s.Name] = append(by[s.Name], s) }
+	seen := map[string]bool{}
+	// A duplicate label set would make the scrape invalid; plugins merge their own collisions, and this guard keeps
+	// the first sample if one slips through.
+	add := func(s Sample) {
+		var k strings.Builder
+		k.WriteString(s.Name)
+		for _, l := range s.Labels {
+			k.WriteString("\x00" + l.Name + "\x01" + l.Value)
+		}
+		if seen[k.String()] {
+			return
+		}
+		seen[k.String()] = true
+		by[s.Name] = append(by[s.Name], s)
+	}
 
 	for _, sn := range e.Sched.snapshot(now) {
 		for _, s := range sn.cache {

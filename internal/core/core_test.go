@@ -345,3 +345,101 @@ func TestHostSpacingSurvivesRestart(t *testing.T) {
 		t.Fatal("vendor called within the host spacing right after a restart")
 	}
 }
+
+type groupedSource struct {
+	*fakeSource
+	group string
+}
+
+func (g groupedSource) NetGroup() string { return g.group }
+
+// A 429 from a source in its own gate group (agy's client) must not pause the default vendor group (Claude's
+// private endpoint), and the reverse: the lock that backoff guards is per vendor, not per host.
+func TestRateLimitBackoffIsPerGateGroup(t *testing.T) {
+	c := newClock()
+	limited := groupedSource{&fakeSource{name: "agy", interval: 15 * time.Minute, network: true,
+		fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+			return Result{}, nil, &SourceError{Reason: ReasonRateLimited, Backoff: time.Hour}
+		}}, "agy"}
+	vendor := &fakeSource{name: "claude", interval: 15 * time.Minute, network: true}
+	s := NewScheduler([]Source{limited, vendor}, openState(t, t.TempDir(), c), c, quietLog(), 30*time.Minute)
+	s.Tick(context.Background(), func(x Source) bool { return x == Source(limited) }, false, true)
+	s.Tick(context.Background(), nil, false, true)
+	if limited.calls != 1 || vendor.calls != 1 {
+		t.Fatalf("want agy=1 claude=1 (separate groups), got agy=%d claude=%d", limited.calls, vendor.calls)
+	}
+	c.Add(30 * time.Minute)
+	s.Tick(context.Background(), nil, false, true)
+	if limited.calls != 1 || vendor.calls != 2 {
+		t.Fatalf("after 30m: agy still backed off, claude due again; got agy=%d claude=%d", limited.calls, vendor.calls)
+	}
+}
+
+// Two samples with the same name and labels would make the whole scrape invalid; the renderer keeps the first.
+func TestRenderDropsDuplicateSeries(t *testing.T) {
+	c := newClock()
+	dup := []Sample{
+		{Name: "agent_quota_utilization_ratio", Labels: []Label{{"window", "5h"}, {"scope", "other"}}, Value: 0.5},
+		{Name: "agent_quota_utilization_ratio", Labels: []Label{{"window", "5h"}, {"scope", "other"}}, Value: 0.7},
+	}
+	src := &fakeSource{name: "x", interval: time.Minute,
+		fn: func(int, json.RawMessage) (Result, json.RawMessage, error) { return Result{Samples: dup}, nil, nil }}
+	s := NewScheduler([]Source{src}, openState(t, t.TempDir(), c), c, quietLog(), 30*time.Minute)
+	s.Tick(context.Background(), nil, true, true)
+	out := render(t, s, c)
+	if n := strings.Count(out, `agent_quota_utilization_ratio{window="5h",scope="other"`); n != 1 {
+		t.Fatalf("want 1 series, got %d:\n%s", n, out)
+	}
+}
+
+// After a restart, a persisted backoff blocks the whole gate group only if it came from a 429: one agy profile's
+// failed run (60 m) or tripped guard (24 h) must not pause every other agy profile, while a 429, the vendor's own
+// lock, still does.
+func TestRestoredBackoffBlocksGroupOnlyFor429(t *testing.T) {
+	for _, tc := range []struct {
+		reason      string
+		wantBlocked bool
+	}{{ReasonUpstream, false}, {ReasonOther, false}, {ReasonRateLimited, true}} {
+		c := newClock()
+		dir := t.TempDir()
+		failing := groupedSource{&fakeSource{name: "a", interval: 15 * time.Minute, network: true,
+			fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+				return Result{}, nil, &SourceError{Reason: tc.reason, Backoff: time.Hour}
+			}}, "agy"}
+		st := openState(t, dir, c)
+		NewScheduler([]Source{failing}, st, c, quietLog(), 30*time.Minute).Tick(context.Background(), nil, false, true)
+		st.Close()
+		c.Add(time.Minute) // past the host spacing
+		other := groupedSource{&fakeSource{name: "b", interval: 15 * time.Minute, network: true}, "agy"}
+		again := groupedSource{&fakeSource{name: "a", interval: 15 * time.Minute, network: true}, "agy"}
+		NewScheduler([]Source{again, other}, openState(t, dir, c), c, quietLog(), 30*time.Minute).
+			Tick(context.Background(), nil, false, true)
+		if blocked := other.calls == 0; blocked != tc.wantBlocked {
+			t.Errorf("%s: other source in the group blocked=%v, want %v", tc.reason, blocked, tc.wantBlocked)
+		}
+		if again.calls != 0 {
+			t.Errorf("%s: the failing source itself must stay backed off after restart", tc.reason)
+		}
+	}
+}
+
+// A v0.1 state file has no local_backoff flag; its backoff (only ever from a 429) keeps blocking the group.
+func TestV01StateBackoffStillBlocksGroup(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	st := openState(t, dir, c)
+	a := &fakeSource{name: "a", interval: 15 * time.Minute, network: true}
+	s := NewScheduler([]Source{a}, st, c, quietLog(), 30*time.Minute)
+	key := s.insts[0].key
+	st.Put(key, InstState{LastAttempt: c.Now().Add(-time.Hour).Unix(), BackoffUntil: c.Now().Add(time.Hour).Unix()})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	b := &fakeSource{name: "b", interval: 15 * time.Minute, network: true}
+	NewScheduler([]Source{&fakeSource{name: "a", interval: 15 * time.Minute, network: true}, b}, openState(t, dir, c), c,
+		quietLog(), 30*time.Minute).Tick(context.Background(), nil, false, true)
+	if b.calls != 0 {
+		t.Fatal("a v0.1 backoff must still block the default vendor group")
+	}
+}

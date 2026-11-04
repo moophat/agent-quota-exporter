@@ -118,12 +118,66 @@ func TestDiscovery(t *testing.T) {
 	for _, p := range got {
 		aliases = append(aliases, p.Origin+":"+p.Alias)
 	}
-	want := "config:dee discovered:x discovered:a discovered:claude-work discovered:root"
+	want := "config:dee config:cx discovered:x discovered:a discovered:claude-work discovered:root"
 	if strings.Join(aliases, " ") != want {
 		t.Fatalf("got %q want %q", strings.Join(aliases, " "), want)
 	}
-	if len(warns) != 1 || !strings.Contains(warns[0], "codex") {
-		t.Fatalf("want one codex skip warning, got %v", warns)
+	if len(warns) != 0 {
+		t.Fatalf("codex has a plugin now; want no warnings, got %v", warns)
+	}
+}
+
+// Codex homes and opencode data dirs are discovered beside Claude dirs. Aliases are per harness, so the same home
+// yields "root" for each harness instead of "root-2"; a linked .local is not followed (as root, a user's link could
+// expose another profile under their name).
+func TestDiscoveryCodexAndOpencode(t *testing.T) {
+	r := t.TempDir()
+	mkdirs(t, r, "root/.claude/projects", "root/.codex/sessions/2026/11/04", "root/.local/share/opencode",
+		"home/u/.codex", "home/v/.local/share/opencode", "target/share/opencode")
+	for _, f := range []string{"root/.local/share/opencode/opencode.db", "target/share/opencode/opencode.db"} {
+		if err := os.WriteFile(filepath.Join(r, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// home/w/.local is a link to a dir holding a real opencode.db: must not be discovered.
+	mkdirs(t, r, "home/w")
+	if err := os.Symlink(filepath.Join(r, "target"), filepath.Join(r, "home/w/.local")); err != nil {
+		t.Fatal(err)
+	}
+	c := Default()
+	c.Discovery.Roots = []string{filepath.Join(r, "root"), filepath.Join(r, "home/*")}
+	got, _ := c.Resolve(func(string) string { return "" })
+	var hs []string
+	for _, p := range got {
+		hs = append(hs, p.Harness+":"+p.Alias)
+	}
+	// u/.codex has no sessions/ and v's opencode dir has no opencode.db: neither is a profile.
+	want := "claude-code:root codex:root opencode:root"
+	if strings.Join(hs, " ") != want {
+		t.Fatalf("got %q want %q", strings.Join(hs, " "), want)
+	}
+}
+
+func TestValidateHarnessesAndQuotaKeys(t *testing.T) {
+	for name, body := range map[string]string{
+		"dir required":              "version: 1\nprofiles: [{harness: codex, alias: a}]\n",
+		"quota key wrong harness":   "version: 1\nprofiles: [{harness: codex, alias: a, dir: /x, quota: {claude_oauth_usage: true}}]\n",
+		"agy usage without account": "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, quota: {agy_usage: true}}]\n",
+	} {
+		c := Default()
+		if err := decode([]byte(body), c); err == nil {
+			if err := c.Validate(); err == nil {
+				t.Errorf("%s: accepted", name)
+			}
+		}
+	}
+	c := Default()
+	ok := "version: 1\nprofiles: [{harness: agy, alias: a, dir: /x, account: agy-a1, quota: {agy_usage: true}}]\n"
+	if err := decode([]byte(ok), c); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
 	}
 }
 
@@ -152,5 +206,27 @@ func TestDiscoveryModes(t *testing.T) {
 	c.Discovery.Mode = "only"
 	if got, _ := c.Resolve(none); len(got) != 1 || got[0].Alias != "u" {
 		t.Fatalf("only: %+v", got)
+	}
+}
+
+// v0.1 configs keep loading: an unknown harness is warned about and skipped, and the reserved codex_rate_limits key
+// is accepted with a warning that nothing reads it yet.
+func TestV01ConfigsStillLoad(t *testing.T) {
+	c := Default()
+	body := "version: 1\ndiscovery: {mode: \"off\"}\nprofiles:\n" +
+		"  - {harness: cursor, alias: cu, dir: /x}\n" +
+		"  - {harness: codex, alias: cx, dir: /y, quota: {codex_rate_limits: true}}\n"
+	if err := decode([]byte(body), c); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a v0.1 config was rejected: %v", err)
+	}
+	got, warns := c.Resolve(func(string) string { return "" })
+	if len(got) != 1 || got[0].Harness != HarnessCodex {
+		t.Fatalf("want only the codex profile resolved, got %+v", got)
+	}
+	if len(warns) != 2 || !strings.Contains(warns[0], "cursor") || !strings.Contains(warns[1], "codex_rate_limits") {
+		t.Fatalf("want a skip warning and a reserved-key warning, got %v", warns)
 	}
 }

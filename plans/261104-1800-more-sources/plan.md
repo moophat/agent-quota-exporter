@@ -1,7 +1,7 @@
 ---
 title: agent-quota-exporter v0.2 (Codex, opencode, router, provider balances)
 description: Quota and usage for what isn't Claude, read passively from local state first; the build plan for the cloud lane to follow.
-status: planned
+status: in-progress
 priority: P1
 branch: plan/phase3-more-sources
 tags: [backend, go, prometheus, exporter]
@@ -116,7 +116,7 @@ if it rotates, the source stays out of the release. Fixture: `fixtures/agy/usage
 Same bar as v0.1.
 
 - Each source has a golden-metrics test against a fixture, and a test that the secret columns and files are never read
-  (the query allow-list, as in `specs/sources.md`). The tests are per table: selecting `threads.first_user_message`, `providerConnections.data` as a whole or `usageHistory.apiKey` must fail; `message.data` and `json_extract` of the listed health fields are allowed.
+  (the query allow-list, as in `specs/sources.md`). The tests are per table: selecting `threads.first_user_message`, `providerConnections.data` as a whole or `usageHistory.apiKey` must fail; `json_extract` of listed `message.data` paths and of the listed health fields are allowed; `message.data` whole is not (`specs/sources.md` wins, design verdict 9).
 - Missing or unreadable state gives `agent_source_up 0`, never a zero value.
 - `strace` on a real node, on-prem: no writes outside the state dir, and no network from local-state plugins.
 - Counters equal an independent recount on a real node, as v0.1 did for Claude.

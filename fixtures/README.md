@@ -18,7 +18,12 @@ Collected read-only on 2026-10-28 from a development node by `claude-sonnet-5-5`
 | `opencode/rows.sql` | invented | rows matching the schema (1 project, 1 session, 3 messages incl. an error row) | n/a, fully synthetic; message JSON uses the real key names |
 | `codex/layout.txt` | names-only listing of a real Codex home | file and directory names | nothing was opened; `auth.json` is listed as expected-but-absent |
 | `codex/rate-limits-response.json` | shape documented for `codex app-server` `account/rateLimits/read` | field names | numbers invented; **unverified** (not run on a logged-in client) |
+| `codex/rollouts/rollout-token-count.jsonl` | one `token_count` line of a rollout, on-prem reading 2026-11-04 (Codex CLI 0.163.0, `plans/261104-1800-more-sources/plan.md`) | line and field names, nesting (`info`, `rate_limits.{primary,secondary,credits,limit_id}`) | all numbers and times invented |
+| `codex/home/sessions/2026/11/0{3,4}/rollout-*.jsonl` | invented (2026-11-04, claude-opus-5-5), a two-day Codex home for the `codex-rollouts` golden test, using the shape above plus `turn_context.payload.model` and the `TokenUsage`/`RateLimitSnapshot` fields of the Codex source | line types `session_meta`, `turn_context`, `response_item`, `event_msg` (`token_count`, `user_message`, `agent_message`); a model change, repeated `token_count` events, null `rate_limits`, non-zero cache write and reasoning, a numeric `balance` | everything; ids are zero-padded fakes, paths `/root`, every text field (`cwd`, instructions, messages, tool output, `limit_name`) is a content canary (`CANARY-CONTENT…`) |
+| `router/router.schema.sql` | `.schema` of a real 9router `data.sqlite`, read on-prem 2026-11-04 | DDL of the two tables a plugin may touch (`providerConnections`, `usageHistory`) | there is no data in this file |
+| `router/rows.sql` | invented (2026-11-04, claude-opus-5-5) | rows matching the schema: 8 connections (healthy, rate-limited ISO and epoch ms, failed test, inactive, duplicate name, non-JSON `data`, unknown `testStatus` word) and 10 usage rows (mixed case, NULL and HTTP status, no or deleted connection, zero and non-zero cost) | n/a, fully synthetic; `status`/`testStatus` words and the `rateLimitedUntil` format follow 9router's source; every secret field holds a `CANARY-ROUTER-*` value |
 | `agy/layout.md` | none on this node | n/a | described, not listed |
+| `agy/usage-command.json` | shape of `agy -p /usage --output-format json` (agy CLI 1.5.0), read on-prem 2026-11-04 | key names and nesting, bucket ids `gemini-*`/`3p-*`, windows `5h`/`weekly`, the zero-cost fields (`num_turns`, `usage.*`, `command.name`) | every value invented; extended 2026-11-04 (claude-opus-5-5) with synthetic buckets: an unsafe window (`gemini-perminute`), two unknown ids that merge (`newtier-*`, `othertier-*`), and `CANARY-AGY-*` text in content fields |
 
 ## Rules for fixtures
 
@@ -43,3 +48,7 @@ grep -rEn 's[k]-|e[y]J|Bea[r]er|r[e]fresh_token"\s*:\s*"[A-Za-z0-9]' fixtures
 sqlite3 :memory: ".read fixtures/opencode/opencode.schema.sql" ".read fixtures/opencode/rows.sql" \
   "select json_extract(data,'$.providerID'), json_extract(data,'$.tokens.total') from message where json_extract(data,'$.role')='assistant';"
 ```
+
+The `internal/opencode` tests build a database in a temp dir from both files. They add their own synthetic rows inline:
+in-flight rows, error rows, extra models, and canary values in content and account tables. Those rows are not
+fixture files.
