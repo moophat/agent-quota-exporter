@@ -31,8 +31,10 @@ func (s *SessionsSource) Profile() string            { return s.P.Alias }
 func (s *SessionsSource) MinInterval() time.Duration { return s.Interval }
 func (s *SessionsSource) Network() bool              { return false }
 
-// sessionState maps the harness status word to the contract's bounded state. Only "idle" is verified on a
-// real install (fixtures/claude/sessions); the busy words are best effort and fall back to "other".
+// sessionState maps the harness status word to the contract's bounded state. The file is undocumented upstream.
+// Seen on real installs (2026-11): "busy" and "idle", plus "shell", whose meaning is unknown and which stays
+// "other" until it is pinned down. A third-party report adds "waiting" (a permission or selection dialog), also
+// "other". The remaining busy words are best effort.
 func sessionState(status string) string {
 	switch strings.ToLower(status) {
 	case "idle":

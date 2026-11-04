@@ -48,13 +48,18 @@ series (cardinality rule in `metric-contract.md`).
 - `agent_quota_exporter_state_epoch` and `process_start_time_seconds` get rows in the contract's health table. Both
   were already emitted and described in prose, so this documents them and is non-breaking (contract stays 0).
 
-## D6. Claude config dirs on NFS: OPEN (fact recorded, design not ruled)
+## D6. Claude config dirs on NFS: OPEN, not needed today (facts recorded, design not ruled)
 
 Tu, 2026-11-03: some Claude config dirs on the fleet are on NFS. Not yet known: which dirs, and whether one dir is
 visible to more than one node's exporter. If it is, every exporter that discovers it counts the same transcripts,
 so fleet totals are multiplied by the number of nodes. Proposed rule, pending a ruling: a config dir on a shared mount
 is read by exactly one exporter (the node that owns the session); on the other nodes, narrow `discovery.roots`
 or use `discovery.mode: only` with roots that leave it out. The config has no per-dir exclude today.
+
+On-prem inspection, 2026-11-04 (`plans/handoffs/onprem-test-result-20261104-0400.md`): every Claude config dir that
+holds credentials, `projects/` or `sessions/` is on a node-local disk, none is on the shared mount, and a depth-5
+search of the mount found no profile dir. No config dir is visible to two exporters, so the rule is not needed yet;
+it stays here as the guard to apply if a profile is ever placed on a shared mount.
 
 ## Also recorded in `plan.md`, not yet ruled
 
