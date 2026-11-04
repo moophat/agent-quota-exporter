@@ -2,6 +2,13 @@
 # access): on hosts where agent homes are root's (/root/.claude*), the exporter must run as root to read them.
 # It still writes nowhere but its state dir. For per-user homes, prefer a dedicated user with a read-only group
 # on the profile dirs and remove User=root.
+#
+# With quota.agy_usage on, the exporter runs the agy client inside this unit, as the owner of the agy HOME:
+# - the client must be on this unit's PATH: systemd's default holds only the standard /usr/local and /usr dirs, so
+#   set Environment=PATH= to include the client's dir (a per-user install such as ~/.local/bin is not on it);
+# - a login refresh rewrites the client's token file in its HOME, which ProtectHome=read-only forbids: add that HOME
+#   to ReadWritePaths= (this is the agy client writing its own file, not the exporter);
+# - the client peaked at about 210 MB RSS for about 5 s on a real node: raise MemoryMax= to 512M.
 [Unit]
 Description=agent-quota-exporter (read-only AI agent quota and usage metrics)
 After=network-online.target
@@ -9,6 +16,8 @@ Wants=network-online.target
 
 [Service]
 User=root
+# agy_usage only, the dir holding the agy client first:
+# Environment=PATH=/opt/agy/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/local/bin/agent-quota-exporter --config /etc/agent-quota-exporter/config.yaml
 StateDirectory=agent-quota-exporter
 StateDirectoryMode=0700
@@ -17,6 +26,8 @@ RestartSec=30s
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/lib/agent-quota-exporter
+# agy_usage only, the agy HOME (see above):
+# ReadWritePaths=/home/acct-c
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true

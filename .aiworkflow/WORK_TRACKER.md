@@ -1,7 +1,25 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-04T14:20:00Z
+**Last-Updated:** 2026-11-04T16:40:00Z
 
-## Active — Exporter v0.2, more sources | 2026-11-04
+## Active — v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
+<!-- BEGIN STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
+### v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
+**Meta:** fix/v0.2-labels | opus | issue #14, `plans/handoffs/v0.2-rc-test-result-20261104.md`
+**Model:** opus
+**Outcome:** in progress: both fixes and docs done, tests pass (root and non-root); PR, review, next rc pending
+**Key:** Codex file started at its end takes the model of its last turn_context before that offset (backward search, 16 MiB cap); router provider id over 48 chars keeps prefix minus uuid plus 8-hex hash; state saved per source kept (durability); agy unit needs PATH, ReadWritePaths for its HOME, MemoryMax 512M
+**Pending:** PR into main, Qodo, merge, v0.2.0-rc.3, comment and close #14
+<!-- END STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
+- [x] Codex model search before the start offset, test with two mutants
+- [x] Router provider label prefix plus hash, test with a mutant
+- [x] Docs: specs/sources.md, example unit
+- [ ] PR, review, merge, rc.3, issue comment
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-04 | Exporter v0.2, more sources -->
 ### Exporter v0.2, more sources | 2026-11-04
 **Meta:** feat/v0.2-sources | claude-opus-5-5 | `plans/261104-1800-more-sources/plan.md`
@@ -10,15 +28,6 @@
 **Key:** passive quota served until its own reset; credits 0 is not "out"; one Codex reading per scope; WAL DB without sidecars skipped so nothing is created in agent dirs; agy disables itself if /usage spends a turn; provider balances deferred
 **Pending:** on-prem test of v0.2.0-rc.2 (`plans/handoffs/v0.2-rc-test-20261104.md`), then v0.2.0. Ruled 2026-11-04: -shm read-marks accepted (D8), balances not built (D9), idle ~16 MB accepted (D10)
 <!-- END STUB: 2026-11-04 | Exporter v0.2, more sources -->
-- [x] Brief read and deleted; design + red-team
-- [x] Scaffold, sqlro, safefs, codex, agy, router, opencode
-- [x] PR #10 (Qodo: 13 + 8 + 1 findings fixed or answered), merged as 14aeb20; v0.2.0-rc.1 and rc.2 released and verified
-- [ ] On-prem test results, v0.2.0
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-03 | Exporter v0.1, Claude only -->
 ### Exporter v0.1, Claude only | 2026-11-03

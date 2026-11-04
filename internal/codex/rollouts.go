@@ -29,6 +29,8 @@ const (
 	scanFiles = 20      // first start: newest rollouts (by mtime) searched for the last quota reading
 	scanTail  = 1 << 20 // ... reading at most this many bytes from the end of each
 	walkDepth = 3       // sessions/YYYY/MM/DD
+	modelStep = 1 << 20 // model search back from a file's offset: window step; a window spans two steps
+	modelScan = 16 << 20
 )
 
 // RolloutsSource is `codex-rollouts`: token and request counters, quota windows and credits from
@@ -233,7 +235,17 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 		if ctx.Err() != nil {
 			break // partial success: progress so far is kept, the rest is read next time
 		}
-		n, perr := s.readRange(ctx, f.path, fst.Off, f.size, false, func(ln []byte) bool {
+		if fst.Model == "" && fst.Off > 0 {
+			// started inside the file (first collect): its last turn_context lies before the offset
+			done := s.findModel(ctx, f.path, fst)
+			if ctx.Err() != nil {
+				break // search cut short: count nothing under a guessed model, retry next time
+			}
+			if !done {
+				continue // file unreadable now: count nothing under a guessed model, retry next time
+			}
+		}
+		n, perr, _ := s.readRange(ctx, f.path, fst.Off, f.size, false, func(ln []byte) bool {
 			return s.handle(ln, fst, true, now)
 		})
 		parseErr += perr
@@ -329,7 +341,7 @@ func (s *RolloutsSource) scanForQuota(ctx context.Context, files []rollout, now 
 		}
 		fst := s.st.Files[hashKey(c.f.rel)]
 		from := max(0, c.f.size-scanTail)
-		_, perr := s.readRange(ctx, c.f.path, from, c.f.size, from > 0, func(ln []byte) bool {
+		_, perr, _ := s.readRange(ctx, c.f.path, from, c.f.size, from > 0, func(ln []byte) bool {
 			return s.handle(ln, fst, false, now)
 		})
 		parseErr += perr
@@ -337,15 +349,51 @@ func (s *RolloutsSource) scanForQuota(ctx context.Context, files []rollout, now 
 	return parseErr
 }
 
+// findModel sets the model of a file that was first read from an offset inside it: the model of the last
+// turn_context before that offset, searched backwards in windows of two steps that overlap by one step (a
+// turn_context line up to modelStep long is never cut by a window edge), at most modelScan bytes back. If none is
+// found the model is "unknown" until the file's next turn_context, so the search runs once per file. It reports
+// false, leaving the model unset, when a read failed or was cut short: "unknown" only follows a completed search.
+// Lines here are history: a malformed one is not counted as a parse error (windows overlap, it would count twice).
+func (s *RolloutsSource) findModel(ctx context.Context, path string, fst *fileState) bool {
+	for hi := fst.Off; hi > 0 && fst.Off-hi < modelScan; hi -= modelStep {
+		lo := max(0, hi-modelStep)
+		model := ""
+		_, _, ok := s.readRange(ctx, path, lo, min(fst.Off, lo+2*modelStep), lo > 0, func(ln []byte) bool {
+			var l rolloutLine
+			if json.Unmarshal(ln, &l) != nil {
+				return false
+			}
+			if l.Type == "turn_context" && l.Payload != nil {
+				model = modelLabel(l.Payload.Model)
+			}
+			return true
+		})
+		if !ok || ctx.Err() != nil {
+			return false
+		}
+		if model != "" {
+			fst.Model = model
+			return true
+		}
+	}
+	fst.Model = "unknown"
+	return true
+}
+
 // readRange reads the complete lines between from and to and passes the relevant ones to fn, which reports
 // whether the line parsed. With partial set, from may be inside a line and that first line is dropped (the
 // offset returned is then not meaningful). It returns the bytes consumed from `from` up to the end of the last
-// complete line (an unterminated tail is left for the next collect) and the parse error count. Memory is bounded: an irrelevant line is never buffered, and a relevant one only
+// complete line (an unterminated tail is left for the next collect), the parse error count, and whether the range was
+// read to its end (false on an open, seek or read error, or when ctx ended the read). Memory is bounded: an irrelevant line is never buffered, and a relevant one only
 // up to maxLine.
-func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to int64, partial bool, fn func([]byte) bool) (int64, int) {
-	f, _, err := safefs.OpenRegular(path)
+// openRollout opens a rollout for reading; a variable so a test can make a read fail after the file was listed.
+var openRollout = safefs.OpenRegular
+
+func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to int64, partial bool, fn func([]byte) bool) (int64, int, bool) {
+	f, _, err := openRollout(path)
 	if err != nil {
-		return 0, 0
+		return 0, 0, false
 	}
 	defer f.Close()
 	start := from
@@ -353,7 +401,7 @@ func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to in
 		start = from - 1 // the byte before from: if it ends a line, the line at from is whole and kept
 	}
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return 0, 0
+		return 0, 0, false
 	}
 	r := bufio.NewReaderSize(io.LimitReader(f, to-start), readBuf)
 	var pos, lineEnd int64 // bytes read; bytes up to the end of the last complete line
@@ -361,8 +409,10 @@ func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to in
 	var buf []byte
 	long, keep, tooLong := false, false, false
 	skip := partial
+	complete := true
 	for n := 0; ; n++ {
 		if n%1000 == 999 && ctx.Err() != nil {
+			complete = false
 			break
 		}
 		chunk, err := r.ReadSlice('\n')
@@ -380,6 +430,7 @@ func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to in
 			continue
 		}
 		if err != nil { // EOF or read error
+			complete = errors.Is(err, io.EOF)
 			break
 		}
 		lineEnd = pos
@@ -407,7 +458,7 @@ func (s *RolloutsSource) readRange(ctx context.Context, path string, from, to in
 			parseErr++
 		}
 	}
-	return lineEnd, parseErr
+	return lineEnd, parseErr, complete
 }
 
 // handle applies one relevant line to the file's state; count is false while scanning history on first start.

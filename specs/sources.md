@@ -69,6 +69,10 @@ Rules specific to `codex-rollouts`:
   counted event. The model is the file's latest `turn_context` model (kept per file), `unknown` before one, capped per
   profile like Claude. No replay: files present at the first collect start at their end; files appearing later are read
   from the start, skipping lines older than their first sighting minus one hour (history copied on fork or resume).
+  A file that started at its end and has no model yet takes, when it next grows, the model of its last `turn_context`
+  before that start, searched backwards at most 16 MiB (else `unknown` until its next `turn_context`).
+- **First collect cost.** The first collect of a profile reads the tails below (up to 20 MiB) and took 2 to 3.8 s per
+  profile on real nodes (steady state 3 to 21 ms); `--once` on several Codex profiles takes that long per profile.
 - **Quota is a gauge, one reading per scope**: `scope` = `all` for `limit_id` `codex` or none, the id itself if it
   matches `^[a-z0-9_-]{1,32}$`, else `other`. Each scope keeps the `token_count` with non-null `rate_limits` whose own
   `timestamp` is newest for that scope across all files, so Codex alternating between limits never hides one of them.
@@ -253,8 +257,10 @@ Mapping:
 - **Connection cap:** the 50 connections seen first in a profile have their own label; the rest count into
   `account="other"` and get no health series. Deleting a labelled connection frees its slot for the next one; the
   deleted label's counters end (a label that comes back restarts from 0, a counter reset).
-- **`provider`** = the row's (or connection's) provider lowercased if it matches `^[a-z0-9._-]{1,48}$`, else `other`;
-  empty is `unknown`. **`model`** is lowercased and bounded as for `claude-code`, capped per profile across all
+- **`provider`** = the row's (or connection's) provider lowercased if it matches `^[a-z0-9._-]{1,48}$`; empty is
+  `unknown`. A label-safe id of 49 to 256 characters (9router's custom providers are `<kind>-compatible-<uuid>`) is
+  its prefix without a trailing uuid, cut to 39 characters, plus `-` and the first 8 hex digits of sha256(id), so two
+  custom providers keep separate series; anything else is `other`. **`model`** is lowercased and bounded as for `claude-code`, capped per profile across all
   connections at `metrics.max_models_per_profile`; a model past the cap counts into `model="other"`, and one unused for
   a day gives its slot to a new one.
 - **Health:** `agent_router_connection_up` = 1 if `isActive` is 1, `testStatus` is a passing word and the connection is
