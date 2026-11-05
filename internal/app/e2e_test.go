@@ -97,7 +97,7 @@ func setup(t *testing.T) (*world, *config.Config, *httptest.Server) {
 	cfg.StateDir = filepath.Join(w.root, "state")
 	cfg.Discovery.Roots = []string{filepath.Join(w.homes, "*")}
 	cfg.Profiles = []config.Profile{{Harness: "claude-code", Alias: "work", Dir: filepath.Join(w.homes, "acct-a", ".claude"),
-		Quota: map[string]bool{"claude_oauth_usage": true}}}
+		Quota: config.Quota{"claude_oauth_usage": true}}}
 	return w, cfg, srv
 }
 

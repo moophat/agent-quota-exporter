@@ -1,7 +1,11 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-04T16:45:00Z
 
-## Active — Claude quota: unprefixed windows and limit percents | 2026-11-04
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
 ### Claude quota: unprefixed windows and limit percents | 2026-11-04
 **Meta:** fix/claude-other-windows | opus | issue #16
@@ -10,13 +14,6 @@
 **Key:** unknown top-level window → window="other", scope=key, max 8 per response by key name, no length guessed; limits[].percent → ratio of its window/scope whether active or not, top-level wins; extra_usage = paid allowance past the limits (credits), ratio only
 **Pending:** on-prem retest of rc.3 (`plans/handoffs/v0.2-rc-test-20261104.md`), then v0.2.0
 <!-- END STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
-- [x] Parser, fixture, tests (4 mutants caught), spec and contract note
-- [x] PR #17, Qodo findings fixed, merged; rc.3 released and verified; issues closed
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-04 | v0.2 rc.2 fixes: Codex model label, router provider labels -->
 ### v0.2 rc.2 fixes: Codex model label, router provider labels | 2026-11-04
@@ -54,3 +51,17 @@ None
 <!-- END STUB: 2026-10-28 | Repo convention setup -->
 
 (Earlier entry, 2026-10-28 03:38 +07, claude-sonnet-5-5: initial repo setup, docs/plan, contract, sources, fixtures, no code.)
+
+## Active — Claude statusline cache (#20) | 2026-11-05
+<!-- BEGIN STUB: 2026-11-05 | Claude statusline cache (#20) -->
+### Claude statusline cache (#20) | 2026-11-05
+**Meta:** feat/claude-statusline-cache | codex | issue #20
+**Model:** codex
+**Outcome:** complete in working tree; focused tests, go vet ./... and go test -race ./... pass; reviewed and cadence fix verified
+**Key:** default root profile only; shared parser; persisted vendor gates unchanged; no live-node access or release
+**Pending:** live-node age and systemd runtime unverified by instruction; no commit, push or tag
+<!-- END STUB: 2026-11-05 | Claude statusline cache (#20) -->
+- [x] Inspect issue, sources, scheduler and configuration; baseline go test ./... passes
+- [x] Implement cache, configuration and fallback selection
+- [x] Verify freshness, absence, read-only behavior and network suppression
+- [x] Update documentation, review and run full required checks

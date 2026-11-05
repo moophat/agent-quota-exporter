@@ -76,6 +76,7 @@ agent-quota-exporter --version
   | Source | Harness | Default | Reads |
   |---|---|---|---|
   | `claude-transcripts`, `claude-sessions`, `claude-account` | `claude-code` | on | local state |
+  | `claude-statusline-cache` | `claude-code` | on for `/root/.claude` only | AgentKit status line cache, no credentials or vendor call |
   | `claude-oauth-usage` | `claude-code` | opt-in, `quota: {claude_oauth_usage: true}` | the profile's token and Claude's quota endpoint |
   | `codex-rollouts` | `codex` | on | quota, credits and tokens the Codex CLI wrote to its rollouts |
   | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
@@ -85,7 +86,21 @@ agent-quota-exporter --version
   Read-only SQLite sources read a WAL database that no writer has open (no `-wal`/`-shm`) in SQLite's immutable
   mode, which creates nothing; with a writer present they attach to the existing `-shm` like any SQLite reader. A
   `-wal`/`-shm` that is a link, a hard link or not a regular file is refused before SQLite runs.
-- systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service).
+- Claude status line cache: only the profile whose resolved `dir` is `/root/.claude` reads it, using the same
+  account label as that profile's OAuth source. The path is the profile's
+  `quota: {claude_statusline_cache: "/tmp/ck-usage-limits-cache.json"}` override, else `CK_USAGE_CACHE_PATH`
+  from the exporter's own environment, else `/tmp/ck-usage-limits-cache.json`. It is read-only and polled every
+  `defaults.usage_interval` (default 60 s). `status: available` and valid quota data are required; the observation
+  time is the file's millisecond epoch `timestamp`. A reading older than `defaults.stale_after` is absent.
+  Missing, unreadable, invalid or unavailable files give no reading. With `claude_oauth_usage: true` on the same
+  profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
+  persisted gates and backoff. There is no vendor call without that opt-in, and no vendor call while the file is fresh.
+- systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service). The shipped unit has
+  **`PrivateTmp=true`, which hides the host `/tmp` cache**. To use the default cache, override it with
+  **`PrivateTmp=false`**, or provide a **read-only bind** of the host cache at a path visible to the service and
+  set `quota.claude_statusline_cache` to that path. Bind the containing directory read-only when possible:
+  the status line replaces the file atomically, so a bind of one file can retain an old inode. Keep the unit's
+  other hardening settings.
 - `--once` takes the same state-dir lock as the daemon, so it refuses to run next to a running exporter. Point it
   at a copy of the config with its own `state_dir` for ad-hoc checks; the quota endpoint is still asked at most once
   per 15 min per state dir.

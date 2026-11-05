@@ -48,7 +48,7 @@ var runSlot = make(chan struct{}, 1)
 
 // Build returns the sources for one resolved agy profile: `agy-usage` when the profile opts in, else none.
 func Build(cfg *config.Config, r config.Resolved, host string) []core.Source {
-	if !r.Quota["agy_usage"] {
+	if !r.Quota.Enabled("agy_usage") {
 		return nil
 	}
 	return []core.Source{&UsageSource{Host: host, Alias: r.Alias, Dir: r.Dir, Account: r.Account,

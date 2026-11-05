@@ -149,7 +149,7 @@ func newSource(t *testing.T, mode string, out []byte) (*UsageSource, string) {
 	write(t, filepath.Join(home, "mode"), []byte(mode))
 	write(t, filepath.Join(home, "out.json"), out)
 	srcs := Build(config.Default(), config.Resolved{Harness: config.HarnessAgy, Alias: "p1", Dir: home, Account: "acct-a1",
-		Quota: map[string]bool{"agy_usage": true}}, "node-a")
+		Quota: config.Quota{"agy_usage": true}}, "node-a")
 	if len(srcs) != 1 {
 		t.Fatalf("Build returned %d sources", len(srcs))
 	}
@@ -209,7 +209,7 @@ func TestBuild(t *testing.T) {
 	if got := Build(cfg, r, "node-a"); got != nil {
 		t.Fatalf("no opt-in must build nothing, got %d sources", len(got))
 	}
-	r.Quota = map[string]bool{"agy_usage": false}
+	r.Quota = config.Quota{"agy_usage": false}
 	if got := Build(cfg, r, "node-a"); got != nil {
 		t.Fatal("agy_usage: false must build nothing")
 	}
@@ -556,7 +556,7 @@ func ownedSource(t *testing.T, uid int) (*UsageSource, string) {
 	t.Helper()
 	bin, home := ownedTree(t, uid)
 	s := Build(config.Default(), config.Resolved{Harness: config.HarnessAgy, Alias: "p1", Dir: home, Account: "acct-a1",
-		Quota: map[string]bool{"agy_usage": true}}, "node-a")[0].(*UsageSource)
+		Quota: config.Quota{"agy_usage": true}}, "node-a")[0].(*UsageSource)
 	s.Bin = bin
 	return s, home
 }
