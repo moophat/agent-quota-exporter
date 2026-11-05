@@ -1,17 +1,17 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-04T16:40:00Z
+**Last-Updated:** 2026-11-04T16:45:00Z
 
 ## Active — Claude quota: unprefixed windows and limit percents | 2026-11-04
 <!-- BEGIN STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
 ### Claude quota: unprefixed windows and limit percents | 2026-11-04
 **Meta:** fix/claude-other-windows | opus | issue #16
 **Model:** opus
-**Outcome:** in progress: parser, fixture, tests and spec done; PR, review, release pending
+**Outcome:** merged (PR #17, 4ddde41); v0.2.0-rc.3 released from 4ddde41 with #14 fixes and verified (checksums, version, Claude itest); #14 and #16 commented and closed. Qodo: 2 findings (scope collisions) fixed
 **Key:** unknown top-level window → window="other", scope=key, max 8 per response by key name, no length guessed; limits[].percent → ratio of its window/scope whether active or not, top-level wins; extra_usage = paid allowance past the limits (credits), ratio only
-**Pending:** PR into main, Qodo, merge, release with #14 fixes, comment and close #16
+**Pending:** on-prem retest of rc.3 (`plans/handoffs/v0.2-rc-test-20261104.md`), then v0.2.0
 <!-- END STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
 - [x] Parser, fixture, tests (4 mutants caught), spec and contract note
-- [ ] PR, review, merge, release, issue comment
+- [x] PR #17, Qodo findings fixed, merged; rc.3 released and verified; issues closed
 
 ## Paused
 None
