@@ -59,6 +59,9 @@ type Metrics struct {
 type Defaults struct {
 	UsageInterval Duration `yaml:"usage_interval"`
 	StaleAfter    Duration `yaml:"stale_after"`
+	// StatuslineStaleAfter is how long a status line cache reading counts as current. The file is rewritten every
+	// minute while a session is active, so it gets its own short window instead of stale_after's 45 minutes.
+	StatuslineStaleAfter Duration `yaml:"statusline_stale_after"`
 }
 
 type Profile struct {
@@ -99,8 +102,9 @@ func Default() *Config {
 		},
 		Metrics: Metrics{MaxModelsPerProfile: 20, AccountLabel: "alias"},
 		Defaults: Defaults{
-			UsageInterval: Duration(60 * time.Second),
-			StaleAfter:    Duration(45 * time.Minute),
+			UsageInterval:        Duration(60 * time.Second),
+			StaleAfter:           Duration(45 * time.Minute),
+			StatuslineStaleAfter: Duration(5 * time.Minute),
 		},
 	}
 }

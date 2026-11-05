@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeCfg(t *testing.T, body string) string {
@@ -251,5 +252,23 @@ func TestStatuslineCacheConfig(t *testing.T) {
 		if _, err := Load(writeCfg(t, bad)); err == nil {
 			t.Fatalf("invalid cache config accepted: %s", bad)
 		}
+	}
+}
+
+// The status line cache is rewritten every minute while a session is active, so a reading older than a few minutes
+// means nobody refreshed it: it gets its own short window, independent of stale_after for the slow sources.
+func TestStatuslineStaleAfterDefaultsShortAndSeparate(t *testing.T) {
+	c, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, stale_after: 45m}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Defaults.StatuslineStaleAfter.D(); got != 5*time.Minute {
+		t.Fatalf("statusline_stale_after default = %s, want 5m", got)
+	}
+	if got := c.Defaults.StaleAfter.D(); got != 45*time.Minute {
+		t.Fatalf("stale_after = %s, want 45m unchanged", got)
+	}
+	if _, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, statusline_stale_after: 30s}\n")); err == nil {
+		t.Fatal("statusline_stale_after below usage_interval accepted")
 	}
 }

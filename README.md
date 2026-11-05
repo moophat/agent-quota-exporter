@@ -94,7 +94,7 @@ agent-quota-exporter --version
   time is the file's millisecond epoch `timestamp`. The opened file must be owned by uid 0 and must not be
   group- or other-writable; rejected files report `untrusted_owner`. The timestamp must be at least the profile's
   `.credentials.json` modification time (checked without reading credentials); older readings report `auth_expired`.
-  A reading older than `defaults.stale_after` is absent. Missing, unreadable, invalid or unavailable files give no
+  A reading older than `defaults.statusline_stale_after` (default 5m) is absent: the file is rewritten every minute while a session is active, so it doesn't share `stale_after`'s 45 minutes. Missing, unreadable, invalid or unavailable files give no
   reading and mark the source down, without advancing its last-success timestamp. With `claude_oauth_usage: true`
   on the same profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
   persisted gates and backoff. There is no vendor call without that opt-in, and no vendor call while the file is fresh.

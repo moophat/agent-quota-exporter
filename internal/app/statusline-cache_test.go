@@ -42,7 +42,7 @@ func TestStatuslineCacheWiring(t *testing.T) {
 				}
 				return
 			}
-			if local == nil || local.Path != tc.want || local.MinInterval() != 90*time.Second || local.StaleAfter != 45*time.Minute || local.Network() {
+			if local == nil || local.Path != tc.want || local.MinInterval() != 90*time.Second || local.StaleAfter != 5*time.Minute || local.Network() {
 				t.Fatalf("wrong local source: %+v", local)
 			}
 			if tc.oauth && (oauth == nil || oauth.Statusline != local || oauth.P != local.P || oauth.MinInterval() != 15*time.Minute) {
