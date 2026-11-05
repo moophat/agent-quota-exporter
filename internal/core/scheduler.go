@@ -26,7 +26,7 @@ const (
 	ReadTimeout = 10 * time.Second
 	// MaxConcurrentReads caps parallel reads across all sources.
 	MaxConcurrentReads = 4
-	// NetSpacing is the minimum gap between two vendor calls from this host (lock is per IP).
+	// NetSpacing is the default minimum gap between two vendor calls from one gate group (lock is per IP).
 	NetSpacing = 30 * time.Second
 	// QuarantineBackoff is applied to network sources when the state file had to be discarded.
 	QuarantineBackoff = 60 * time.Minute
@@ -138,7 +138,7 @@ func (s *Scheduler) due(in *instance, now time.Time, force bool) bool {
 	}
 	if in.src.Network() {
 		g := netGroup(in.src)
-		if s.saveFailing || now.Before(s.netBlock[g]) || (!s.netLast[g].IsZero() && now.Sub(s.netLast[g]) < NetSpacing) {
+		if s.saveFailing || now.Before(s.netBlock[g]) || (!s.netLast[g].IsZero() && now.Sub(s.netLast[g]) < netSpacing(in.src)) {
 			return false
 		}
 		// Network sources never bypass their interval, not even when forced (--once).

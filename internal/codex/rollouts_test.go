@@ -282,7 +282,7 @@ func TestSymlinkedRolloutRefused(t *testing.T) {
 
 func TestBuild(t *testing.T) {
 	cfg := config.Default()
-	srcs := Build(cfg, config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Dir: "/x"}, "node-a")
+	srcs := Build(cfg, config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Dir: "/x"}, "node-a", "test")
 	if len(srcs) != 1 {
 		t.Fatalf("sources: %d", len(srcs))
 	}
@@ -292,7 +292,7 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("defaults: %+v", s)
 	}
 	cfg.Sources = map[string]config.Source{"codex-rollouts": {MinInterval: config.Duration(5 * time.Minute)}}
-	s = Build(cfg, config.Resolved{Alias: "cx", Account: "acct-a1", Dir: "/x"}, "node-a")[0].(*RolloutsSource)
+	s = Build(cfg, config.Resolved{Alias: "cx", Account: "acct-a1", Dir: "/x"}, "node-a", "test")[0].(*RolloutsSource)
 	if s.MinInterval() != 5*time.Minute || s.Account != "acct-a1" {
 		t.Fatalf("overrides: %+v", s)
 	}

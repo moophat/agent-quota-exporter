@@ -37,25 +37,30 @@ func TestExampleConfigLoads(t *testing.T) {
 // (for example a lowered quota interval) is how an account gets rate-locked.
 func TestValidationFailures(t *testing.T) {
 	cases := map[string]struct{ body, want string }{
-		"unknown key":      {"version: 1\nlisten2: x\n", "listen2"},
-		"bad version":      {"version: 2\n", "version"},
-		"duplicate alias":  {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x}\n- {harness: claude-code, alias: a, dir: /y}\n", "duplicate alias"},
-		"inline secret":    {"version: 1\nlabels: {env: \"sk-abc\"}\n", "inline secret"},
-		"inline jwt":       {"version: 1\nhost: eyJhbGciOi\n", "inline secret"},
-		"below floor":      {"version: 1\nsources:\n  claude-oauth-usage: {min_interval: 1m}\n", "below the floor"},
-		"backoff floor":    {"version: 1\nsources:\n  claude-oauth-usage: {backoff_429: 5m}\n", "backoff_429"},
-		"unknown source":   {"version: 1\nsources:\n  nope: {min_interval: 1h}\n", "unknown source"},
-		"label collision":  {"version: 1\nlabels: {host: x}\n", "collides"},
-		"label name":       {"version: 1\nlabels: {\"1bad\": x}\n", "invalid label name"},
-		"too many labels":  {"version: 1\nlabels: {a: 1, b: 1, c: 1, d: 1, e: 1}\n", "exceed the cap"},
-		"otlp":             {"version: 1\notlp: {endpoint: http://x}\n", "otlp.endpoint"},
-		"per session":      {"version: 1\nmetrics: {per_session: true}\n", "per_session"},
-		"discovery mode":   {"version: 1\ndiscovery: {mode: all}\n", "discovery.mode"},
-		"account label":    {"version: 1\nmetrics: {account_label: uuid}\n", "account_label"},
-		"stale too short":  {"version: 1\ndefaults: {stale_after: 5m}\n", "stale_after"},
-		"bad duration":     {"version: 1\ndefaults: {stale_after: soon}\n", "duration"},
-		"claude needs dir": {"version: 1\nprofiles:\n- {harness: claude-code, alias: a}\n", "dir: required"},
-		"unknown quota":    {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x, quota: {foo: true}}\n", "unknown quota"},
+		"unknown key":           {"version: 1\nlisten2: x\n", "listen2"},
+		"bad version":           {"version: 2\n", "version"},
+		"duplicate alias":       {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x}\n- {harness: claude-code, alias: a, dir: /y}\n", "duplicate alias"},
+		"inline secret":         {"version: 1\nlabels: {env: \"sk-abc\"}\n", "inline secret"},
+		"inline jwt":            {"version: 1\nhost: eyJhbGciOi\n", "inline secret"},
+		"below floor":           {"version: 1\nsources:\n  claude-oauth-usage: {min_interval: 1m}\n", "below the floor"},
+		"backoff floor":         {"version: 1\nsources:\n  claude-oauth-usage: {backoff_429: 5m}\n", "backoff_429"},
+		"agy below floor":       {"version: 1\nsources:\n  agy-usage: {min_interval: 90s}\n", "below the floor"},
+		"codex below floor":     {"version: 1\nsources:\n  codex-usage: {min_interval: 30s}\n", "below the floor"},
+		"codex 429 floor":       {"version: 1\nsources:\n  codex-usage: {backoff_429: 1m}\n", "backoff_429"},
+		"codex_usage on claude": {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x, quota: {codex_usage: true}}\n", "only for harness codex"},
+		"codex_usage not bool":  {"version: 1\nprofiles:\n- {harness: codex, alias: a, dir: /x, quota: {codex_usage: 3}}\n", "must be a boolean"},
+		"unknown source":        {"version: 1\nsources:\n  nope: {min_interval: 1h}\n", "unknown source"},
+		"label collision":       {"version: 1\nlabels: {host: x}\n", "collides"},
+		"label name":            {"version: 1\nlabels: {\"1bad\": x}\n", "invalid label name"},
+		"too many labels":       {"version: 1\nlabels: {a: 1, b: 1, c: 1, d: 1, e: 1}\n", "exceed the cap"},
+		"otlp":                  {"version: 1\notlp: {endpoint: http://x}\n", "otlp.endpoint"},
+		"per session":           {"version: 1\nmetrics: {per_session: true}\n", "per_session"},
+		"discovery mode":        {"version: 1\ndiscovery: {mode: all}\n", "discovery.mode"},
+		"account label":         {"version: 1\nmetrics: {account_label: uuid}\n", "account_label"},
+		"stale too short":       {"version: 1\ndefaults: {stale_after: 5m}\n", "stale_after"},
+		"bad duration":          {"version: 1\ndefaults: {stale_after: soon}\n", "duration"},
+		"claude needs dir":      {"version: 1\nprofiles:\n- {harness: claude-code, alias: a}\n", "dir: required"},
+		"unknown quota":         {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x, quota: {foo: true}}\n", "unknown quota"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -71,6 +76,23 @@ func TestFloorOverrideNeedsExplicitFlag(t *testing.T) {
 	body := "version: 1\nsources:\n  claude-oauth-usage: {min_interval: 1m, i_know_this_can_lock_my_account: true}\n"
 	if _, err := Load(writeCfg(t, body)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// agy reads through the local client at 0 tokens, so a deployment may poll it every 2 minutes; codex-usage has
+// its own, tighter floors and a quota key of its own.
+func TestFreshQuotaSettingsAccepted(t *testing.T) {
+	body := "version: 1\nsources:\n  agy-usage: {min_interval: 2m}\n  codex-usage: {min_interval: 1m, backoff_429: 5m}\n" +
+		"profiles:\n- {harness: codex, alias: a, dir: /x, quota: {codex_usage: true}}\n"
+	c, err := Load(writeCfg(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.SourceInterval("agy-usage", 30*time.Minute); got != 2*time.Minute {
+		t.Errorf("agy interval %s", got)
+	}
+	if !c.Profiles[0].Quota.Enabled("codex_usage") {
+		t.Error("codex_usage not read")
 	}
 }
 

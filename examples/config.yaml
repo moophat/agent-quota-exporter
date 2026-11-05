@@ -39,6 +39,7 @@ profiles:
   - harness: codex
     alias: codex-work
     dir: /home/acct-a/.codex     # a CODEX_HOME; ~/.codex is also discovered
+    quota: { codex_usage: true } # opt-in: live quota + reset slots from the ChatGPT backend; never refreshes the token
   - harness: opencode
     alias: oc-lane-1
     dir: /var/lib/opencode-lane-1/opencode   # the data dir holding opencode.db
@@ -52,3 +53,5 @@ profiles:
     quota: { agy_usage: true }  # opt-in: runs agy's own /usage; each poll can trigger its normal token refresh
 sources:
   claude-oauth-usage: { min_interval: 15m, backoff_429: 60m }   # floors; may only be raised
+  codex-usage: { min_interval: 3m, backoff_429: 10m }           # default 3m / 10m; floors 1m / 5m
+  agy-usage: { min_interval: 3m }                               # default 30m; floor 2m

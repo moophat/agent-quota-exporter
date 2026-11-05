@@ -79,9 +79,21 @@ agent-quota-exporter --version
   | `claude-statusline-cache` | `claude-code` | on for `/root/.claude` only | AgentKit status line cache, no credentials or vendor call |
   | `claude-oauth-usage` | `claude-code` | opt-in, `quota: {claude_oauth_usage: true}` | the profile's token and Claude's quota endpoint |
   | `codex-rollouts` | `codex` | on | quota, credits and tokens the Codex CLI wrote to its rollouts |
+  | `codex-usage` | `codex` | opt-in, `quota: {codex_usage: true}` | live Codex quota windows, credits and reset slots with their expiry, from the ChatGPT backend with the CLI's own access token; replaces the quota series of `codex-rollouts` for that profile (its token counters stay) |
   | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
   | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
   | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |
+
+- `codex-usage` (fresh Codex quota): default every 3 min (floor 1 min), 429 backoff default 10 min (floor 5 min); set
+  `sources.codex-usage.min_interval` to change it. It reads only the access token in `<CODEX_HOME>/auth.json`, sends it to
+  `chatgpt.com` over a direct connection and never refreshes it (OpenAI rotates refresh tokens, so a refresh here could
+  log the real Codex CLI out) and never writes `auth.json`. When the token is expired the call is skipped, the last
+  reading keeps being served with its true observed time, and `agent_source_errors_total{reason="auth_expired"}` counts
+  each attempt until the CLI refreshes its login by running. It also reads the reset slots (read-only; the
+  exporter never spends one): `agent_quota_reset_credits_available` and `agent_quota_reset_credits_next_expiry_timestamp_seconds`.
+  The endpoints are private and undocumented by the vendor; the field names come from a third-party client's code.
+- `agy-usage` interval: default 30 min, floor 2 min. A read runs the client's own `/usage` command (0 tokens), so set
+  `sources.agy-usage.min_interval` (for example `3m`) for a live dashboard; it still backs off after a failed run.
 
   Read-only SQLite sources read a WAL database that no writer has open (no `-wal`/`-shm`) in SQLite's immutable
   mode, which creates nothing; with a writer present they attach to the existing `-shm` like any SQLite reader. A

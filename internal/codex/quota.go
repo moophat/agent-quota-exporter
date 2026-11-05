@@ -19,14 +19,16 @@ const creditsFallback = 7 * 24 * time.Hour
 // rateLimits is Codex's RateLimitSnapshot (codex-rs/protocol), the structural fields only. limit_name and every
 // other field are never decoded.
 type rateLimits struct {
-	LimitID   *string   `json:"limit_id"`
-	Primary   *rlWindow `json:"primary"`
-	Secondary *rlWindow `json:"secondary"`
-	Credits   *struct {
-		HasCredits bool            `json:"has_credits"`
-		Unlimited  bool            `json:"unlimited"`
-		Balance    json.RawMessage `json:"balance"` // a string in Codex today; a number is accepted too
-	} `json:"credits"`
+	LimitID   *string    `json:"limit_id"`
+	Primary   *rlWindow  `json:"primary"`
+	Secondary *rlWindow  `json:"secondary"`
+	Credits   *rlCredits `json:"credits"`
+}
+
+type rlCredits struct {
+	HasCredits bool            `json:"has_credits"`
+	Unlimited  bool            `json:"unlimited"`
+	Balance    json.RawMessage `json:"balance"` // a string in Codex today; a number is accepted too
 }
 
 // rlWindow numbers are decoded as float64 so a vendor writing 300.0 does not fail the line.
@@ -134,19 +136,24 @@ func newReading(rl *rateLimits, at time.Time) *reading {
 			longest, longestReset = m, qw.Reset
 		}
 	}
-	if c := rl.Credits; c != nil {
-		cr := &credits{Available: c.HasCredits || c.Unlimited, Until: longestReset}
-		if cr.Until == 0 {
-			cr.Until = at.Add(creditsFallback).Unix()
-		}
-		if !c.Unlimited {
-			if b, ok := parseBalance(c.Balance); ok {
-				cr.Balance = &b
-			}
-		}
-		r.Credits = cr
+	if rl.Credits != nil {
+		r.Credits = newCredits(rl.Credits, longestReset, at)
 	}
 	return r
+}
+
+// newCredits maps a credits object; they are served up to the longest window's reset (reading + 7 days with none).
+func newCredits(c *rlCredits, longestReset int64, at time.Time) *credits {
+	cr := &credits{Available: c.HasCredits || c.Unlimited, Until: longestReset}
+	if cr.Until == 0 {
+		cr.Until = at.Add(creditsFallback).Unix()
+	}
+	if !c.Unlimited {
+		if b, ok := parseBalance(c.Balance); ok {
+			cr.Balance = &b
+		}
+	}
+	return cr
 }
 
 // maxScopes bounds the readings kept per profile; the scope whose newest reading is oldest goes first.
@@ -192,35 +199,49 @@ func minReset(a, b int64) int64 {
 // its reading, credits until their Until. Windows that map to the same label set are merged (max utilization, min
 // reset). The observed timestamp has no scope label, so it is the newest reading among the scopes still served.
 func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
-	scopes := make([]string, 0, len(s.st.Quotas))
-	for sc := range s.st.Quotas {
+	return serveQuotas(ident{s.Host, s.Alias, s.Account}, s.st.Quotas, s.StaleAfter, now)
+}
+
+// ident is the profile identity every series carries. The rollouts and usage sources share the quota mapping
+// below through it, so both emit the same series for the same reading.
+type ident struct{ Host, Alias, Account string }
+
+func (i ident) labels(extra ...core.Label) []core.Label {
+	ls := []core.Label{{Name: "host", Value: i.Host}, {Name: "harness", Value: Harness}, {Name: "profile", Value: i.Alias},
+		{Name: "account", Value: i.Account}, {Name: "provider", Value: Provider}}
+	return append(ls, extra...)
+}
+
+func serveQuotas(id ident, quotas map[string]*reading, staleAfter time.Duration, now time.Time) []core.Sample {
+	scopes := make([]string, 0, len(quotas))
+	for sc := range quotas {
 		scopes = append(scopes, sc)
 	}
 	sort.Strings(scopes)
 	var out []core.Sample
 	var newest int64
 	for _, sc := range scopes {
-		q := s.st.Quotas[sc]
-		if ss := s.scopeSamples(q, now); len(ss) > 0 {
+		q := quotas[sc]
+		if ss := scopeSamples(id, q, staleAfter, now); len(ss) > 0 {
 			out = append(out, ss...)
 			newest = max(newest, q.AtMs)
 		}
 	}
 	if len(out) > 0 {
-		out = append(out, core.Sample{Name: "agent_quota_observed_timestamp_seconds", Labels: s.labels(),
+		out = append(out, core.Sample{Name: "agent_quota_observed_timestamp_seconds", Labels: id.labels(),
 			Value: float64(time.UnixMilli(newest).Unix())})
 	}
 	return out
 }
 
-func (s *RolloutsSource) scopeSamples(q *reading, now time.Time) []core.Sample {
+func scopeSamples(id ident, q *reading, staleAfter time.Duration, now time.Time) []core.Sample {
 	at := time.UnixMilli(q.AtMs)
 	merged := map[string]qWindow{}
 	for _, w := range q.Windows {
 		if w.Reset > 0 && w.Reset <= now.Unix() {
 			continue
 		}
-		if w.Reset == 0 && now.Sub(at) > s.StaleAfter {
+		if w.Reset == 0 && now.Sub(at) > staleAfter {
 			continue
 		}
 		if m, ok := merged[w.Window]; ok {
@@ -237,14 +258,14 @@ func (s *RolloutsSource) scopeSamples(q *reading, now time.Time) []core.Sample {
 	var out []core.Sample
 	for _, k := range windows {
 		w := merged[k]
-		ls := s.labels(core.Label{Name: "window", Value: w.Window}, core.Label{Name: "scope", Value: q.Scope})
+		ls := id.labels(core.Label{Name: "window", Value: w.Window}, core.Label{Name: "scope", Value: q.Scope})
 		out = append(out, core.Sample{Name: "agent_quota_utilization_ratio", Labels: ls, Value: w.Used / 100})
 		if w.Reset > 0 {
 			out = append(out, core.Sample{Name: "agent_quota_reset_timestamp_seconds", Labels: ls, Value: float64(w.Reset)})
 		}
 	}
 	if c := q.Credits; c != nil && now.Unix() < c.Until {
-		ls := s.labels(core.Label{Name: "scope", Value: q.Scope})
+		ls := id.labels(core.Label{Name: "scope", Value: q.Scope})
 		avail := 0.0
 		if c.Available {
 			avail = 1

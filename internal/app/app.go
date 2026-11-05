@@ -39,7 +39,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		var srcs []core.Source
 		switch r.Harness {
 		case config.HarnessCodex:
-			srcs = codex.Build(cfg, r, host)
+			srcs = codex.Build(cfg, r, host, version)
 		case config.HarnessOpencode:
 			srcs = opencode.Build(cfg, r, host)
 		case config.HarnessRouter:

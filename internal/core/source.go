@@ -87,6 +87,20 @@ func netGroup(s Source) string {
 	return "vendor"
 }
 
+// NetSpacer is implemented by network sources whose vendor tolerates a closer call spacing than the default
+// NetSpacing (a local client at 0 tokens, a cheap GET). Many accounts in one gate group would otherwise need
+// accounts x NetSpacing to be read once.
+type NetSpacer interface {
+	NetSpacing() time.Duration
+}
+
+func netSpacing(s Source) time.Duration {
+	if g, ok := s.(NetSpacer); ok && g.NetSpacing() > 0 {
+		return g.NetSpacing()
+	}
+	return NetSpacing
+}
+
 // Timeouter is implemented by sources whose read needs a different bound than ReadTimeout (e.g. a spawned
 // client that must be allowed to finish rewriting its own files).
 type Timeouter interface {
