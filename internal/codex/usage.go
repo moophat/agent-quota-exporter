@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -47,11 +48,14 @@ type UsageSource struct {
 	Interval             time.Duration
 	Backoff429           time.Duration
 	Version              string
+	// Gate tells the profile's rollouts source when this source last produced a reading (see liveGate).
+	Gate *liveGate
 
 	// BaseURL and Transport override the vendor origin and transport. Tests only: they are not reachable from
 	// the config file.
 	BaseURL   string
 	Transport http.RoundTripper
+	Now       func() time.Time // the clock Restore judges by; nil = the wall clock
 }
 
 func (s *UsageSource) Name() string               { return UsageSourceName }
@@ -67,44 +71,92 @@ func (s *UsageSource) NetGroup() string { return "chatgpt" }
 // minutes to read once.
 func (s *UsageSource) NetSpacing() time.Duration { return netSpacing }
 
+// liveGate is shared by a profile's codex-usage and codex-rollouts sources. Until codex-usage has a reading
+// (and again once that reading is older than stale_after) rollouts serves the quota; while it has one, only
+// codex-usage does. So a first-run failure of the live read never leaves a profile without quota, and no series
+// is ever emitted by both.
+type liveGate struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (g *liveGate) set(t time.Time) {
+	g.mu.Lock()
+	if t.After(g.at) {
+		g.at = t
+	}
+	g.mu.Unlock()
+}
+
+func (g *liveGate) last() time.Time {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.at
+}
+
 // usageState is the persisted blob: the last good readings, served after a failure or a restart.
 type usageState struct {
 	Quotas map[string]*reading `json:"quotas,omitempty"`
 	LastAt int64               `json:"last_at,omitempty"` // Unix ms of the last good quota read
 	Resets *resetCredits       `json:"resets,omitempty"`
 	C401   int                 `json:"c401,omitempty"`
-	FP     string              `json:"fp,omitempty"` // auth.json fingerprint at the last 401
+	FP     string              `json:"fp,omitempty"` // auth.json fingerprint at the last usage 401
+	// The reset-slot read has its own breaker: the usage read may keep working while this one is refused.
+	CC401 int    `json:"cc401,omitempty"`
+	CFP   string `json:"cfp,omitempty"`
 }
 
 type resetCredits struct {
 	At        int64   `json:"at"` // Unix seconds of the read
 	Available float64 `json:"n"`
-	Expiry    int64   `json:"exp,omitempty"` // soonest expires_at, Unix seconds; 0 = none reported
+	// Exp holds the expires_at of each open slot that had one, sorted, Unix seconds. A slot is no longer
+	// usable once its time passes, so serving subtracts the past ones and moves the expiry to the next live one.
+	Exp []int64 `json:"exp,omitempty"`
 }
 
 func (s *UsageSource) ident() ident { return ident{s.Host, s.Alias, s.Account} }
 
-// serve builds the samples of the persisted readings as of now.
+// serve builds the samples of the persisted readings as of now. Quota values older than stale_after are not
+// served (rollouts takes over, see liveGate); reset slots past their expiry are dropped from the count.
 func (s *UsageSource) serve(st *usageState, now time.Time) []core.Sample {
-	out := serveQuotas(s.ident(), st.Quotas, s.StaleAfter, now)
+	var out []core.Sample
+	if st.LastAt > 0 && now.Sub(time.UnixMilli(st.LastAt)) <= s.StaleAfter {
+		out = serveQuotas(s.ident(), st.Quotas, s.StaleAfter, now)
+	}
 	if rc := st.Resets; rc != nil && now.Sub(time.Unix(rc.At, 0)) <= s.StaleAfter {
-		out = append(out, core.Sample{Name: "agent_quota_reset_credits_available", Labels: s.ident().labels(), Value: rc.Available})
-		if rc.Expiry > now.Unix() {
+		avail, next := rc.Available, int64(0)
+		for _, e := range rc.Exp {
+			if e <= now.Unix() {
+				avail--
+			} else if next == 0 || e < next {
+				next = e
+			}
+		}
+		out = append(out, core.Sample{Name: "agent_quota_reset_credits_available", Labels: s.ident().labels(), Value: max(0, avail)})
+		if next > 0 {
 			out = append(out, core.Sample{Name: "agent_quota_reset_credits_next_expiry_timestamp_seconds",
-				Labels: s.ident().labels(), Value: float64(rc.Expiry)})
+				Labels: s.ident().labels(), Value: float64(next)})
 		}
 	}
 	return out
 }
 
-// Restore serves the last good readings after a restart (staleness still applies in the core).
+// Restore serves the last good readings after a restart (staleness still applies in the core). Windows and slots
+// are judged against the real time, not the time of the earlier read.
 func (s *UsageSource) Restore(raw json.RawMessage) core.Result {
 	var st usageState
 	if json.Unmarshal(raw, &st) != nil || st.LastAt == 0 {
 		return core.Result{}
 	}
 	at := time.UnixMilli(st.LastAt)
-	return core.Result{Samples: s.serve(&st, at), ObservedAt: at}
+	if s.Gate != nil {
+		s.Gate.set(at)
+	}
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	return core.Result{Samples: s.serve(&st, now), ObservedAt: at}
 }
 
 func (s *UsageSource) client() *http.Client {
@@ -168,23 +220,39 @@ func (s *UsageSource) Collect(ctx context.Context, now time.Time, raw json.RawMe
 		return fail(core.Fail(core.ReasonParse))
 	}
 	st.Quotas, st.LastAt, st.C401, st.FP = quotas, now.UnixMilli(), 0, ""
+	if s.Gate != nil {
+		s.Gate.set(now)
+	}
 
 	// The reset slots are a second, independent read: its failure never costs the quota values just read.
 	var credErr error
 	errs := map[string]int{}
-	status, body, err = s.get(ctx, a, creditsPath)
+	if a.fp != st.CFP {
+		st.CC401 = 0
+	}
+	if st.CC401 >= 2 {
+		// two 401s on this read with this auth.json: wait for the real client to log in again
+		status, body, err = http.StatusUnauthorized, nil, errSkipped
+	} else {
+		status, body, err = s.get(ctx, a, creditsPath)
+	}
 	switch {
+	case err == errSkipped:
+		credErr = core.Fail(core.ReasonAuthExpired)
 	case err != nil:
 		credErr = err
 	case status == http.StatusTooManyRequests:
 		credErr = s.rateLimited()
 	case status == http.StatusUnauthorized:
+		st.CC401++
+		st.CFP = a.fp
 		credErr = core.Fail(core.ReasonAuthExpired)
 	case status != http.StatusOK:
 		credErr = core.Fail(core.ReasonUpstream)
 	default:
 		if rc, ok := parseResetCredits(body, now); ok {
 			st.Resets = rc
+			st.CC401, st.CFP = 0, ""
 		} else {
 			credErr = core.Fail(core.ReasonParse)
 		}
@@ -201,6 +269,9 @@ func (s *UsageSource) Collect(ctx context.Context, now time.Time, raw json.RawMe
 	}
 	return res, blob, nil
 }
+
+// errSkipped marks a call not made because of the reset-slot breaker.
+var errSkipped = errors.New("skipped")
 
 func (s *UsageSource) rateLimited() error {
 	b := s.Backoff429
@@ -533,8 +604,8 @@ func firstNonEmpty(ss ...string) string {
 }
 
 // parseResetCredits reads /wham/rate-limit-reset-credits: available_count and credits[].{status, expires_at}.
-// ok is false when the body states neither a count nor a list. The soonest expiry is taken over credits that are
-// not spent and not already past; with none (or no expires_at) there is no expiry, never 0.
+// ok is false when the body states neither a count nor a list. Expiries are kept for credits that are not spent and
+// not already past; with none (or no expires_at) there is no expiry series, never 0.
 func parseResetCredits(body []byte, now time.Time) (*resetCredits, bool) {
 	var b struct {
 		AvailableCount *float64 `json:"available_count"`
@@ -553,11 +624,15 @@ func parseResetCredits(body []byte, now time.Time) (*resetCredits, bool) {
 		case "consumed", "redeemed", "used", "expired", "revoked", "cancelled", "canceled":
 			continue
 		}
+		if t, ok := unixOf(c.ExpiresAt); ok && t <= now.Unix() {
+			continue // already past: not usable whatever its status says
+		}
 		open++
-		if t, ok := unixOf(c.ExpiresAt); ok && t > now.Unix() && (rc.Expiry == 0 || t < rc.Expiry) {
-			rc.Expiry = t
+		if t, ok := unixOf(c.ExpiresAt); ok {
+			rc.Exp = append(rc.Exp, t)
 		}
 	}
+	sort.Slice(rc.Exp, func(i, j int) bool { return rc.Exp[i] < rc.Exp[j] })
 	switch {
 	case b.AvailableCount != nil && finite(*b.AvailableCount):
 		rc.Available = max(0, *b.AvailableCount)

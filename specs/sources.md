@@ -114,8 +114,10 @@ Rules specific to `codex-rollouts`:
 
 Rules specific to `codex-usage`:
 
-- **Opt-in per profile** (`quota.codex_usage: true`), off by default. With it on, the profile's `codex-rollouts` keeps its token
-  and request counters and stops emitting the quota and credit series, so no series is emitted twice; `codex-usage` emits
+- **Opt-in per profile** (`quota.codex_usage: true`), off by default. Rollouts keeps its token and request counters always. Its quota
+  and credit series are served until `codex-usage` has a reading, and again if that reading is older than `stale_after` and
+  the rollouts reading is newer; while `codex-usage` has a fresh reading only it emits them, so no series is emitted twice
+  and a failing first read leaves no gap; `codex-usage` emits
   the same `agent_quota_*` series with the same labels, window mapping (`limit_window_seconds` / 60 → the `window_minutes`
   rules above; with none given, the primary window is `5h` and the secondary `7d`) and scope mapping (`rate_limit` is
   `all`; `code_review_rate_limit` is `code_review`; the keys of `rate_limits_by_limit_id` and the ids of
@@ -128,7 +130,7 @@ Rules specific to `codex-usage`:
   environment proxy).
 - **Expired token.** If the JWT `exp` of the access token has passed, no call is made; the last reading keeps being served
   with its true observed time (until `stale_after`) and `agent_source_errors_total{reason="auth_expired"}` is counted on
-  each attempt. Two consecutive 401s stop calls until `auth.json` changes. A token without a readable `exp` is tried.
+  each attempt. Two consecutive 401s stop calls until `auth.json` changes; the reset-slot read has its own such breaker, so its 401s never stop the usage read. A token without a readable `exp` is tried.
 - **429** gives `rate_limited` with `sources.codex-usage.backoff_429` (default 10 min, floor 5 min) in the source's own gate
   group (`chatgpt`), so it never pauses Claude or agy and the reverse. Other failures follow the source interval. Spacing
   inside the group is 5 s, so many accounts are all read within one interval.
@@ -136,7 +138,8 @@ Rules specific to `codex-usage`:
   in `agent_source_errors_total`; a 429 on it also backs the source off). `agent_quota_reset_credits_available` =
   `available_count` (else the number of listed slots whose `status` is not consumed/redeemed/used/expired/revoked/cancelled);
   `agent_quota_reset_credits_next_expiry_timestamp_seconds` = the earliest future `expires_at` over those slots, **absent**
-  when none carries one. The path that spends a slot (`.../consume`) is never called, and a test pins the source's URLs.
+  when none carries one. Both are judged against the current time when served (after a failure or a restart too): a slot past
+  its `expires_at` leaves the count and the expiry moves to the next live slot. The path that spends a slot (`.../consume`) is never called, and a test pins the source's URLs.
 
 Rules specific to `codex-rate-limits`:
 

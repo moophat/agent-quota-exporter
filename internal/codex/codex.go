@@ -19,6 +19,10 @@ func Build(cfg *config.Config, r config.Resolved, host, version string) []core.S
 		account = r.Alias // nothing is read from auth.json (design section 3)
 	}
 	usage := r.Quota.Enabled("codex_usage")
+	var gate *liveGate
+	if usage {
+		gate = &liveGate{}
+	}
 	srcs := []core.Source{&RolloutsSource{
 		Host:       host,
 		Alias:      r.Alias,
@@ -27,9 +31,9 @@ func Build(cfg *config.Config, r config.Resolved, host, version string) []core.S
 		MaxModels:  cfg.Metrics.MaxModelsPerProfile,
 		StaleAfter: cfg.Defaults.StaleAfter.D(),
 		Interval:   cfg.SourceInterval(SourceName, cfg.Defaults.UsageInterval.D()),
-		// With codex-usage on, it owns the quota series: rollouts keeps only its token counters, so no series
-		// is emitted twice.
-		SkipQuota: usage,
+		// With codex-usage on, it owns the quota series while it has a reading; rollouts serves them before the
+		// first one and when it goes stale, so no series is emitted twice and none is missing.
+		Live: gate,
 	}}
 	if usage {
 		srcs = append(srcs, &UsageSource{
@@ -41,6 +45,7 @@ func Build(cfg *config.Config, r config.Resolved, host, version string) []core.S
 			Interval:   cfg.SourceInterval(UsageSourceName, defaultUsageInterval),
 			Backoff429: cfg.SourceBackoff(UsageSourceName, defaultUsageBackoff),
 			Version:    version,
+			Gate:       gate,
 		})
 	}
 	return srcs

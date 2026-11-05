@@ -163,7 +163,12 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 	}
 	prev := map[*instance]gate{}
 	s.mu.Lock()
-	for _, in := range s.insts {
+	// Sources are offered the free call slots oldest attempt first (config order among equals), so when there
+	// are more due sources in a gate group than the spacing allows, they take turns instead of the first ones
+	// in config order taking every slot.
+	order := append([]*instance(nil), s.insts...)
+	sort.SliceStable(order, func(i, j int) bool { return order[i].lastAttempt.Before(order[j].lastAttempt) })
+	for _, in := range order {
 		if filter != nil && !filter(in.src) {
 			continue
 		}

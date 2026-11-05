@@ -79,7 +79,7 @@ agent-quota-exporter --version
   | `claude-statusline-cache` | `claude-code` | on for `/root/.claude` only | AgentKit status line cache, no credentials or vendor call |
   | `claude-oauth-usage` | `claude-code` | opt-in, `quota: {claude_oauth_usage: true}` | the profile's token and Claude's quota endpoint |
   | `codex-rollouts` | `codex` | on | quota, credits and tokens the Codex CLI wrote to its rollouts |
-  | `codex-usage` | `codex` | opt-in, `quota: {codex_usage: true}` | live Codex quota windows, credits and reset slots with their expiry, from the ChatGPT backend with the CLI's own access token; replaces the quota series of `codex-rollouts` for that profile (its token counters stay) |
+  | `codex-usage` | `codex` | opt-in, `quota: {codex_usage: true}` | live Codex quota windows, credits and reset slots with their expiry, from the ChatGPT backend with the CLI's own access token; takes over the quota series of `codex-rollouts` for that profile while it has a fresh reading (rollouts serves them before the first live read and if the live one goes stale; its token counters always stay) |
   | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
   | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
   | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |

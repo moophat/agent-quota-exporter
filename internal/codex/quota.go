@@ -199,7 +199,22 @@ func minReset(a, b int64) int64 {
 // its reading, credits until their Until. Windows that map to the same label set are merged (max utilization, min
 // reset). The observed timestamp has no scope label, so it is the newest reading among the scopes still served.
 func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
-	return serveQuotas(ident{s.Host, s.Alias, s.Account}, s.st.Quotas, s.StaleAfter, now)
+	quotas := s.st.Quotas
+	if s.Live != nil {
+		// codex-usage owns the series while its reading is fresh. Once it is stale (or has never read) rollouts
+		// serves, but only readings newer than the live one, so an old rollout never replaces a newer reading.
+		at := s.Live.last()
+		if !at.IsZero() && now.Sub(at) <= s.StaleAfter {
+			return nil
+		}
+		quotas = map[string]*reading{}
+		for sc, q := range s.st.Quotas {
+			if q.AtMs > at.UnixMilli() {
+				quotas[sc] = q
+			}
+		}
+	}
+	return serveQuotas(ident{s.Host, s.Alias, s.Account}, quotas, s.StaleAfter, now)
 }
 
 // ident is the profile identity every series carries. The rollouts and usage sources share the quota mapping

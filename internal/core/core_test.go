@@ -443,3 +443,27 @@ func TestV01StateBackoffStillBlocksGroup(t *testing.T) {
 		t.Fatal("a v0.1 backoff must still block the default vendor group")
 	}
 }
+
+// More due sources in a gate group than the spacing allows must take turns: the oldest attempt goes first, so
+// the sources later in config order are not starved.
+func TestGateGroupSourcesTakeTurns(t *testing.T) {
+	c := newClock()
+	var srcs []Source
+	var all []*fakeSource
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		f := &fakeSource{name: n, interval: time.Minute, network: true}
+		srcs = append(srcs, f)
+		all = append(all, f)
+	}
+	s := NewScheduler(srcs, openState(t, t.TempDir(), c), c, quietLog(), 30*time.Minute)
+	// A 30 s gap allows two reads per 1 min interval for six sources: 10 minutes allow about 20 reads.
+	for i := 0; i < 600; i++ {
+		s.Tick(context.Background(), nil, false, true)
+		c.Add(time.Second)
+	}
+	for _, f := range all {
+		if f.calls < 2 {
+			t.Errorf("source %s read %d times in 10 minutes: starved", f.name, f.calls)
+		}
+	}
+}

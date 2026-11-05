@@ -370,54 +370,111 @@ func TestUsageNoRefreshNoWrite(t *testing.T) {
 	}
 }
 
-// With codex_usage on, rollouts keeps its counters and emits no quota series: no series comes from both.
-func TestUsageNoDuplicatesBesideRollouts(t *testing.T) {
-	v := newVendor(t)
-	h := newHarness(t)
-	writeAuth(t, h.dir, jwt(tNow.Add(time.Hour)))
-
+// With codex_usage on, rollouts serves the quota until the live source has a reading, then live wins, and when
+// live goes stale rollouts serves again if its reading is newer. In no state do both emit the same series.
+func TestUsageHandoffBesideRollouts(t *testing.T) {
 	cfg := config.Default()
-	r := config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Account: "acct-a1", Dir: h.dir,
-		Quota: config.Quota{"codex_usage": true}}
-	srcs := Build(cfg, r, "node-a", "test")
-	if len(srcs) != 2 {
-		t.Fatalf("sources: %d", len(srcs))
-	}
-	roll, usage := srcs[0].(*RolloutsSource), srcs[1].(*UsageSource)
-	usage.BaseURL, usage.Transport = v.srv.URL, nil
-
-	if _, _, err := roll.Collect(context.Background(), tStart, nil); err != nil { // first collect starts at the files' ends
-		t.Fatal(err)
-	}
-	h.copyTree() // new files are counted from their start
-	rres, _, err := roll.Collect(context.Background(), tNow, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ures, _, err := usage.Collect(context.Background(), tNow, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if q := quota(keyed(t, rres.Samples)); len(q) != 0 {
-		t.Errorf("rollouts still emits quota series beside codex-usage: %v", q)
-	}
-	if len(counters(keyed(t, rres.Samples))) == 0 {
-		t.Error("rollouts lost its token counters")
-	}
-	seen := map[string]bool{}
-	for _, s := range append(rres.Samples, ures.Samples...) {
-		k := s.Name + fmt.Sprint(s.Labels)
-		if seen[k] {
-			t.Errorf("duplicate series %s", k)
+	build := func(t *testing.T) (*harness, *RolloutsSource, *UsageSource, *fakeVendor) {
+		v := newVendor(t)
+		h := newHarness(t)
+		writeAuth(t, h.dir, jwt(tNow.Add(24*time.Hour)))
+		r := config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Account: "acct-a1", Dir: h.dir,
+			Quota: config.Quota{"codex_usage": true}}
+		srcs := Build(cfg, r, "node-a", "test")
+		if len(srcs) != 2 {
+			t.Fatalf("sources: %d", len(srcs))
 		}
-		seen[k] = true
+		roll, usage := srcs[0].(*RolloutsSource), srcs[1].(*UsageSource)
+		usage.BaseURL, usage.Transport = v.srv.URL, nil
+		if _, _, err := roll.Collect(context.Background(), tStart, nil); err != nil { // first collect starts at the files' ends
+			t.Fatal(err)
+		}
+		h.copyTree() // new files are counted from their start
+		return h, roll, usage, v
 	}
-	// without the opt-in rollouts is unchanged
-	r.Quota = nil
-	srcs = Build(cfg, r, "node-a", "test")
-	if len(srcs) != 1 || srcs[0].(*RolloutsSource).SkipQuota {
-		t.Error("rollouts must keep quota without codex_usage")
+	rollout := func(t *testing.T, roll *RolloutsSource, now time.Time) []core.Sample {
+		res, _, err := roll.Collect(context.Background(), now, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(counters(keyed(t, res.Samples))) == 0 {
+			t.Error("rollouts lost its token counters")
+		}
+		return res.Samples
 	}
+	noDup := func(t *testing.T, ss ...[]core.Sample) {
+		t.Helper()
+		seen := map[string]bool{}
+		for _, list := range ss {
+			for _, s := range list {
+				k := s.Name + fmt.Sprint(s.Labels)
+				if seen[k] {
+					t.Errorf("duplicate series %s", k)
+				}
+				seen[k] = true
+			}
+		}
+	}
+
+	t.Run("live has no reading yet", func(t *testing.T) {
+		_, roll, usage, v := build(t)
+		v.usage = []int{500} // first-run failure of the live read
+		rs := rollout(t, roll, tNow)
+		equal(t, "rollouts quota", quota(keyed(t, rs)), quotaD)
+		ures, _, err := usage.Collect(context.Background(), tNow, nil)
+		if err == nil || len(ures.Samples) != 0 {
+			t.Fatalf("err %v samples %d", err, len(ures.Samples))
+		}
+		equal(t, "rollouts quota after the failure", quota(keyed(t, rollout(t, roll, tNow.Add(time.Minute)))), quotaD)
+	})
+	t.Run("live wins once it has a reading", func(t *testing.T) {
+		_, roll, usage, _ := build(t)
+		before := rollout(t, roll, tNow)
+		ures, _, err := usage.Collect(context.Background(), tNow, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := rollout(t, roll, tNow.Add(time.Minute))
+		if q := quota(keyed(t, after)); len(q) != 0 {
+			t.Errorf("rollouts still emits quota beside a fresh live reading: %v", q)
+		}
+		noDup(t, after, ures.Samples)
+		_ = before
+	})
+	t.Run("stale live gives way to a newer rollout reading", func(t *testing.T) {
+		_, roll, usage, _ := build(t)
+		liveAt := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC) // before the 09:05 rollout reading
+		ures, blob, err := usage.Collect(context.Background(), liveAt, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		usage.Now = func() time.Time { return tNow }
+		live := usage.Restore(blob)
+		if q := quota(keyed(t, live.Samples)); len(q) != 0 {
+			t.Errorf("stale live reading still served: %v", q)
+		}
+		rs := rollout(t, roll, tNow)
+		equal(t, "rollouts quota", quota(keyed(t, rs)), quotaD)
+		noDup(t, rs, live.Samples)
+		_ = ures
+	})
+	t.Run("stale live keeps its place against an older rollout reading", func(t *testing.T) {
+		_, roll, usage, _ := build(t)
+		if _, _, err := usage.Collect(context.Background(), tNow, nil); err != nil { // newer than the 09:05 reading
+			t.Fatal(err)
+		}
+		rs := rollout(t, roll, tNow.Add(time.Hour)) // live is stale by then
+		if q := quota(keyed(t, rs)); len(q) != 0 {
+			t.Errorf("an older rollout reading replaced a newer live one: %v", q)
+		}
+	})
+	t.Run("no opt-in", func(t *testing.T) {
+		r := config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Dir: "/x"}
+		srcs := Build(cfg, r, "node-a", "test")
+		if len(srcs) != 1 || srcs[0].(*RolloutsSource).Live != nil {
+			t.Error("rollouts must keep quota without codex_usage")
+		}
+	})
 }
 
 func TestUsageAbsentExpiry(t *testing.T) {
@@ -546,7 +603,9 @@ func TestUsageRestoreServesLastReading(t *testing.T) {
 	v := newVendor(t)
 	dir := home(t, uNow.Add(time.Hour))
 	_, blob := mustOK(t, v.source(dir), uNow, nil)
-	res := v.source(dir).Restore(blob)
+	rs := v.source(dir)
+	rs.Now = func() time.Time { return uNow.Add(time.Minute) }
+	res := rs.Restore(blob)
 	if !res.ObservedAt.Equal(uNow) {
 		t.Errorf("observed %v", res.ObservedAt)
 	}
@@ -607,5 +666,76 @@ func TestUsageManyAccountsWithinOneInterval(t *testing.T) {
 	}
 	if v.nUsage < 24 {
 		t.Fatalf("accounts starved by call spacing: %d reads in 400 s, want >= 24", v.nUsage)
+	}
+}
+
+// A slot is no longer usable once it expires: serving (after a failure or a restart) drops it from the count and
+// moves the expiry to the next live slot, and windows are judged against the real time, not the time of the read.
+func TestUsageExpiredSlotsAndWindowsJudgedAtServeTime(t *testing.T) {
+	v := newVendor(t)
+	soon, later := uNow.Add(10*time.Minute), uNow.Add(20*24*time.Hour)
+	v.cbody = fmt.Sprintf(`{"available_count":2,"credits":[{"status":"available","expires_at":%d},{"status":"available","expires_at":%d}]}`,
+		soon.Unix(), later.Unix())
+	s := v.source(home(t, uNow.Add(30*24*time.Hour)))
+	s.StaleAfter = 5 * time.Hour
+	res, blob := mustOK(t, s, uNow, nil)
+	got := keyed(t, res.Samples)
+	if got["agent_quota_reset_credits_available{}"] != 2 || got["agent_quota_reset_credits_next_expiry_timestamp_seconds{}"] != float64(soon.Unix()) {
+		t.Fatalf("fresh: %v", got)
+	}
+
+	// failure path, 15 minutes later: the first slot has expired
+	v.usage = []int{500}
+	res, _, err := collectU(t, s, uNow.Add(15*time.Minute), blob)
+	got = keyed(t, res.Samples)
+	if reason(err) != core.ReasonUpstream || got["agent_quota_reset_credits_available{}"] != 1 ||
+		got["agent_quota_reset_credits_next_expiry_timestamp_seconds{}"] != float64(later.Unix()) {
+		t.Errorf("after one slot expired: err %v %v", err, got)
+	}
+	// restart path, after the 5h window reset (14:05) and with every slot gone
+	s.Now = func() time.Time { return time.Unix(reset5hD, 0).Add(5 * time.Minute) }
+	got = keyed(t, s.Restore(blob).Samples)
+	if _, ok := got["agent_quota_utilization_ratio{window=5h,scope=all}"]; ok {
+		t.Error("restart restored a window that has already reset")
+	}
+	if got["agent_quota_utilization_ratio{window=7d,scope=all}"] != 0.10 || got["agent_quota_reset_credits_available{}"] != 1 {
+		t.Errorf("restore: %v", got)
+	}
+	s.Now = func() time.Time { return later.Add(time.Minute) }
+	got = keyed(t, s.Restore(blob).Samples)
+	if got["agent_quota_reset_credits_available{}"] != 0 {
+		t.Errorf("all slots expired but %v still usable", got["agent_quota_reset_credits_available{}"])
+	}
+	if _, ok := got["agent_quota_reset_credits_next_expiry_timestamp_seconds{}"]; ok {
+		t.Error("expiry of a past slot served")
+	}
+}
+
+// Reset-slot 401s have their own breaker: after two, no more calls to that path until auth.json changes, while
+// the usage read keeps working.
+func TestUsageCreditsTwo401sStopOnlyThatCall(t *testing.T) {
+	v := newVendor(t)
+	v.credits = []int{401, 401, 200}
+	dir := home(t, uNow.Add(24*time.Hour))
+	s := v.source(dir)
+	var st json.RawMessage
+	for i := 0; i < 4; i++ {
+		res, b, err := collectU(t, s, uNow.Add(time.Duration(i)*3*time.Minute), st)
+		st = b
+		if err != nil || res.Errors[core.ReasonAuthExpired] != 1 {
+			t.Fatalf("attempt %d: err %v errors %v", i, err, res.Errors)
+		}
+		if keyed(t, res.Samples)["agent_quota_utilization_ratio{window=5h,scope=all}"] != 0.40 || !res.ObservedAt.Equal(uNow.Add(time.Duration(i)*3*time.Minute)) {
+			t.Fatalf("attempt %d: usage read stopped with the slots read", i)
+		}
+	}
+	if v.nUsage != 4 || v.nCred != 2 {
+		t.Fatalf("usage calls %d (want 4), reset-slot calls %d (want 2)", v.nUsage, v.nCred)
+	}
+	time.Sleep(10 * time.Millisecond)
+	writeAuth(t, dir, jwt(uNow.Add(48*time.Hour))) // the real client logged in again
+	res, _ := mustOK(t, s, uNow.Add(20*time.Minute), st)
+	if v.nCred != 3 || keyed(t, res.Samples)["agent_quota_reset_credits_available{}"] != 2 {
+		t.Errorf("after auth change: reset-slot calls %d, %v", v.nCred, keyed(t, res.Samples))
 	}
 }
