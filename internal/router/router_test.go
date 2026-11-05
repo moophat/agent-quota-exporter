@@ -745,3 +745,24 @@ func TestConnectionEnabled(t *testing.T) {
 		}
 	}
 }
+
+// An unreadable isActive is unknown: it counts as a parse error and emits no enabled series, so the
+// connection can't pass for one the operator disabled on purpose.
+func TestConnectionEnabledUnreadable(t *testing.T) {
+	for _, value := range []string{"NULL", "'yes'"} {
+		dir := t.TempDir()
+		_, w := writer(t, dir, false)
+		execAll(t, w, "rows.sql")
+		execAll(t, w, fmt.Sprintf("UPDATE providerConnections SET isActive=%s WHERE id='%s'", value, c1))
+		s := newSource(dir, nil)
+		res, _ := run(t, s, t0, nil)
+		w.Close()
+		got := series(t, res.Samples)
+		if v, ok := got["agent_router_connection_enabled{account=work-a,provider=claude}"]; ok {
+			t.Fatalf("isActive=%s: enabled series present (%v), want none", value, v)
+		}
+		if v := got["agent_router_connection_up{account=work-a,provider=claude}"]; v != 0 {
+			t.Fatalf("isActive=%s: up=%v, want 0", value, v)
+		}
+	}
+}
