@@ -97,8 +97,8 @@ func (s *OAuthUsageSource) PreferLocal(now time.Time) bool {
 	if s.Statusline == nil {
 		return false
 	}
-	_, _, ok := s.Statusline.reading(now)
-	return ok
+	_, _, err := s.Statusline.reading(now)
+	return err == nil
 }
 
 func (s *OAuthUsageSource) PreferredSource() string {

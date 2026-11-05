@@ -91,9 +91,12 @@ agent-quota-exporter --version
   `quota: {claude_statusline_cache: "/tmp/ck-usage-limits-cache.json"}` override, else `CK_USAGE_CACHE_PATH`
   from the exporter's own environment, else `/tmp/ck-usage-limits-cache.json`. It is read-only and polled every
   `defaults.usage_interval` (default 60 s). `status: available` and valid quota data are required; the observation
-  time is the file's millisecond epoch `timestamp`. A reading older than `defaults.stale_after` is absent.
-  Missing, unreadable, invalid or unavailable files give no reading. With `claude_oauth_usage: true` on the same
-  profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
+  time is the file's millisecond epoch `timestamp`. The opened file must be owned by uid 0 and must not be
+  group- or other-writable; rejected files report `untrusted_owner`. The timestamp must be at least the profile's
+  `.credentials.json` modification time (checked without reading credentials); older readings report `auth_expired`.
+  A reading older than `defaults.stale_after` is absent. Missing, unreadable, invalid or unavailable files give no
+  reading and mark the source down, without advancing its last-success timestamp. With `claude_oauth_usage: true`
+  on the same profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
   persisted gates and backoff. There is no vendor call without that opt-in, and no vendor call while the file is fresh.
 - systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service). The shipped unit has
   **`PrivateTmp=true`, which hides the host `/tmp` cache**. To use the default cache, override it with

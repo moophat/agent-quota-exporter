@@ -289,6 +289,11 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		}
 	} else {
 		in.lastOK = false
+		// A timestamped local file is authoritative: a rejected reading must
+		// not survive as a fresh cache or hide the network fallback's samples.
+		if _, ok := in.src.(MaxAger); ok {
+			in.cache, in.hasCache, in.observedAt = nil, false, time.Time{}
+		}
 		var se *SourceError
 		reason := ReasonOther
 		if errors.As(err, &se) {

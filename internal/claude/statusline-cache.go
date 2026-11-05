@@ -3,7 +3,10 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -21,7 +24,7 @@ type StatuslineCacheSource struct {
 	readAt     time.Time
 	quota      parsedQuota
 	observedAt time.Time
-	available  bool
+	readErr    error
 }
 
 func (s *StatuslineCacheSource) Name() string               { return "claude-statusline-cache" }
@@ -31,27 +34,58 @@ func (s *StatuslineCacheSource) MinInterval() time.Duration { return s.Interval 
 func (s *StatuslineCacheSource) Network() bool              { return false }
 func (s *StatuslineCacheSource) MaxAge() time.Duration      { return s.StaleAfter }
 
-func (s *StatuslineCacheSource) reading(now time.Time) (parsedQuota, time.Time, bool) {
+func (s *StatuslineCacheSource) reading(now time.Time) (parsedQuota, time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.readAt.IsZero() || now.Before(s.readAt) || now.Sub(s.readAt) >= s.Interval {
 		s.read(now)
 	}
-	if !s.available || s.observedAt.After(now) || now.Sub(s.observedAt) > s.StaleAfter {
-		return parsedQuota{}, time.Time{}, false
+	if s.readErr != nil {
+		return parsedQuota{}, time.Time{}, s.readErr
 	}
-	return s.quota, s.observedAt, true
+	if s.observedAt.After(now) || now.Sub(s.observedAt) > s.StaleAfter {
+		return parsedQuota{}, time.Time{}, core.Fail(core.ReasonOther)
+	}
+	// OpenRegular stats the safely opened descriptor; never read credentials.
+	f, fi, err := openRegular(filepath.Join(s.P.Dir, ".credentials.json"))
+	if err != nil {
+		return parsedQuota{}, time.Time{}, err
+	}
+	f.Close()
+	if s.observedAt.Before(fi.ModTime()) {
+		return parsedQuota{}, time.Time{}, core.Fail(core.ReasonAuthExpired)
+	}
+	return s.quota, s.observedAt, nil
 }
 
 func (s *StatuslineCacheSource) read(now time.Time) {
 	s.readAt = now
 	s.quota = parsedQuota{}
 	s.observedAt = time.Time{}
-	s.available = false
+	s.readErr = core.Fail(core.ReasonParse)
 
-	b, err := readSmall(s.Path, maxBody)
-	if err != nil || len(b) > maxBody {
+	f, fi, err := openRegular(s.Path)
+	if err != nil {
+		s.readErr = err
+		return
+	}
+	defer f.Close()
+	// fi comes from fstat on this same descriptor, before any bytes are read.
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || st.Uid != 0 || fi.Mode().Perm()&0022 != 0 {
+		s.readErr = core.Fail("untrusted_owner")
+		return
+	}
+	if fi.Size() > maxBody {
+		return
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxBody+1))
+	if err != nil {
+		s.readErr = core.Fail(core.ReasonOther)
+		return
+	}
+	if len(b) > maxBody {
 		return
 	}
 	var doc struct {
@@ -59,7 +93,11 @@ func (s *StatuslineCacheSource) read(now time.Time) {
 		Status    string          `json:"status"`
 		Data      json.RawMessage `json:"data"`
 	}
-	if json.Unmarshal(b, &doc) != nil || doc.Status != "available" || doc.Timestamp <= 0 {
+	if json.Unmarshal(b, &doc) != nil || doc.Timestamp <= 0 {
+		return
+	}
+	if doc.Status != "available" {
+		s.readErr = core.Fail(core.ReasonUpstream)
 		return
 	}
 	q, err := parseUsage(doc.Data)
@@ -68,13 +106,13 @@ func (s *StatuslineCacheSource) read(now time.Time) {
 	}
 	s.quota = q
 	s.observedAt = time.UnixMilli(doc.Timestamp)
-	s.available = true
+	s.readErr = nil
 }
 
 func (s *StatuslineCacheSource) Collect(_ context.Context, now time.Time, _ json.RawMessage) (core.Result, json.RawMessage, error) {
-	q, at, ok := s.reading(now)
-	if !ok {
-		return core.Result{}, nil, nil
+	q, at, err := s.reading(now)
+	if err != nil {
+		return core.Result{}, nil, err
 	}
 	_ = s.P.ResolveAccount()
 	account, _ := s.P.Account()

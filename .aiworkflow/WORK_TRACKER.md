@@ -6,6 +6,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-05 | Claude statusline cache (#20) -->
+### Claude statusline cache (#20) | 2026-11-05
+**Meta:** feat/claude-statusline-cache | codex | issue #20
+**Model:** codex
+**Outcome:** complete in working tree; focused tests, go vet ./... and go test -race ./... pass; reviewed and cadence fix verified
+**Key:** default root profile only; shared parser; persisted vendor gates unchanged; no live-node access or release
+**Pending:** live-node age and systemd runtime unverified by instruction; no commit, push or tag
+<!-- END STUB: 2026-11-05 | Claude statusline cache (#20) -->
+
 <!-- BEGIN STUB: 2026-11-04 | Claude quota: unprefixed windows and limit percents -->
 ### Claude quota: unprefixed windows and limit percents | 2026-11-04
 **Meta:** fix/claude-other-windows | opus | issue #16
@@ -52,16 +61,15 @@ None
 
 (Earlier entry, 2026-10-28 03:38 +07, claude-sonnet-5-5: initial repo setup, docs/plan, contract, sources, fixtures, no code.)
 
-## Active — Claude statusline cache (#20) | 2026-11-05
-<!-- BEGIN STUB: 2026-11-05 | Claude statusline cache (#20) -->
-### Claude statusline cache (#20) | 2026-11-05
-**Meta:** feat/claude-statusline-cache | codex | issue #20
+## Active — PR #21 cache trust and health fixes | 2026-11-05
+<!-- BEGIN STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
+### PR #21 cache trust and health fixes | 2026-11-05
+**Meta:** feat/claude-statusline-cache | codex | PR #21
 **Model:** codex
-**Outcome:** complete in working tree; focused tests, go vet ./... and go test -race ./... pass; reviewed and cadence fix verified
-**Key:** default root profile only; shared parser; persisted vendor gates unchanged; no live-node access or release
-**Pending:** live-node age and systemd runtime unverified by instruction; no commit, push or tag
-<!-- END STUB: 2026-11-05 | Claude statusline cache (#20) -->
-- [x] Inspect issue, sources, scheduler and configuration; baseline go test ./... passes
-- [x] Implement cache, configuration and fallback selection
-- [x] Verify freshness, absence, read-only behavior and network suppression
-- [x] Update documentation, review and run full required checks
+**Outcome:** complete in working tree; focused regressions, go vet ./... and go test -race ./... exit 0; diff reviewed
+**Key:** synthetic files only; no live machine, credential contents, claude, commits, push or tags
+**Pending:** live cache/systemd and non-root execution unverified; existing SQLite root-only skip and helper skip; no commit, push or tag
+<!-- END STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
+- [x] Inspect requested files and prove affected paths; baseline verification
+- [x] Implement trust, credential mtime and classified failure handling
+- [x] Verify regression tests, review diff and run required vet/race checks
