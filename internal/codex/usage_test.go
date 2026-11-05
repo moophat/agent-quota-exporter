@@ -739,3 +739,59 @@ func TestUsageCreditsTwo401sStopOnlyThatCall(t *testing.T) {
 		t.Errorf("after auth change: reset-slot calls %d, %v", v.nCred, keyed(t, res.Samples))
 	}
 }
+
+// Rollouts quota already cached by the scheduler must not hide a newer live reading when the next rollouts
+// collection fails: the renderer prefers the sample with the newer observed time.
+func TestUsageLiveBeatsCachedRolloutsAfterRolloutsFailure(t *testing.T) {
+	v := newVendor(t)
+	v.ubody = strings.Replace(usageBody, `"used_percent":40`, `"used_percent":55`, 1) // live says 0.55, rollouts 0.40
+	h := newHarness(t)
+	writeAuth(t, h.dir, jwt(tNow.Add(24*time.Hour)))
+	r := config.Resolved{Harness: config.HarnessCodex, Alias: "cx", Account: "acct-a1", Dir: h.dir, Quota: config.Quota{"codex_usage": true}}
+	srcs := Build(config.Default(), r, "node-a", "test")
+	roll, usage := srcs[0].(*RolloutsSource), srcs[1].(*UsageSource)
+	usage.BaseURL = v.srv.URL
+
+	clk := &fastClock{t: tStart}
+	state, err := core.OpenState(t.TempDir(), clk.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	sched := core.NewScheduler(srcs, state, clk, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), 45*time.Minute)
+	only := func(s core.Source) func(core.Source) bool { return func(x core.Source) bool { return x == s } }
+	render := func() string {
+		var out bytes.Buffer
+		if err := (&core.Exposition{Host: "node-a", Version: "test", Sched: sched, Clock: clk, ProcessStart: tStart}).Render(&out); err != nil {
+			t.Fatal(err)
+		}
+		var lines []string
+		for _, l := range strings.Split(out.String(), "\n") {
+			if strings.HasPrefix(l, "agent_quota_utilization_ratio{") && strings.Contains(l, `window="5h",scope="all"`) {
+				lines = append(lines, l)
+			}
+		}
+		if len(lines) != 1 {
+			t.Fatalf("want exactly one 5h/all series, got %v", lines)
+		}
+		return lines[0]
+	}
+
+	sched.Tick(context.Background(), only(roll), false, true) // first collect: files' ends
+	h.copyTree()
+	clk.add(tNow.Sub(tStart))
+	sched.Tick(context.Background(), only(roll), false, true) // rollouts caches its quota (0.40)
+	if l := render(); !strings.HasSuffix(l, " 0.4") {
+		t.Fatalf("rollouts reading not cached first: %s", l)
+	}
+	clk.add(30 * time.Second)
+	sched.Tick(context.Background(), only(usage), false, true) // live succeeds (0.55)
+	if err := os.RemoveAll(filepath.Join(h.dir, "sessions")); err != nil {
+		t.Fatal(err)
+	}
+	clk.add(2 * time.Minute)
+	sched.Tick(context.Background(), only(roll), false, true) // rollouts fails and keeps its old cache
+	if l := render(); !strings.HasSuffix(l, " 0.55") {
+		t.Fatalf("stale rollouts cache hid the live reading: %s", l)
+	}
+}
