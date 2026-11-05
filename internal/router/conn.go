@@ -133,13 +133,21 @@ func (s *Source) connLabel(id, name, email string, used map[string]bool) string 
 // connHealth: OK = isActive is 1 and the last test did not fail; Until = rateLimitedUntil if parseable.
 func connHealth(label string, r []any, errs map[string]int) health {
 	h := health{Label: label, Provider: providerLabel(toStr(r[1]))}
-	active, _ := toInt(r[3])
+	active, readable := toInt(r[3])
+	readable = readable && r[3] != nil // toInt reads NULL as 0, which here would claim a disable
 	ts := strings.ToLower(strings.TrimSpace(toStr(r[4])))
 	known := testPass[ts] || testFail[ts]
 	if !known {
 		errs[core.ReasonParse]++
 	}
-	h.OK = active == 1 && testPass[ts]
+	if readable {
+		enabled := active == 1
+		h.Enabled = &enabled
+	} else {
+		// Unknown, not disabled: no enabled series, so an alert on up stays in force.
+		errs[core.ReasonParse]++
+	}
+	h.OK = readable && active == 1 && testPass[ts]
 	until, ok := untilSeconds(r[5])
 	if !ok {
 		errs[core.ReasonParse]++

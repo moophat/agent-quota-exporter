@@ -277,6 +277,10 @@ Mapping:
   custom providers keep separate series; anything else is `other`. **`model`** is lowercased and bounded as for `claude-code`, capped per profile across all
   connections at `metrics.max_models_per_profile`; a model past the cap counts into `model="other"`, and one unused for
   a day gives its slot to a new one.
+- **Operator enable:** `agent_router_connection_enabled` = 1 if `isActive` is 1, else 0, independently of test status or
+  rate limit. Disabled connections retain their existing up=0 and usage counters; consumers can filter failures to
+  enabled connections. The setting is persisted with health; older cached state omits this new gauge until a
+  successful database read. The existing 50-connection health cap applies.
 - **Health:** `agent_router_connection_up` = 1 if `isActive` is 1, `testStatus` is a passing word and the connection is
   not rate-limited now, else 0. `testStatus` words follow 9router's own code: `error`, `expired`, `unavailable` mean
   the last test failed; `active`, `ok`, `success`, `unknown`, `testing` and none do not. Any other word reads as failed
