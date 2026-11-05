@@ -262,13 +262,21 @@ func TestStatuslineStaleAfterDefaultsShortAndSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Defaults.StatuslineStaleAfter.D(); got != 5*time.Minute {
-		t.Fatalf("statusline_stale_after default = %s, want 5m", got)
+	if got := c.Defaults.StatuslineStale(); got != 5*time.Minute {
+		t.Fatalf("statusline window default = %s, want 5m", got)
 	}
 	if got := c.Defaults.StaleAfter.D(); got != 45*time.Minute {
 		t.Fatalf("stale_after = %s, want 45m unchanged", got)
 	}
-	if _, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, statusline_stale_after: 30s}\n")); err == nil {
-		t.Fatal("statusline_stale_after below usage_interval accepted")
+	if _, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, statusline_stale_after: 90s}\n")); err == nil {
+		t.Fatal("statusline_stale_after below two polls accepted")
+	}
+	// An existing slow-poll config without the new key must still load, with a window of two polls.
+	slow, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 10m, stale_after: 45m}\n"))
+	if err != nil {
+		t.Fatalf("slow-poll config rejected: %v", err)
+	}
+	if got := slow.Defaults.StatuslineStale(); got != 20*time.Minute {
+		t.Fatalf("slow-poll window = %s, want 20m", got)
 	}
 }

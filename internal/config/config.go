@@ -91,6 +91,18 @@ type OTLP struct {
 }
 
 // Default returns the configuration used when no file is given.
+// StatuslineStale is the effective status line cache window: the configured value, else 5m, and never less than two
+// polls, so jitter can't expire a reading the status line is still rewriting.
+func (d Defaults) StatuslineStale() time.Duration {
+	if v := d.StatuslineStaleAfter.D(); v > 0 {
+		return v
+	}
+	if v := 2 * d.UsageInterval.D(); v > 5*time.Minute {
+		return v
+	}
+	return 5 * time.Minute
+}
+
 func Default() *Config {
 	return &Config{
 		Version:  1,
@@ -102,9 +114,8 @@ func Default() *Config {
 		},
 		Metrics: Metrics{MaxModelsPerProfile: 20, AccountLabel: "alias"},
 		Defaults: Defaults{
-			UsageInterval:        Duration(60 * time.Second),
-			StaleAfter:           Duration(45 * time.Minute),
-			StatuslineStaleAfter: Duration(5 * time.Minute),
+			UsageInterval: Duration(60 * time.Second),
+			StaleAfter:    Duration(45 * time.Minute),
 		},
 	}
 }

@@ -72,7 +72,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 				path = "/tmp/ck-usage-limits-cache.json"
 			}
 			statusline = &claude.StatuslineCacheSource{P: p, Path: path,
-				Interval: cfg.Defaults.UsageInterval.D(), StaleAfter: cfg.Defaults.StatuslineStaleAfter.D()}
+				Interval: cfg.Defaults.UsageInterval.D(), StaleAfter: cfg.Defaults.StatuslineStale()}
 			b.Sources = append(b.Sources, statusline)
 		}
 		if r.QuotaOptIn {
