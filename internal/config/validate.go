@@ -24,7 +24,8 @@ var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRo
 
 // quotaKeys are the opt-in quota sources a profile may enable, by harness. codex_rate_limits is reserved: v0.1
 // accepted it, no plugin reads it yet, and Resolve warns that it is ignored.
-var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "claude_statusline_cache": HarnessClaude, "agy_usage": HarnessAgy, "codex_rate_limits": HarnessCodex}
+var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "claude_statusline_cache": HarnessClaude, "agy_usage": HarnessAgy,
+	"codex_rate_limits": HarnessCodex, "codex_usage": HarnessCodex}
 
 // Floors are the vendor-safe minimums (specs/plan.md, "Scrape-time collection").
 var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
@@ -35,7 +36,11 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 	"codex-rollouts":     {30 * time.Second, 0},
 	"opencode-db":        {30 * time.Second, 0},
 	"router-9router":     {30 * time.Second, 0},
-	"agy-usage":          {15 * time.Minute, 60 * time.Minute}, // backoff_429 is its backoff after any failed run
+	// agy-usage reads through the local client at 0 tokens, so its interval floor is low; backoff_429 is its
+	// backoff after any failed run.
+	"agy-usage": {2 * time.Minute, 60 * time.Minute},
+	// codex-usage calls the ChatGPT backend with the CLI's own access token, never refreshing it.
+	"codex-usage": {time.Minute, 5 * time.Minute},
 }
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.

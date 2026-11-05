@@ -24,6 +24,8 @@ var families = []family{
 	{"agent_quota_observed_timestamp_seconds", "gauge", "When the vendor was last successfully asked, Unix seconds."},
 	{"agent_quota_credits_available", "gauge", "1 if the vendor reports credits left or unlimited, 0 if out."},
 	{"agent_quota_credits_balance", "gauge", "Credit balance as reported, in the vendor's own credit unit."},
+	{"agent_quota_reset_credits_available", "gauge", "Reset slots the vendor says can be used now."},
+	{"agent_quota_reset_credits_next_expiry_timestamp_seconds", "gauge", "When the soonest-expiring unused reset slot expires, Unix seconds."},
 	{"agent_tokens_total", "counter", "Tokens consumed, read from local agent state."},
 	{"agent_requests_total", "counter", "Model calls, read from local agent state."},
 	{"agent_request_errors_total", "counter", "Model calls that failed, by bounded class."},
@@ -71,25 +73,36 @@ type Exposition struct {
 func (e *Exposition) Render(w io.Writer) error {
 	now := e.Clock.Now()
 	by := map[string][]Sample{}
-	seen := map[string]bool{}
-	// A duplicate label set would make the scrape invalid; plugins merge their own collisions, and this guard keeps
-	// the first sample if one slips through.
-	add := func(s Sample) {
+	// A duplicate label set would make the scrape invalid; plugins merge their own collisions. Between two
+	// sources serving the same series (a live reading beside a passive one still cached from before) the sample
+	// with the newer observed time wins, so a stale cache can never hide a fresher reading; ties keep the first.
+	type slot struct {
+		name string
+		idx  int
+		at   time.Time
+	}
+	pos := map[string]slot{}
+	addAt := func(s Sample, at time.Time) {
 		var k strings.Builder
 		k.WriteString(s.Name)
 		for _, l := range s.Labels {
 			k.WriteString("\x00" + l.Name + "\x01" + l.Value)
 		}
-		if seen[k.String()] {
+		if p, dup := pos[k.String()]; dup {
+			if at.After(p.at) {
+				by[p.name][p.idx] = s
+				pos[k.String()] = slot{p.name, p.idx, at}
+			}
 			return
 		}
-		seen[k.String()] = true
+		pos[k.String()] = slot{s.Name, len(by[s.Name]), at}
 		by[s.Name] = append(by[s.Name], s)
 	}
+	add := func(s Sample) { addAt(s, time.Time{}) }
 
 	for _, sn := range e.Sched.snapshot(now) {
 		for _, s := range sn.cache {
-			add(s)
+			addAt(s, sn.observedAt)
 		}
 		base := []Label{{"host", e.Host}, {"harness", sn.harness}, {"profile", sn.profile}, {"source", sn.name}}
 		up := 0.0

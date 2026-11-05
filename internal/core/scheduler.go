@@ -26,7 +26,7 @@ const (
 	ReadTimeout = 10 * time.Second
 	// MaxConcurrentReads caps parallel reads across all sources.
 	MaxConcurrentReads = 4
-	// NetSpacing is the minimum gap between two vendor calls from this host (lock is per IP).
+	// NetSpacing is the default minimum gap between two vendor calls from one gate group (lock is per IP).
 	NetSpacing = 30 * time.Second
 	// QuarantineBackoff is applied to network sources when the state file had to be discarded.
 	QuarantineBackoff = 60 * time.Minute
@@ -138,7 +138,7 @@ func (s *Scheduler) due(in *instance, now time.Time, force bool) bool {
 	}
 	if in.src.Network() {
 		g := netGroup(in.src)
-		if s.saveFailing || now.Before(s.netBlock[g]) || (!s.netLast[g].IsZero() && now.Sub(s.netLast[g]) < NetSpacing) {
+		if s.saveFailing || now.Before(s.netBlock[g]) || (!s.netLast[g].IsZero() && now.Sub(s.netLast[g]) < netSpacing(in.src)) {
 			return false
 		}
 		// Network sources never bypass their interval, not even when forced (--once).
@@ -163,7 +163,12 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 	}
 	prev := map[*instance]gate{}
 	s.mu.Lock()
-	for _, in := range s.insts {
+	// Sources are offered the free call slots oldest attempt first (config order among equals), so when there
+	// are more due sources in a gate group than the spacing allows, they take turns instead of the first ones
+	// in config order taking every slot.
+	order := append([]*instance(nil), s.insts...)
+	sort.SliceStable(order, func(i, j int) bool { return order[i].lastAttempt.Before(order[j].lastAttempt) })
+	for _, in := range order {
 		if filter != nil && !filter(in.src) {
 			continue
 		}

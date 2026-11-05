@@ -82,6 +82,10 @@ func (s *UsageSource) Network() bool              { return true }
 // NetGroup keeps agy's spacing and backoff apart from Claude's endpoint: a lock on one never pauses the other.
 func (s *UsageSource) NetGroup() string { return Harness }
 
+// NetSpacing is short: runs are serialised already (runSlot) and cost 0 tokens, and with the default 30 s gap
+// eight accounts would take four minutes to read once.
+func (s *UsageSource) NetSpacing() time.Duration { return 10 * time.Second }
+
 // ReadTimeout covers waiting for another profile's run and this run, each with its two grace periods (one for the
 // client after the timeout, one for whatever of its process group outlives it).
 func (s *UsageSource) ReadTimeout() time.Duration {

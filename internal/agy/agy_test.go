@@ -218,7 +218,7 @@ func TestBuild(t *testing.T) {
 	if s.Name() != "agy-usage" || s.Harness() != "agy" || s.Profile() != "p1" || !s.Network() || s.NetGroup() != "agy" {
 		t.Errorf("identity: %s %s %s network=%v group=%s", s.Name(), s.Harness(), s.Profile(), s.Network(), s.NetGroup())
 	}
-	if s.MinInterval() != 30*time.Minute || s.backoff() != 60*time.Minute {
+	if s.MinInterval() != 30*time.Minute || s.backoff() != 60*time.Minute || s.NetSpacing() != 10*time.Second {
 		t.Errorf("defaults: interval %s backoff %s", s.MinInterval(), s.backoff())
 	}
 	if s.ReadTimeout() <= s.timeout()+s.grace() {

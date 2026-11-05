@@ -55,6 +55,8 @@ constant per exporter, so they add no cardinality. Total label count per series 
 | `agent_quota_observed_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | when the vendor was last successfully asked (not when Prometheus scraped); basis for staleness alerts. For a passive source (below) it is the time of the reading in local state |
 | `agent_quota_credits_available` | gauge | 0/1 | `host harness profile account provider scope` | 1 if the vendor reports credits left or unlimited, else 0. **0 is also what a plan with no credits in use reports**, so alert on a fall from 1 to 0, not on the value |
 | `agent_quota_credits_balance` | gauge | the vendor's credit unit | same | balance as reported; absent if unlimited or not reported |
+| `agent_quota_reset_credits_available` | gauge | slots | `host harness profile account provider` | reset slots (a vendor grant that clears a rate-limit window on request) the vendor says are usable now. Read only; the exporter never spends one. Emitted by `codex-usage` only |
+| `agent_quota_reset_credits_next_expiry_timestamp_seconds` | gauge | Unix seconds | same | when the soonest-expiring unused reset slot expires. **Absent** when the vendor gives no expiry or no slot is open, never 0 |
 
 Example:
 
@@ -121,7 +123,7 @@ healthy ones.
 | `agent_quota_exporter_state_epoch` | gauge | Unix seconds | none | when the current persisted state was initialized: no `state.json` yet, or an invalid one that was set aside as `state.json.corrupt-<time>`; a change means the counters restarted from zero. A `state.json` that exists but cannot be read stops startup instead |
 | `process_start_time_seconds` | gauge | Unix seconds | none | start time of the exporter process, taken as the binary initializes (before config loading) |
 
-`source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `opencode-db`, ...), a fixed vocabulary.
+`source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `codex-usage`, `opencode-db`, ...), a fixed vocabulary.
 
 ## Staleness and absence
 
@@ -134,6 +136,11 @@ healthy ones.
   when the reading has none). `agent_quota_observed_timestamp_seconds` is the reading's own time, so the age alert above
   fires on any idle passive profile: for these, show the age ("as of") instead of alerting on it. While the files can
   be read, `agent_source_cache_age_seconds` stays near 0, because it measures the read, not the reading.
+- A live source with a short interval (`codex-usage`, `agy-usage` when configured so) is stale after `stale_after` like
+  any other; its `agent_quota_observed_timestamp_seconds` is the time of the last successful read, so
+  `time() - agent_quota_observed_timestamp_seconds` is the real age of the quota. When the login's access token is
+  expired (`codex-usage` never refreshes it) the last reading keeps being served with its true observed time while
+  `agent_source_errors_total{reason="auth_expired"}` rises.
 - `agent_source_up == 0` with `agent_source_errors_total{reason="auth_expired"}` rising means the real client has to
   refresh its login; the exporter does nothing about it by design.
 

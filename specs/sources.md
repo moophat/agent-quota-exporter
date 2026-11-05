@@ -63,6 +63,7 @@ A *profile* is one `CODEX_HOME` (default `~/.codex`). Observed layout (names onl
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
 | `codex-rollouts` (on by default, passive) | quota windows, credits, per-call tokens and model | tail `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl` by byte offset. Only two line kinds are decoded: `type=="turn_context"` (`payload.model` only) and `type=="event_msg"` with `payload.type=="token_count"` (`timestamp`, `payload.info.{total_token_usage,last_token_usage}`, `payload.rate_limits.{limit_id, primary, secondary, credits}`). See `fixtures/codex/rollouts/` and `fixtures/codex/home/` | the usage interval (1 min), incremental | verified (shape, Codex CLI 0.163.0, 2026-11-04 on-prem); token arithmetic **documented** from the Codex source (below) |
+| `codex-usage` (opt-in, `quota.codex_usage`) | live quota windows, credits, reset slots and their expiry | two read-only `GET`s to `https://chatgpt.com/backend-api/wham/usage` and `.../wham/rate-limit-reset-credits` with `Authorization: Bearer <access_token>` from `<CODEX_HOME>/auth.json` (`tokens.access_token`, `tokens.account_id` as `ChatGPT-Account-Id`). Usage: `rate_limit.{primary_window,secondary_window}.{used_percent, reset_at, limit_window_seconds}`, `code_review_rate_limit`, `rate_limits_by_limit_id`, `additional_rate_limits[]`, `credits`. Reset slots: `available_count`, `credits[].{status, expires_at}` | default every 3 min, floor 1 min; 429 backoff default 10 min, floor 5 min | **unverified against a real response**: URLs and field names are from decolua/9router v0.5.109 (`open-sse/services/usage/codex.js`, MIT), a third-party client |
 | `codex-rate-limits` | primary and secondary window `usedPercent`, `resetsAt`, reset credits | JSON-RPC over stdio to `codex app-server`: `account/read`, `account/rateLimits/read` (shape in `fixtures/codex/rate-limits-response.json`, synthetic) | at most once per account per 15 min | documented, **unverified** (the node used for fixtures is not logged in). **Not built** (v0.2 plan item 7: only if the passive reading proves too stale) |
 | `codex-state` | sessions, usage | `<CODEX_HOME>/state_*.sqlite` (and `logs_*.sqlite`): read-only, explicit columns | 1 to 5 min | **Not built** in v0.2; `threads` holds prompt-adjacent text columns |
 | `codex-auth` (presence only) | logged-in state | check that `<CODEX_HOME>/auth.json` exists and its mtime; do not read its contents | each scrape | verified (name) |
@@ -110,6 +111,35 @@ Rules specific to `codex-rollouts`:
   4 MiB is skipped and counted as a parse error; an irrelevant line is never buffered.
 - Missing or linked `sessions/` is `not_found` / `permission`, never zero values. Links at any level are refused.
 - Not exported: session counts (no live-session signal with a pid), Codex `error` events (no real sample of their shape yet).
+
+Rules specific to `codex-usage`:
+
+- **Opt-in per profile** (`quota.codex_usage: true`), off by default. Rollouts keeps its token and request counters always. Its quota
+  and credit series are served until `codex-usage` has a reading, and again if that reading is older than `stale_after` and
+  the rollouts reading is newer; while `codex-usage` has a fresh reading only it emits them, so no series is emitted twice
+  and a failing first read leaves no gap; `codex-usage` emits
+  the same `agent_quota_*` series with the same labels, window mapping (`limit_window_seconds` / 60 → the `window_minutes`
+  rules above; with none given, the primary window is `5h` and the secondary `7d`) and scope mapping (`rate_limit` is
+  `all`; `code_review_rate_limit` is `code_review`; the keys of `rate_limits_by_limit_id` and the ids of
+  `additional_rate_limits[]` pass through `scopeLabel`; at most 8 scopes). A window without `used_percent` is absent.
+- **The observed time is the read time**, so `time() - agent_quota_observed_timestamp_seconds` is the real age of the quota.
+- **The token is never refreshed, logged or written.** OpenAI rotates refresh tokens, so a refresh by the exporter could log
+  the real Codex CLI out. `auth.json` is opened read-only without following links, only `tokens.access_token` and
+  `tokens.account_id` are decoded, the buffer is zeroed after decoding, and the token lives for one request: never in a
+  log line, error, metric or argv. A source error carries only its contract reason. A direct connection is used (no
+  environment proxy).
+- **Expired token.** If the JWT `exp` of the access token has passed, no call is made; the last reading keeps being served
+  with its true observed time (until `stale_after`) and `agent_source_errors_total{reason="auth_expired"}` is counted on
+  each attempt. Two consecutive 401s stop calls until `auth.json` changes; the reset-slot read has its own such breaker, so its 401s never stop the usage read. A token without a readable `exp` is tried.
+- **429** gives `rate_limited` with `sources.codex-usage.backoff_429` (default 10 min, floor 5 min) in the source's own gate
+  group (`chatgpt`), so it never pauses Claude or agy and the reverse. Other failures follow the source interval. Spacing
+  inside the group is 5 s, so many accounts are all read within one interval.
+- **Reset slots** come from the second `GET` of the same read; its failure never drops the quota values just read (it counts
+  in `agent_source_errors_total`; a 429 on it also backs the source off). `agent_quota_reset_credits_available` =
+  `available_count` (else the number of listed slots whose `status` is not consumed/redeemed/used/expired/revoked/cancelled);
+  `agent_quota_reset_credits_next_expiry_timestamp_seconds` = the earliest future `expires_at` over those slots, **absent**
+  when none carries one. Both are judged against the current time when served (after a failure or a restart too): a slot past
+  its `expires_at` leaves the count and the expiry moves to the next live slot. The path that spends a slot (`.../consume`) is never called, and a test pins the source's URLs.
 
 Rules specific to `codex-rate-limits`:
 
@@ -191,7 +221,7 @@ account, read twice on-prem on 2026-11-04).
 
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
-| `agy-usage` | quota windows | spawn the official client with the fixed argv `agy -p /usage --output-format json`; read `command.data.groups[].buckets[]`: `id`, `window`, `remaining_fraction`, `reset_time`. See `fixtures/agy/usage-command.json` | default every 30 min, floor 15 min; 60 min after a non-zero exit or a timeout; 24 h after the guard below trips | verified (field names, 0 tokens), agy CLI 1.5.0 |
+| `agy-usage` | quota windows | spawn the official client with the fixed argv `agy -p /usage --output-format json`; read `command.data.groups[].buckets[]`: `id`, `window`, `remaining_fraction`, `reset_time`. See `fixtures/agy/usage-command.json` | default every 30 min, floor 2 min (a read costs 0 tokens; the deployment sets `min_interval`); 60 min after a non-zero exit or a timeout; 24 h after the guard below trips | verified (field names, 0 tokens), agy CLI 1.5.0 |
 
 Rules specific to `agy-usage`:
 
@@ -223,7 +253,7 @@ Rules specific to `agy-usage`:
   left of the group (a child that outlived the client, for instance one still holding its stdout) gets the same
   `SIGTERM`, grace, `SIGKILL`.
 - **One client at a time** per exporter, across all profiles. agy has its own gate group (`agy`) for spacing and backoff,
-  so a backoff on Claude's endpoint never pauses agy and the reverse. `sources.agy-usage.backoff_429` sets the backoff after
+  so a backoff on Claude's endpoint never pauses agy and the reverse. Spacing inside the group is 10 s, so many accounts are all read within one interval. `sources.agy-usage.backoff_429` sets the backoff after
   a non-zero exit or timeout (floor 60 min).
 - **Zero-cost guard.** The output is used only if `command.name == "usage"`, `num_turns == 0` and `usage.total_tokens == 0`,
   each present. Anything else means the client changed in a way that may spend model turns: no sample is taken from that

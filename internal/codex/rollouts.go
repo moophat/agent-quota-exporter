@@ -55,6 +55,8 @@ type RolloutsSource struct {
 	MaxModels  int
 	StaleAfter time.Duration // a quota window without a reset time is served this long after its reading
 	Interval   time.Duration
+	// Live, when set, leaves the quota and credit series to codex-usage while it has a fresh reading.
+	Live *liveGate
 
 	mu sync.Mutex
 	st *state // in-memory state, loaded from the persisted blob on the first collect
@@ -265,7 +267,8 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 	if parseErr > 0 {
 		res.Errors = map[string]int{core.ReasonParse: parseErr}
 	}
-	res.Samples = append(s.counterSamples(), s.quotaSamples(now)...)
+	res.Samples = s.counterSamples()
+	res.Samples = append(res.Samples, s.quotaSamples(now)...)
 	blob, err := json.Marshal(st)
 	if err != nil {
 		return res, nil, core.Fail(core.ReasonOther)
