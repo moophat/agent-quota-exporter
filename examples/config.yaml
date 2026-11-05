@@ -15,6 +15,7 @@ metrics:
 defaults:
   usage_interval: 60s
   stale_after: 45m
+  statusline_stale_after: 5m     # status line cache readings only; >= 2 x usage_interval
 profiles:
   - harness: claude-code
     alias: root

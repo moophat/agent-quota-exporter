@@ -59,6 +59,9 @@ type Metrics struct {
 type Defaults struct {
 	UsageInterval Duration `yaml:"usage_interval"`
 	StaleAfter    Duration `yaml:"stale_after"`
+	// StatuslineStaleAfter is how long a status line cache reading counts as current. The file is rewritten every
+	// minute while a session is active, so it gets its own short window instead of stale_after's 45 minutes.
+	StatuslineStaleAfter Duration `yaml:"statusline_stale_after"`
 }
 
 type Profile struct {
@@ -88,6 +91,18 @@ type OTLP struct {
 }
 
 // Default returns the configuration used when no file is given.
+// StatuslineStale is the effective status line cache window: the configured value, else 5m, and never less than two
+// polls, so jitter can't expire a reading the status line is still rewriting.
+func (d Defaults) StatuslineStale() time.Duration {
+	if v := d.StatuslineStaleAfter.D(); v > 0 {
+		return v
+	}
+	if v := 2 * d.UsageInterval.D(); v > 5*time.Minute {
+		return v
+	}
+	return 5 * time.Minute
+}
+
 func Default() *Config {
 	return &Config{
 		Version:  1,

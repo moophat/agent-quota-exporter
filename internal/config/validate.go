@@ -83,6 +83,9 @@ func (c *Config) Validate() error {
 	if c.OTLP.Endpoint != "" {
 		add("otlp.endpoint: not supported in this version")
 	}
+	if v := c.Defaults.StatuslineStaleAfter.D(); v != 0 && v < 2*c.Defaults.UsageInterval.D() {
+		add("defaults.statusline_stale_after: must be at least twice defaults.usage_interval")
+	}
 	if c.Defaults.StaleAfter.D() < 30*time.Minute {
 		add("defaults.stale_after: must be >= 30m (contract staleness rule)")
 	}
