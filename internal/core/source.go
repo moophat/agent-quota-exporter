@@ -92,3 +92,13 @@ func netGroup(s Source) string {
 type Timeouter interface {
 	ReadTimeout() time.Duration
 }
+
+// LocalFallback lets a network source defer to a fresh local reading without
+// spending its persisted rate gate. PreferredSource identifies the same series.
+type LocalFallback interface {
+	PreferLocal(time.Time) bool
+	PreferredSource() string
+}
+
+// MaxAger overrides the interval-derived staleness for timestamped local files.
+type MaxAger interface{ MaxAge() time.Duration }

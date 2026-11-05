@@ -86,6 +86,9 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		if staleFloor > stale {
 			stale = staleFloor
 		}
+		if a, ok := src.(MaxAger); ok {
+			stale = a.MaxAge()
+		}
 		in := &instance{src: src, key: key, jitter: float64(h.Sum32()%1000) / 10000, staleAfter: stale,
 			errors: map[string]float64{}}
 		ps := st.Get(key)
@@ -165,6 +168,9 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 			continue
 		}
 		if !s.due(in, now, force) {
+			continue
+		}
+		if f, ok := in.src.(LocalFallback); ok && f.PreferLocal(now) {
 			continue
 		}
 		prev[in] = gate{in.lastAttempt, in.attempted, s.netLast[netGroup(in.src)]}
@@ -283,6 +289,11 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		}
 	} else {
 		in.lastOK = false
+		// A timestamped local file is authoritative: a rejected reading must
+		// not survive as a fresh cache or hide the network fallback's samples.
+		if _, ok := in.src.(MaxAger); ok {
+			in.cache, in.hasCache, in.observedAt = nil, false, time.Time{}
+		}
 		var se *SourceError
 		reason := ReasonOther
 		if errors.As(err, &se) {
@@ -380,6 +391,18 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 			sn.errors[k] = v
 		}
 		out = append(out, sn)
+	}
+	// Both sources use identical quota labels: expose only the preferred local
+	// result while it is fresh, including after an earlier OAuth success.
+	for i, in := range s.insts {
+		if f, ok := in.src.(LocalFallback); ok && f.PreferredSource() != "" {
+			for j := range out {
+				if out[j].harness == out[i].harness && out[j].profile == out[i].profile && out[j].name == f.PreferredSource() && out[j].fresh && len(out[j].cache) > 0 {
+					out[i].cache = nil
+					break
+				}
+			}
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out

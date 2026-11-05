@@ -78,6 +78,7 @@ type OAuthUsageSource struct {
 	Backoff429 time.Duration
 	Version    string
 	Cache      *QuotaCache
+	Statusline *StatuslineCacheSource
 
 	// Endpoint and Transport override the vendor URL and transport. Tests only: they are not reachable from
 	// the config file.
@@ -90,6 +91,22 @@ func (s *OAuthUsageSource) Harness() string            { return Harness }
 func (s *OAuthUsageSource) Profile() string            { return s.P.Alias }
 func (s *OAuthUsageSource) MinInterval() time.Duration { return s.Interval }
 func (s *OAuthUsageSource) Network() bool              { return true }
+
+// PreferLocal is checked before the scheduler charges a network attempt.
+func (s *OAuthUsageSource) PreferLocal(now time.Time) bool {
+	if s.Statusline == nil {
+		return false
+	}
+	_, _, err := s.Statusline.reading(now)
+	return err == nil
+}
+
+func (s *OAuthUsageSource) PreferredSource() string {
+	if s.Statusline != nil {
+		return s.Statusline.Name()
+	}
+	return ""
+}
 
 // Restore serves the last good answer after a restart (staleness still applies in the core).
 func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
@@ -111,7 +128,7 @@ func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
 		}
 		s.Cache.mu.Unlock()
 	}
-	return core.Result{Samples: s.samples(st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
+	return core.Result{Samples: quotaSamples(s.P, st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 }
 
 func (s *OAuthUsageSource) client() *http.Client {
@@ -137,14 +154,14 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 		blob, _ := json.Marshal(st)
 		res := core.Result{}
 		if st.Last != nil && st.LastAt > 0 && st.Acct == label { // never another login's quota under this profile
-			res = core.Result{Samples: s.samples(st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
+			res = core.Result{Samples: quotaSamples(s.P, st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 		}
 		return res, blob, err
 	}
 	ok := func(q parsedQuota, at time.Time) (core.Result, json.RawMessage, error) {
 		st.Last, st.LastAt, st.Acct, st.UUID, st.C401, st.FP = &q, at.Unix(), label, uuid, 0, ""
 		blob, _ := json.Marshal(st)
-		return core.Result{Samples: s.samples(label, q, at), ObservedAt: at}, blob, nil
+		return core.Result{Samples: quotaSamples(s.P, label, q, at), ObservedAt: at}, blob, nil
 	}
 
 	if uuid != "" && s.Cache != nil {
@@ -429,21 +446,21 @@ func parseUsage(body []byte) (parsedQuota, error) {
 	return q, nil
 }
 
-func (s *OAuthUsageSource) samples(account string, q parsedQuota, at time.Time) []core.Sample {
+func quotaSamples(p *Profile, account string, q parsedQuota, at time.Time) []core.Sample {
 	pl := core.Label{Name: "provider", Value: Provider}
 	var out []core.Sample
 	for _, w := range q.Windows {
-		ls := s.P.labels(account, pl, core.Label{Name: "window", Value: w.Window}, core.Label{Name: "scope", Value: w.Scope})
+		ls := p.labels(account, pl, core.Label{Name: "window", Value: w.Window}, core.Label{Name: "scope", Value: w.Scope})
 		out = append(out, core.Sample{Name: "agent_quota_utilization_ratio", Labels: ls, Value: w.Ratio})
 		if w.Reset > 0 {
 			out = append(out, core.Sample{Name: "agent_quota_reset_timestamp_seconds", Labels: ls, Value: float64(w.Reset)})
 		}
 	}
 	for _, l := range q.Limits {
-		out = append(out, core.Sample{Name: "agent_quota_limit_info", Labels: s.P.labels(account, pl,
+		out = append(out, core.Sample{Name: "agent_quota_limit_info", Labels: p.labels(account, pl,
 			core.Label{Name: "window", Value: l.Window}, core.Label{Name: "scope", Value: l.Scope},
 			core.Label{Name: "severity", Value: l.Severity}), Value: 1})
 	}
-	out = append(out, core.Sample{Name: "agent_quota_observed_timestamp_seconds", Labels: s.P.labels(account, pl), Value: float64(at.Unix())})
+	out = append(out, core.Sample{Name: "agent_quota_observed_timestamp_seconds", Labels: p.labels(account, pl), Value: float64(at.Unix())})
 	return out
 }

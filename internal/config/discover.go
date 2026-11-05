@@ -17,7 +17,7 @@ type Resolved struct {
 	ConfigDir  string // the path as configured or discovered
 	Account    string // operator alias, "" = derive
 	QuotaOptIn bool   // claude_oauth_usage
-	Quota      map[string]bool
+	Quota      Quota
 	Origin     string // config | discovered
 }
 
@@ -39,14 +39,14 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 				warns = append(warns, fmt.Sprintf("profile %s/%s: harness %q has no plugin in this version; skipped", p.Harness, p.Alias, p.Harness))
 				continue
 			}
-			if p.Quota["codex_rate_limits"] {
+			if p.Quota.Enabled("codex_rate_limits") {
 				warns = append(warns, fmt.Sprintf("profile %s/%s: quota.codex_rate_limits is not built; ignored", p.Harness, p.Alias))
 			}
 			real := realPath(p.Dir)
 			taken[p.Harness+"\x00"+real] = true
 			aliases[p.Harness+"\x00"+p.Alias] = true
 			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, ConfigDir: p.Dir, Account: p.Account,
-				QuotaOptIn: p.Quota["claude_oauth_usage"], Quota: p.Quota, Origin: "config"})
+				QuotaOptIn: p.Quota.Enabled("claude_oauth_usage"), Quota: p.Quota, Origin: "config"})
 		}
 	}
 	// A disabled config profile also suppresses discovery of the same dir.

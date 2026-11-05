@@ -3,6 +3,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -60,8 +62,21 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval)},
 			&claude.TranscriptsSource{P: p, Interval: cfg.SourceInterval("claude-transcripts", cfg.Defaults.UsageInterval.D())},
 		)
+		var statusline *claude.StatuslineCacheSource
+		if filepath.Clean(r.Dir) == "/root/.claude" {
+			path := r.Quota.StatuslinePath()
+			if path == "" {
+				path = os.Getenv("CK_USAGE_CACHE_PATH")
+			}
+			if path == "" {
+				path = "/tmp/ck-usage-limits-cache.json"
+			}
+			statusline = &claude.StatuslineCacheSource{P: p, Path: path,
+				Interval: cfg.Defaults.UsageInterval.D(), StaleAfter: cfg.Defaults.StaleAfter.D()}
+			b.Sources = append(b.Sources, statusline)
+		}
 		if r.QuotaOptIn {
-			b.Sources = append(b.Sources, &claude.OAuthUsageSource{P: p, Version: version, Cache: cache,
+			b.Sources = append(b.Sources, &claude.OAuthUsageSource{P: p, Version: version, Cache: cache, Statusline: statusline,
 				Interval:   cfg.SourceInterval("claude-oauth-usage", quotaInterval),
 				Backoff429: cfg.SourceBackoff("claude-oauth-usage", quotaBackoff)})
 		}

@@ -17,6 +17,17 @@ defaults:
   stale_after: 45m
 profiles:
   - harness: claude-code
+    alias: root
+    dir: /root/.claude          # only this login owns the AgentKit status line cache
+    quota:
+      claude_statusline_cache: /tmp/ck-usage-limits-cache.json  # overrides exporter's CK_USAGE_CACHE_PATH, then /tmp default
+      claude_oauth_usage: true  # optional fallback only when no fresh cache reading; 15 min floor stays
+    # The shipped unit's PrivateTmp=true hides host /tmp. Override with PrivateTmp=false,
+    # or bind the cache read-only into the service and set the path above. Prefer a
+    # directory bind: atomic replacements can leave a single-file bind on an old inode.
+    # Keep all other unit hardening. Cache polling uses defaults.usage_interval;
+    # timestamp is the observation time; stale_after drops old readings.
+  - harness: claude-code
     alias: work
     dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR
     account: acct-a1            # optional; default is a short hash of the account id

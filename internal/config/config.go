@@ -62,14 +62,20 @@ type Defaults struct {
 }
 
 type Profile struct {
-	Harness string          `yaml:"harness"`
-	Alias   string          `yaml:"alias"`
-	Dir     string          `yaml:"dir"`
-	URL     string          `yaml:"url"`
-	Account string          `yaml:"account"`
-	Quota   map[string]bool `yaml:"quota"`
-	Disable bool            `yaml:"disable"`
+	Harness string `yaml:"harness"`
+	Alias   string `yaml:"alias"`
+	Dir     string `yaml:"dir"`
+	URL     string `yaml:"url"`
+	Account string `yaml:"account"`
+	Quota   Quota  `yaml:"quota"`
+	Disable bool   `yaml:"disable"`
 }
+
+// Quota holds boolean opt-ins and the optional statusline cache path.
+type Quota map[string]any
+
+func (q Quota) Enabled(key string) bool { v, _ := q[key].(bool); return v }
+func (q Quota) StatuslinePath() string  { v, _ := q["claude_statusline_cache"].(string); return v }
 
 type Source struct {
 	MinInterval           Duration `yaml:"min_interval"`

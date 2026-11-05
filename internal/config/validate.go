@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRo
 
 // quotaKeys are the opt-in quota sources a profile may enable, by harness. codex_rate_limits is reserved: v0.1
 // accepted it, no plugin reads it yet, and Resolve warns that it is ignored.
-var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "agy_usage": HarnessAgy, "codex_rate_limits": HarnessCodex}
+var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "claude_statusline_cache": HarnessClaude, "agy_usage": HarnessAgy, "codex_rate_limits": HarnessCodex}
 
 // Floors are the vendor-safe minimums (specs/plan.md, "Scrape-time collection").
 var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
@@ -136,7 +137,19 @@ func (c *Config) Validate() error {
 			add("profiles[%d]: duplicate alias %q for harness %s", i, p.Alias, p.Harness)
 		}
 		seen[key] = true
-		for q := range p.Quota {
+		for q, value := range p.Quota {
+			if q == "claude_statusline_cache" {
+				path, ok := value.(string)
+				if !ok || !filepath.IsAbs(path) {
+					add("profiles[%d].quota.%s: must be an absolute file path", i, q)
+				}
+				if filepath.Clean(p.Dir) != "/root/.claude" {
+					add("profiles[%d].quota.%s: only for /root/.claude", i, q)
+				}
+			} else if _, ok := value.(bool); !ok {
+				add("profiles[%d].quota.%s: must be a boolean", i, q)
+			}
+
 			h, ok := quotaKeys[q]
 			switch {
 			case !ok:
@@ -145,7 +158,7 @@ func (c *Config) Validate() error {
 				add("profiles[%d].quota.%s: only for harness %s", i, q, h)
 			}
 		}
-		if p.Harness == HarnessAgy && p.Quota["agy_usage"] && p.Account == "" {
+		if p.Harness == HarnessAgy && p.Quota.Enabled("agy_usage") && p.Account == "" {
 			// one agy login sits on many machines; the operator names the account to read it from one host only
 			add("profiles[%d].account: required for agy with quota.agy_usage", i)
 		}
