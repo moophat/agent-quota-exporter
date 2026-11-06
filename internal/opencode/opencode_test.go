@@ -831,7 +831,8 @@ func TestEventRepeatImportIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if usageCount != 1 || len(ids2) != len(ids1) {
+	// A new collection attempt has its own probe identity, even at the same instant.
+	if usageCount != 1 || len(ids2) != len(ids1)+1 {
 		t.Fatalf("want exactly 1 usage event (idempotent), got %d; total event ids: %d vs %d", usageCount, len(ids1), len(ids2))
 	}
 }

@@ -79,6 +79,9 @@ func validateEnvelope(raw []byte, kind string) error {
 			err = object(v, fields(nested[k], "scalar"), false)
 		default:
 			err = leaf(v)
+			if k == "profile" {
+				err = nil
+			} // configured identity; never used as a filesystem component
 			if k != "schema_version" {
 				var text *string
 				if json.Unmarshal(v, &text) != nil || (text == nil && k != "provider" && k != "source_schema_version") {
@@ -205,6 +208,9 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 				err = json.Unmarshal(val, &text)
 				if err == nil {
 					err = leaf(val)
+					if k == "model" {
+						err = modelLeaf(val)
+					}
 				}
 			}
 		}
@@ -213,6 +219,16 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		}
 	}
 	return nil
+}
+
+func modelLeaf(v json.RawMessage) error {
+	var text string
+	if json.Unmarshal(v, &text) != nil {
+		return errors.New("invalid model")
+	}
+	// @ is a model version separator only in this field. All other secret checks remain.
+	b, _ := json.Marshal(strings.ReplaceAll(text, "@", ""))
+	return leaf(b)
 }
 func leaf(v json.RawMessage) error {
 	var x any

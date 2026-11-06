@@ -1,7 +1,33 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-07T17:19:00Z
 
-## Active — Q26 sink metrics repairs | 2026-11-07
+## Paused
+## Active — Q30 review follow-up | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | Q30 review follow-up -->
+### Q30 review follow-up | 2026-11-07
+**Meta:** feat/opencode-events | t9r/cx/gpt-6.1-sol | `internal/opencode/q30_test.go`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Initial checkpoint failure reproduced and repaired; close fault and shrink/replacement coverage regressions pass
+**Key:** original event boundary persisted in metric state, close before collect summary, stable shrink generation, explicit replacement gap
+**Pending:** no commit/push; simultaneous loss of metric and event checkpoint persistence cannot recover the initial boundary
+<!-- END STUB: 2026-11-07 | Q30 review follow-up -->
+- [x] Reproduce initial checkpoint failure
+- [x] Repair boundary persistence and cycle coverage
+- [x] Final acceptance verification
+
+None
+
+## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q30 opencode event repairs -->
+### Q30 opencode event repairs | 2026-11-07
+**Meta:** feat/opencode-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q30-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Ten regressions reproduced before fixes; all requested acceptance and focused race checks pass
+**Key:** independent durable event checkpoint, bounded event read, original-envelope replay
+**Pending:** no commit or push; full baseline suite has existing agy permission failure
+<!-- END STUB: 2026-11-07 | Q30 opencode event repairs -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
@@ -10,14 +36,6 @@
 **Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
 **Pending:** none; no commit or push
 <!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
-- [x] Inspect findings and baseline
-- [x] Reproduce and repair all three findings
-- [x] Run acceptance checks and review diff
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-07 | B31 opencode event coverage -->
 ### B31 opencode event coverage | 2026-11-07

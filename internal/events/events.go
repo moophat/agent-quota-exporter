@@ -177,7 +177,12 @@ func (s *Store) Append(batch Batch) (result error) {
 		}
 		seen[key] = digest
 		month := s.now().UTC().Format("2006-01")
-		path := filepath.Join(s.root, "events", "month="+month, e.Source+"-"+e.Profile+".jsonl")
+		profile := e.Profile
+		if !valid(profile) {
+			sum := sha256.Sum256([]byte(profile))
+			profile = fmt.Sprintf("profile~%x", sum)
+		}
+		path := filepath.Join(s.root, "events", "month="+month, e.Source+"-"+profile+".jsonl")
 		shards[path] = append(shards[path], line)
 		w := Writer{e.Host, e.Harness, e.Profile, e.Source}
 		if writers[w] == nil {
@@ -393,7 +398,7 @@ func parse(raw []byte) (Envelope, error) {
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return e, fmt.Errorf("invalid JSON envelope: %w", err)
 	}
-	if e.SchemaVersion != 1 || !kinds[e.Kind] || e.EventID == "" || !valid(e.Source) || e.ParserVersion == "" || e.Host == "" || !valid(e.Profile) || e.Harness == "" {
+	if e.SchemaVersion != 1 || !kinds[e.Kind] || e.EventID == "" || !valid(e.Source) || e.ParserVersion == "" || e.Host == "" || e.Profile == "" || e.Harness == "" {
 		return e, errors.New("invalid required envelope fields")
 	}
 	if err := validateEnvelope(raw, e.Kind); err != nil {

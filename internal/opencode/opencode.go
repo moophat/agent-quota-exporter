@@ -125,8 +125,9 @@ type DBSource struct {
 	Interval             time.Duration
 	Events               *events.Store // nil when events are disabled; never exposed as a metric
 
-	mu sync.Mutex
-	st *dbState // in-memory state, loaded from the persisted blob on the first collect
+	mu      sync.Mutex
+	st      *dbState              // in-memory state, loaded from the persisted blob on the first collect
+	closeDB func(*sqlro.DB) error // optional fault injection; otherwise DB.Close
 }
 
 type pend struct {
@@ -147,10 +148,12 @@ type total struct {
 }
 
 type dbState struct {
-	Init    bool             `json:"init"`
-	Cursor  int64            `json:"cursor"`            // last rowid read
-	Ino     uint64           `json:"ino,omitempty"`     // inode of the database file; a change means it was replaced
-	Pending map[string]*pend `json:"pending,omitempty"` // key: message id
+	EventSeed  json.RawMessage  `json:"event_seed,omitempty"`
+	Generation string           `json:"generation,omitempty"`
+	Init       bool             `json:"init"`
+	Cursor     int64            `json:"cursor"`            // last rowid read
+	Ino        uint64           `json:"ino,omitempty"`     // inode of the database file; a change means it was replaced
+	Pending    map[string]*pend `json:"pending,omitempty"` // key: message id
 	// Totals and Named are keyed by provider \x00 model label, decided when a message is counted and never
 	// changed afterwards, so no total moves between series.
 	Totals map[string]*total `json:"totals"`
@@ -185,6 +188,9 @@ func (s *DBSource) load(raw json.RawMessage) {
 
 // collectTracker accumulates per-run event data when events are enabled.
 type collectTracker struct {
+	gap         bool
+	backlog     bool
+	bounded     bool
 	completed   []emittableMessage
 	evicted     int64
 	abandoned   int64
@@ -197,8 +203,11 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load(raw)
+	if s.Events != nil && len(s.st.EventSeed) == 0 {
+		s.st.EventSeed, _ = json.Marshal(s.st)
+	}
+	seed := s.st.EventSeed
 
-	collectStart := now
 	db, err := sqlro.Open(s.Path, allow)
 	if errors.Is(err, sqlro.ErrIdle) {
 		return core.Result{Samples: s.samples()}, nil, nil // nothing can have changed; state unchanged
@@ -206,13 +215,46 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 	if err != nil {
 		return core.Result{}, nil, err
 	}
+	if s.Events != nil {
+		boundary := &dbState{}
+		if json.Unmarshal(s.st.EventSeed, boundary) == nil && !boundary.Init {
+			if last, e := db.MaxRowid(table); e == nil {
+				boundary.Init = true
+				boundary.Cursor = last
+				boundary.Ino = fileIno(s.Path)
+				boundary.Generation = newGeneration()
+				s.st.EventSeed, _ = json.Marshal(boundary)
+				seed = s.st.EventSeed
+			}
+		}
+	}
 	errs := map[string]int{}
 	var tr *collectTracker
 	if s.Events != nil {
 		tr = &collectTracker{}
 	}
-	err = s.read(ctx, db, fileIno(s.Path), now, errs, tr)
-	if cerr := db.Close(); err == nil {
+	// Metrics and event capture have independent progress and failure handling.
+	err = s.read(ctx, db, fileIno(s.Path), now, errs, nil)
+	closed := false
+	var closeErr error
+	closeDB := func() error {
+		if closed {
+			return closeErr
+		}
+		closed = true
+		if s.closeDB != nil {
+			closeErr = s.closeDB(db)
+		} else {
+			closeErr = db.Close()
+		}
+		return closeErr
+	}
+	if tr != nil {
+		if e := s.captureEvents(ctx, db, now, seed, err, closeDB); e != nil {
+			errs[core.ReasonOther]++
+		}
+	}
+	if cerr := closeDB(); err == nil {
 		err = cerr
 	}
 	res := core.Result{Samples: s.samples()}
@@ -224,41 +266,8 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 		return res, nil, core.Fail(core.ReasonOther)
 	}
 	// Emit events asynchronously of the metric result; failures must not degrade metrics.
-	if tr != nil {
-		s.emitBatch(now, collectStart, tr)
-	}
 	// Progress made before a failure is kept: every row applied was read whole.
 	return res, blob, err
-}
-
-// emitBatch builds and appends a batch of usage events plus one collect event to the event store.
-// Errors from the event store are silently swallowed: they must not degrade metrics.
-func (s *DBSource) emitBatch(now, collectStart time.Time, tr *collectTracker) {
-	var envelopes []json.RawMessage
-	for _, m := range tr.completed {
-		if raw, err := s.buildUsageEvent(now, m); err == nil {
-			envelopes = append(envelopes, raw)
-		}
-	}
-	// Always emit a collect event capturing startup skip, evictions and abandonments.
-	rid := runID(s.Host, s.Alias, SourceName, now)
-	filesRead := int64(1) // the database was opened (this function is only called when it was)
-	cf := collectFields{
-		startedAt:        collectStart,
-		endedAt:          now,
-		filesRead:        filesRead,
-		startupSkip:      tr.startupSkip,
-		pendingEvicted:   tr.evicted,
-		pendingAbandoned: tr.abandoned,
-		inFlight:         tr.inFlight,
-		completion:       "complete",
-	}
-	if raw, err := s.buildCollectEvent(now, rid, cf); err == nil {
-		envelopes = append(envelopes, raw)
-	}
-	if len(envelopes) > 0 {
-		_ = s.Events.Append(events.Batch{Envelopes: envelopes})
-	}
 }
 
 // fileIno is the database file's inode (0 if unknown). sqlro has already refused a path with a link on it.
@@ -281,6 +290,9 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 	if err != nil {
 		return err
 	}
+	if st.Generation == "" {
+		st.Generation = newGeneration()
+	}
 	if !st.Init {
 		st.Init, st.Cursor, st.Ino = true, last, ino
 		if tr != nil {
@@ -289,6 +301,10 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 		return nil
 	}
 	if ino != 0 && st.Ino != 0 && ino != st.Ino {
+		if tr != nil {
+			tr.gap = true
+		}
+		st.Generation = newGeneration()
 		// A different file: the database was replaced. No replay, and the pending ids belong to the old database, so
 		// a replacement row reusing one of them must not be counted as its completion.
 		st.Cursor = last
@@ -312,7 +328,10 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 				st.Cursor = id
 			}
 		}
-		if len(rows) < pageSize || ctx.Err() != nil {
+		if tr != nil && tr.bounded {
+			tr.backlog = st.Cursor < last
+		}
+		if len(rows) < pageSize || ctx.Err() != nil || (tr != nil && tr.bounded) {
 			break
 		}
 	}
@@ -355,7 +374,7 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 		tr.abandoned = ab
 		tr.inFlight = len(st.Pending) > 0
 	}
-	return nil
+	return ctx.Err()
 }
 
 // apply counts a complete assistant row once, tracks an incomplete one as pending, and ignores other roles.
@@ -426,8 +445,8 @@ func (s *DBSource) apply(r []any, now time.Time, errs map[string]int, tr *collec
 	// separate from the durable event fact.
 	if tr != nil {
 		rowID, _ := r[cRowid].(int64)
-		rawProvider := providerLabel(str(r[cProvider])) // already bounded
-		rawModel := modelLabel(str(r[cModel]))          // already bounded; event stores the observed value
+		rawProvider := str(r[cProvider])
+		rawModel := str(r[cModel])
 		var completedMs int64
 		switch v := r[cCompleted].(type) {
 		case int64:
@@ -438,6 +457,7 @@ func (s *DBSource) apply(r []any, now time.Time, errs map[string]int, tr *collec
 			}
 		}
 		tr.completed = append(tr.completed, emittableMessage{
+			present:     [5]bool{validCount(r[cIn]), validCount(r[cOut]), validCount(r[cReasoning]), validCount(r[cCacheRead]), validCount(r[cCacheWrite])},
 			messageID:   id,
 			rowID:       rowID,
 			provider:    rawProvider,

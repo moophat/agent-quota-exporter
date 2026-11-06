@@ -48,6 +48,14 @@ func maybeNullInt(n int64) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf("%d", n))
 }
 
+func tokenValue(n int64, present bool) json.RawMessage {
+	if !present {
+		return json.RawMessage("null")
+	}
+	b, _ := json.Marshal(n)
+	return b
+}
+
 // maybeNullFloat returns null for 0 or non-finite, otherwise the number.
 func maybeNullFloat(f float64) json.RawMessage {
 	if f == 0 || math.IsNaN(f) || math.IsInf(f, 0) {
@@ -84,8 +92,11 @@ func sourceTS(epochMillis int64) json.RawMessage {
 }
 
 // dbLocator builds the database locator for a message row.
-func dbLocator(relPath, table string, rowID int64, revision string) json.RawMessage {
-	gen := "0" // generation is the inode, but we use a stable placeholder; row identity covers it
+func dbLocator(relPath, table string, rowID int64, revision string, generations ...string) json.RawMessage {
+	gen := "0"
+	if len(generations) > 0 {
+		gen = generations[0]
+	}
 	b, _ := json.Marshal(struct {
 		Type     string `json:"type"`
 		RelPath  string `json:"relative_path"`
@@ -154,6 +165,7 @@ func completedEpochMillis(r []any) int64 {
 
 // emittableMessage bundles the facts extracted from a completed message row to build one usage event.
 type emittableMessage struct {
+	present     [5]bool
 	messageID   string
 	rowID       int64
 	provider    string // already label-normalized
@@ -171,10 +183,17 @@ type emittableMessage struct {
 
 // buildUsageEvent creates the JSONL envelope for one completed assistant message.
 func (s *DBSource) buildUsageEvent(now time.Time, m emittableMessage) (json.RawMessage, error) {
-	relPath := s.Path // the plugin already enforces no symlinks; path is absolute but stable per install
+	relPath := dbFile
+	gen := "0"
+	if s.st != nil && s.st.Generation != "" {
+		gen = s.st.Generation
+	}
 
 	revision := usageRevision(m.in, m.out, m.reasoning, m.cacheRead, m.cacheW, m.errName, m.errStatus, m.cost)
-	eid := eventID(s.Host, s.Alias, Harness, SourceName, relPath, table, m.rowID, revision)
+	facts, _ := json.Marshal([]any{revision, m.messageID, m.provider, m.model, m.completedMs, m.present})
+	h := sha256.Sum256(facts)
+	revision = hex.EncodeToString(h[:])
+	eid := eventID(s.Host, s.Alias, Harness, SourceName, relPath, table, m.rowID, gen+":"+revision)
 
 	outcome := "ok"
 	var errClass json.RawMessage = json.RawMessage("null")
@@ -196,21 +215,21 @@ func (s *DBSource) buildUsageEvent(now time.Time, m emittableMessage) (json.RawM
 	// raw_tokens: opencode provides disjoint buckets already; no normalization needed.
 	// Per spec §3.1: "opencode buckets already are disjoint".
 	rawTokens, _ := json.Marshal(map[string]json.RawMessage{
-		"input":          maybeNullInt(m.in),
-		"output":         maybeNullInt(m.out),
-		"cache_read":     maybeNullInt(m.cacheRead),
-		"cache_write":    maybeNullInt(m.cacheW),
+		"input":          tokenValue(m.in, m.present[0]),
+		"output":         tokenValue(m.out, m.present[1]),
+		"cache_read":     tokenValue(m.cacheRead, m.present[3]),
+		"cache_write":    tokenValue(m.cacheW, m.present[4]),
 		"cache_write_1h": json.RawMessage("null"),
-		"reasoning":      maybeNullInt(m.reasoning),
+		"reasoning":      tokenValue(m.reasoning, m.present[2]),
 		"total":          json.RawMessage("null"),
 	})
 	// tokens (normalized) = same as raw for opencode (already disjoint).
 	tokens, _ := json.Marshal(map[string]json.RawMessage{
-		"input":       maybeNullInt(m.in),
-		"output":      maybeNullInt(m.out),
-		"cache_read":  maybeNullInt(m.cacheRead),
-		"cache_write": maybeNullInt(m.cacheW),
-		"reasoning":   maybeNullInt(m.reasoning),
+		"input":       tokenValue(m.in, m.present[0]),
+		"output":      tokenValue(m.out, m.present[1]),
+		"cache_read":  tokenValue(m.cacheRead, m.present[3]),
+		"cache_write": tokenValue(m.cacheW, m.present[4]),
+		"reasoning":   tokenValue(m.reasoning, m.present[2]),
 		"tok_cw_1h":   json.RawMessage("null"),
 	})
 
@@ -265,13 +284,13 @@ func (s *DBSource) buildUsageEvent(now time.Time, m emittableMessage) (json.RawM
 		"source":                json.RawMessage(`"` + SourceName + `"`),
 		"parser_version":        json.RawMessage(`"` + parserVersion + `"`),
 		"host":                  json.RawMessage(`"` + s.Host + `"`),
-		"profile":               json.RawMessage(`"` + s.Alias + `"`),
+		"profile":               maybeNull(s.Alias),
 		"harness":               json.RawMessage(`"` + Harness + `"`),
 		"source_schema_version": json.RawMessage("null"),
 		"provider":              providerRaw,
 		"observed_at":           sourceTS(m.completedMs),
 		"collected_at":          nowTS(now),
-		"locator":               dbLocator(relPath, table, m.rowID, revision),
+		"locator":               dbLocator(relPath, table, m.rowID, revision, gen),
 		"quality":               json.RawMessage(`{"status":"observed","reasons":[],"missing_fields":["session_id","cwd","project","branch","tier","speed"]}`),
 		"data":                  data,
 	}
@@ -282,13 +301,15 @@ func (s *DBSource) buildUsageEvent(now time.Time, m emittableMessage) (json.RawM
 // This gives an idempotent id for a collect event: re-running within the same minute is idempotent.
 func runID(host, profile, source string, now time.Time) string {
 	h := sha256.New()
-	ts := now.UTC().Truncate(time.Minute).Format("2006-01-02T15:04")
+	ts := now.UTC().Format(time.RFC3339Nano)
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s", host, profile, source, ts)
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }
 
 // collectEnvelopeFields is the fixed set of fields we emit for a collect event from opencode.
 type collectFields struct {
+	gap              bool
+	readFailed       bool
 	startedAt        time.Time
 	endedAt          time.Time
 	filesRead        int64 // 1 if the DB was opened, 0 if not
@@ -304,6 +325,15 @@ func (s *DBSource) buildCollectEvent(now time.Time, rid string, f collectFields)
 	eid := collectEventID(s.Host, s.Alias, Harness, SourceName, rid)
 
 	omissionReasons := []string{}
+	if f.gap {
+		omissionReasons = append(omissionReasons, "database_replaced_coverage_gap")
+	}
+	if f.completion == "partial" {
+		omissionReasons = append(omissionReasons, "backlog")
+	}
+	if f.readFailed {
+		omissionReasons = append(omissionReasons, "read_failed")
+	}
 	if f.startupSkip {
 		omissionReasons = append(omissionReasons, "startup_skip")
 	}
@@ -314,6 +344,15 @@ func (s *DBSource) buildCollectEvent(now time.Time, rid string, f collectFields)
 	quality := json.RawMessage(`{"status":"observed","reasons":[],"missing_fields":[]}`)
 	if f.inFlight {
 		quality = json.RawMessage(`{"status":"partial","reasons":["in_flight_message"],"missing_fields":[]}`)
+	}
+	if f.readFailed {
+		quality = json.RawMessage(`{"status":"partial","reasons":["read_failed"],"missing_fields":[]}`)
+	}
+	errorCount := json.RawMessage("0")
+	errorClass := json.RawMessage("null")
+	if f.readFailed {
+		errorCount = json.RawMessage("1")
+		errorClass = json.RawMessage(`"filesystem"`)
 	}
 
 	evicted := f.pendingEvicted + f.pendingAbandoned // total pending drops
@@ -335,8 +374,8 @@ func (s *DBSource) buildCollectEvent(now time.Time, rid string, f collectFields)
 		"rows_appended":           json.RawMessage("null"),
 		"backlog_bytes":           json.RawMessage("null"),
 		"duration_seconds":        json.RawMessage(fmt.Sprintf("%f", dur)),
-		"errors":                  json.RawMessage("null"),
-		"first_error_class":       json.RawMessage("null"),
+		"errors":                  errorCount,
+		"first_error_class":       errorClass,
 		"budget_exhausted":        json.RawMessage("null"),
 		"deadline_exhausted":      json.RawMessage("null"),
 		"skip_count":              json.RawMessage("null"),
@@ -358,7 +397,7 @@ func (s *DBSource) buildCollectEvent(now time.Time, rid string, f collectFields)
 		"source":                json.RawMessage(`"` + SourceName + `"`),
 		"parser_version":        json.RawMessage(`"` + parserVersion + `"`),
 		"host":                  json.RawMessage(`"` + s.Host + `"`),
-		"profile":               json.RawMessage(`"` + s.Alias + `"`),
+		"profile":               maybeNull(s.Alias),
 		"harness":               json.RawMessage(`"` + Harness + `"`),
 		"source_schema_version": json.RawMessage("null"),
 		"provider":              json.RawMessage("null"),
