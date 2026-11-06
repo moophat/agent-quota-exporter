@@ -1,7 +1,24 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — Q26 sink metrics repairs | 2026-11-07
+## Active — B04 identity history | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | B04 identity history -->
+### B04 identity history | 2026-11-07
+**Meta:** feat/identity-history | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/b04-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** B04 implemented; identity tests, affected packages, vet, race and formatting checks pass
+**Key:** exact allowlist; keyed email fallback; sampled switch gaps ambiguous
+**Pending:** none; no commit or push; minimal app wiring required for B03 store/key
+<!-- END STUB: 2026-11-07 | B04 identity history -->
+- [x] Inspect contracts and baseline
+- [x] Implement sampling and lookup
+- [x] Verify regression and acceptance checks
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
@@ -10,14 +27,6 @@
 **Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
 **Pending:** none; no commit or push
 <!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
-- [x] Inspect findings and baseline
-- [x] Reproduce and repair all three findings
-- [x] Run acceptance checks and review diff
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
 ### B03 event sink configuration | 2026-11-06

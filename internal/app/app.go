@@ -65,7 +65,8 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		}
 		b.Profiles[[2]string{r.Harness, r.Origin}]++
 		p := &claude.Profile{Host: host, Alias: r.Alias, Dir: r.Dir, ConfigDir: r.ConfigDir, AccountAlias: r.Account,
-			EmailLabel: cfg.Metrics.AccountLabel == "email", MaxModels: cfg.Metrics.MaxModelsPerProfile}
+			EmailLabel: cfg.Metrics.AccountLabel == "email", MaxModels: cfg.Metrics.MaxModelsPerProfile,
+			Events: b.Events, IdentityKey: b.IdentityKey}
 		b.Sources = append(b.Sources,
 			&claude.AccountSource{P: p, Interval: cfg.SourceInterval("claude-account", accountInterval)},
 			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval)},
