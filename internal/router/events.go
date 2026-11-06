@@ -42,10 +42,7 @@ func (s *Source) usageEvent(rowID int64, rawProvider, rawModel, connectionID, so
 	if ok {
 		outcome = "ok"
 	}
-	var costVal any = nil
-	if cost > 0 {
-		costVal = cost
-	}
+	var costVal any = cost
 
 	collectedEpoch := float64(collectedAt.Unix())
 
@@ -90,14 +87,13 @@ func (s *Source) usageEvent(rowID int64, rawProvider, rawModel, connectionID, so
 		ReportedCostUnit any          `json:"reported_cost_unit"`
 	}
 
-	acct := account
 	mdl := rawModel
 	outc := outcome
 	status := sourceStatus
 	connection := connectionID
 	data := usageData{
 		Model:     &mdl,
-		Account:   &acct,
+		Account:   nil, // metric aliases/emails do not establish opaque account identity
 		Outcome:   &outc,
 		RawTokens: rawTok,
 		// Tokens: normalized disjoint buckets; for router, input may include cache tokens with
@@ -168,8 +164,8 @@ func (s *Source) collectEvent(
 	h := sha256.Sum256([]byte(idSrc))
 	eventID := hex.EncodeToString(h[:])
 
-	startedEpoch := float64(started.Unix())
-	endedEpoch := float64(ended.Unix())
+	startedEpoch := float64(started.UnixNano()) / 1e9
+	endedEpoch := float64(ended.UnixNano()) / 1e9
 	dur := ended.Sub(started).Seconds()
 
 	errMap := map[string]int{}
@@ -177,11 +173,7 @@ func (s *Source) collectEvent(
 		errMap[k] = v
 	}
 	var firstErr *string
-	for k := range errMap {
-		k2 := k
-		firstErr = &k2
-		break
-	}
+	// Aggregate counts do not establish observation order.
 
 	startTS, _ := json.Marshal(map[string]any{
 		"original": nil, "epoch_seconds": startedEpoch, "quality": "collection",
@@ -225,7 +217,7 @@ func (s *Source) collectEvent(
 			until = c.until
 		}
 		connArr = append(connArr, connItem{
-			ConnectionID:     nil, // connection ids are not in the allow-list for metrics; keep null in events too
+			ConnectionID:     c.id,
 			Provider:         c.provider,
 			IsActive:         isActive,
 			TestStatus:       c.testStatus,
@@ -302,40 +294,54 @@ func totalErrs(m map[string]int) int {
 
 // connFact is an allowlisted health fact for the collect event's connections array.
 type connFact struct {
+	id         string
 	provider   string
 	enabled    *bool
-	testStatus string
+	testStatus *string
 	until      int64
 }
 
-// healthToFacts converts the state's health slice into connFact for event emission.
-func healthToFacts(hs []health) []connFact {
-	out := make([]connFact, 0, len(hs))
-	for _, h := range hs {
-		ts := ""
-		if h.OK {
-			ts = "active"
-		} else if h.Until > 0 {
-			ts = "rate_limited"
-		} else {
-			ts = "error"
-		}
-		out = append(out, connFact{
-			provider:   h.Provider,
-			enabled:    h.Enabled,
-			testStatus: ts,
-			until:      h.Until,
-		})
-	}
-	return out
-}
-
-// appendEvents sends the usage + collect batch to the store, ignoring errors
-// (a failed append is not a reason to drop metrics or fail Collect).
+// appendEvents sends the usage + collect batch, preserving original replay
+// observations after a write or scheduler checkpoint failure.
 // The caller must hold s.mu.
 func (s *Source) appendEvents(store *events.Store, envs []json.RawMessage) error {
 	if store == nil || len(envs) == 0 {
 		return nil
 	}
-	return store.Append(events.Batch{Envelopes: envs})
+	originals, err := store.Originals(envs)
+	if err != nil {
+		return err
+	}
+	return store.Append(events.Batch{Envelopes: originals})
+}
+
+func collectedEvent(raw json.RawMessage, ended time.Time) json.RawMessage {
+	var e map[string]any
+	_ = json.Unmarshal(raw, &e)
+	e["collected_at"].(map[string]any)["epoch_seconds"] = float64(ended.UnixNano()) / 1e9
+	out, _ := json.Marshal(e)
+	return out
+}
+
+func coverageEvent(raw json.RawMessage, startup bool, skipped int64) json.RawMessage {
+	var e map[string]any
+	_ = json.Unmarshal(raw, &e)
+	d := e["data"].(map[string]any)
+	var reasons []any
+	if a, ok := d["omission_reasons"].([]any); ok {
+		reasons = a
+	}
+	if startup {
+		reasons = append(reasons, "startup_baseline")
+	}
+	if skipped > 0 {
+		reasons = append(reasons, "malformed_rows")
+	}
+	d["skip_count"] = skipped
+	if len(reasons) > 0 {
+		d["completion"] = "partial"
+		d["omission_reasons"] = reasons
+	}
+	out, _ := json.Marshal(e)
+	return out
 }

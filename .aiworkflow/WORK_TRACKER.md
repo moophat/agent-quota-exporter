@@ -1,7 +1,33 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — Q26 sink metrics repairs | 2026-11-07
+## Paused
+## Active — Q29 full regression repair | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
+### Q29 full regression repair | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
+**Key:** separate metric and capture cursors; retain original replay envelopes
+**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
+<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
+- [x] Inspect baseline and contracts
+- [x] Reproduce and disposition twelve findings
+- [x] Acceptance and review
+
+None
+
+## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q29 router repairs -->
+### Q29 router repairs | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** inspecting twelve findings and retry boundaries
+**Key:** metrics independent of durable capture; specs read-only
+**Pending:** regression tests, repairs, acceptance verification
+<!-- END STUB: 2026-11-07 | Q29 router repairs -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
@@ -10,14 +36,6 @@
 **Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
 **Pending:** none; no commit or push
 <!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
-- [x] Inspect findings and baseline
-- [x] Reproduce and repair all three findings
-- [x] Run acceptance checks and review diff
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-07 | B32 Router event coverage -->
 ### B32 Router event coverage | 2026-11-07

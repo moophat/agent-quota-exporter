@@ -14,10 +14,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
@@ -73,10 +75,13 @@ type Source struct {
 	EmailMode  bool   // metrics.account_label: email
 	MaxModels  int
 	Interval   time.Duration
-	EventStore *events.Store // nil when events are disabled
+	Clock      func() time.Time // optional completion clock
+	EventStore *events.Store    // nil when events are disabled
 
-	mu sync.Mutex
-	st *state // loaded from the persisted blob on the first collect
+	mu         sync.Mutex
+	st         *state     // loaded from the persisted blob on the first collect
+	facts      []connFact // cycle-local raw connection facts, never persisted with metrics
+	connCapped bool
 }
 
 // health is what the last successful read of providerConnections said about one labelled connection.
@@ -97,10 +102,16 @@ type total struct {
 }
 
 type state struct {
-	Init   bool  `json:"init"`
-	Cursor int64 `json:"cursor"` // last counted usageHistory id
-	Seq    int64 `json:"seq"`
-	Run    int64 `json:"run"`
+	Generation    int64             `json:"generation"`
+	DatabaseID    string            `json:"database_id,omitempty"`
+	Pending       []json.RawMessage `json:"pending,omitempty"`
+	Capture       int64             `json:"capture"`
+	CaptureInit   bool              `json:"capture_init"`
+	PendingCursor int64             `json:"pending_cursor"`
+	Init          bool              `json:"init"`
+	Cursor        int64             `json:"cursor"` // last counted usageHistory id
+	Seq           int64             `json:"seq"`
+	Run           int64             `json:"run"`
 	// First is when each connection (by hashed id) was first seen, as a sequence: the oldest maxConns get labels.
 	First  map[string]int64  `json:"first"`
 	Health []health          `json:"health"`
@@ -143,6 +154,9 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 		s.st = s.load(raw)
 	}
 	st := s.st
+	if s.EventStore != nil && st.Init && !st.CaptureInit {
+		st.CaptureInit, st.Capture = true, st.Cursor
+	}
 	errs := map[string]int{}
 
 	// Generate a stable run id for this cycle's collect event.
@@ -151,6 +165,7 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 	h := sha256.Sum256([]byte(cycleID))
 	runID := hex.EncodeToString(h[:16])
 	started := now
+	wallStart := time.Now()
 
 	db, err := sqlro.Open(s.DB, allow)
 	if errors.Is(err, sqlro.ErrIdle) {
@@ -161,6 +176,16 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 		return core.Result{}, nil, err
 	}
 	defer db.Close()
+	if info, statErr := os.Stat(s.DB); statErr == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			identity := fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+			if st.DatabaseID != "" && st.DatabaseID != identity {
+				st.Generation++
+				st.Cursor, st.Capture = 0, 0
+			}
+			st.DatabaseID = identity
+		}
+	}
 	if ctx.Err() != nil {
 		return core.Result{}, nil, core.Fail(core.ReasonTimeout)
 	}
@@ -178,16 +203,33 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 	var usageEnvs []json.RawMessage
 	var rowsAppended int64
 	var backlogRows int64
+	var skipped int64
+	startup := false
+	// Retry the exact retained envelopes, independently of this cycle's metrics.
+	var captureErr error
+	if s.EventStore != nil && len(st.Pending) > 0 {
+		captureErr = s.appendEvents(s.EventStore, st.Pending)
+		if captureErr == nil {
+			st.Pending = nil
+			st.Capture = st.PendingCursor
+		}
+	}
 
 	switch {
 	case !st.Init:
 		st.Cursor, st.Init = top, true // first start: count from now on
+		startup = top > 0
 	case top < st.Cursor:
 		st.Cursor = top // the table was replaced or its newest rows deleted: never re-count, never wait
+		st.Generation++
 	case top > st.Cursor:
-		rows, err := db.After("usageHistory", "id", st.Cursor, usageCols, batch)
+		rows, err := db.After("usageHistory", "id", st.Cursor, usageCols, batch+1)
 		if err != nil {
 			return core.Result{}, nil, err
+		}
+		if len(rows) > batch {
+			backlogRows = 1
+			rows = rows[:batch]
 		}
 		for _, r := range rows {
 			rowID, env := s.count(r, conns, now, errs)
@@ -196,35 +238,95 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 			}
 			if rowID > 0 {
 				rowsAppended++
+			} else {
+				skipped++
 			}
-		}
-		// backlog: rows still in the table after this cycle's batch
-		if top > st.Cursor {
-			backlogRows = top - st.Cursor
 		}
 	}
 	s.prune(conns)
-
-	blob, err := json.Marshal(st)
-	if err != nil {
-		return core.Result{}, nil, core.Fail(core.ReasonOther)
+	if s.EventStore != nil && len(st.Pending) == 0 {
+		usageEnvs = nil
+		rowsAppended, skipped, backlogRows = 0, 0, 0
+		if !st.CaptureInit {
+			st.CaptureInit = true
+			st.Capture = top
+			startup = top > 0
+		}
+		if top < st.Capture {
+			st.Capture = top
+		}
+		rows, readErr := db.After("usageHistory", "id", st.Capture, usageCols, batch+1)
+		if readErr != nil {
+			return s.result(now, errs), nil, readErr
+		}
+		if len(rows) > batch {
+			backlogRows = 1
+			rows = rows[:batch]
+		}
+		// Reuse parsing against a private snapshot: capture catch-up must not
+		// increment already published metric totals a second time.
+		snapshot, _ := json.Marshal(st)
+		s.st = s.load(snapshot)
+		captureErrors := map[string]int{}
+		for _, r := range rows {
+			id, env := s.count(r, conns, now, captureErrors)
+			if id > 0 {
+				usageEnvs = append(usageEnvs, env)
+				rowsAppended++
+			} else {
+				skipped++
+			}
+		}
+		st.PendingCursor = st.Capture
+		if len(rows) > 0 {
+			st.PendingCursor, _ = toInt(rows[len(rows)-1][0])
+		}
+		s.st = st
 	}
 
 	// Emit events after the cursor is advanced, before returning.
 	if s.EventStore != nil {
-		ended := now // in tests now is fixed; production callers may pass time.Now()
-		connFacts := healthToFacts(st.Health)
+		ended := now.Add(time.Since(wallStart))
+		if s.Clock != nil {
+			ended = s.Clock()
+		}
+		connFacts := s.facts
 		collectEnv := s.collectEvent(runID, started, ended, rowsAppended, backlogRows, errs, connFacts)
+		collectEnv = coverageEvent(collectEnv, startup, skipped)
+		if s.connCapped {
+			var e map[string]any
+			_ = json.Unmarshal(collectEnv, &e)
+			d := e["data"].(map[string]any)
+			reasons, _ := d["omission_reasons"].([]any)
+			d["omission_reasons"] = append(reasons, "connection_scan_cap")
+			d["completion"] = "partial"
+			collectEnv, _ = json.Marshal(e)
+		}
+		for i := range usageEnvs {
+			usageEnvs[i] = collectedEvent(usageEnvs[i], ended)
+		}
 		all := append(usageEnvs, collectEnv)
-		if err := s.appendEvents(s.EventStore, all); err != nil {
-			// The scheduler will retain raw because no next state is returned. Restore
-			// this instance too, so a later cycle replays from the durable cursor.
-			s.st = s.load(raw)
-			return core.Result{}, nil, err
+		// Keep a failed bounded batch in state. While it is blocked, leave later
+		// source rows queued for capture, but continue their metric accounting.
+		if len(st.Pending) == 0 {
+			st.Pending = all
+			captureErr = s.appendEvents(s.EventStore, st.Pending)
+			if captureErr == nil {
+				st.Pending = nil
+				st.Capture = st.PendingCursor
+			}
 		}
 	}
-
-	return s.result(now, errs), blob, nil
+	blob, err := json.Marshal(st)
+	if err != nil {
+		return core.Result{}, nil, core.Fail(core.ReasonOther)
+	}
+	res := s.result(now, errs)
+	if captureErr != nil {
+		res.ObservedAt = now
+		return res, blob, core.Fail(core.ReasonOther)
+	}
+	return res, blob, nil
 }
 
 // count adds one usageHistory row. The cursor advances past every row, including one it cannot parse.
@@ -272,6 +374,20 @@ func (s *Source) count(r []any, conns map[string]string, now time.Time, errs map
 	var env json.RawMessage
 	if s.EventStore != nil {
 		env = s.usageEvent(id, toStr(r[1]), toStr(r[2]), toStr(r[3]), toStr(r[7]), provider, model, account, max(in, 0), max(out, 0), rowOK, max(cost, 0), now)
+		var e map[string]any
+		_ = json.Unmarshal(env, &e)
+		revisionBytes, _ := json.Marshal(r)
+		revision := sha256.Sum256(revisionBytes)
+		loc := e["locator"].(map[string]any)
+		loc["generation"] = st.Generation
+		loc["revision"] = hex.EncodeToString(revision[:])
+		identity, _ := json.Marshal([]any{SourceName, s.Host, s.Alias, Harness, loc})
+		digest := sha256.Sum256(identity)
+		e["event_id"] = hex.EncodeToString(digest[:])
+		if r[6] == nil {
+			e["data"].(map[string]any)["reported_cost"] = nil
+		}
+		env, _ = json.Marshal(e)
 	}
 	return id, env
 }
