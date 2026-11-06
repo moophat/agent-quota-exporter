@@ -13,6 +13,7 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/codex"
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/opencode"
 	"github.com/moophat/agent-quota-exporter/internal/router"
 )
@@ -26,14 +27,22 @@ const (
 
 // Built is everything main needs after wiring.
 type Built struct {
-	Sources  []core.Source
-	Profiles map[[2]string]int // {harness, origin} → count
-	Static   []core.Label
+	host        string
+	Sources     []core.Source
+	Profiles    map[[2]string]int // {harness, origin} → count
+	Static      []core.Label
+	Events      *events.Store
+	IdentityKey []byte // private installation key; never exposed as a metric or event
 }
 
 // Build creates the plugin instances for the resolved profiles.
-func Build(cfg *config.Config, profiles []config.Resolved, host, version string) Built {
-	b := Built{Profiles: map[[2]string]int{}}
+func Build(cfg *config.Config, profiles []config.Resolved, host, version string) (Built, error) {
+	b := Built{Profiles: map[[2]string]int{}, host: host}
+	var err error
+	b.Events, b.IdentityKey, err = buildEvents(cfg, profiles)
+	if err != nil {
+		return b, err
+	}
 	cache := claude.NewQuotaCache()
 	for _, r := range profiles {
 		var srcs []core.Source
@@ -89,7 +98,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 	for _, k := range keys {
 		b.Static = append(b.Static, core.Label{Name: k, Value: cfg.Labels[k]})
 	}
-	return b
+	return b, nil
 }
 
 // IsAccount selects the account sources, which run first so every other plugin labels with the resolved account.

@@ -69,7 +69,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, p := range profiles {
 		log.Info("profile", "harness", p.Harness, "alias", p.Alias, "origin", p.Origin, "quota", p.QuotaOptIn)
 	}
-	built := app.Build(cfg, profiles, host, version)
+	built, err := app.Build(cfg, profiles, host, version)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 
 	now := core.RealClock.Now()
 	st, err := core.OpenState(cfg.StateDir, now)
@@ -83,7 +87,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	sched := core.NewScheduler(built.Sources, st, core.RealClock, log, cfg.Defaults.StaleAfter.D())
 	exp := &core.Exposition{Host: host, Static: built.Static, Version: version, ProcessStart: processStart,
-		Profiles: built.Profiles, Sched: sched, Clock: core.RealClock}
+		Profiles: built.Profiles, Sched: sched, Clock: core.RealClock, ExtraSamples: built.EventSamples}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

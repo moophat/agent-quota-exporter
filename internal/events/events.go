@@ -76,6 +76,7 @@ type Store struct {
 	pending  map[string]bool
 	write    func(*os.File, []byte) (int, error)
 	rollback map[string]int64
+	outcomes map[Writer]bool
 }
 
 // Open creates a private store root and heals an incomplete final JSONL row before accepting new data.
@@ -108,6 +109,7 @@ func Open(opts Options) (*Store, error) {
 	}
 	s.pending = map[string]bool{}
 	s.rollback = map[string]int64{}
+	s.outcomes = map[Writer]bool{}
 	var err error
 	s.seen, err = s.ids()
 	if err != nil {
@@ -121,12 +123,20 @@ func Open(opts Options) (*Store, error) {
 }
 
 // Append durably writes a batch, then invokes its cursor checkpoint. A failed write or fsync never calls Cursor.
-func (s *Store) Append(batch Batch) error {
+func (s *Store) Append(batch Batch) (result error) {
 	if len(batch.Envelopes) == 0 {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer func() {
+		for _, raw := range batch.Envelopes {
+			e, err := parse(raw)
+			if err == nil {
+				s.outcomes[Writer{e.Host, e.Harness, e.Profile, e.Source}] = result == nil
+			}
+		}
+	}()
 
 	shards := map[string][][]byte{}
 	if err := s.reconcile(); err != nil {

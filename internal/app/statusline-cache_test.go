@@ -25,7 +25,10 @@ func TestStatuslineCacheWiring(t *testing.T) {
 			cfg := config.Default()
 			cfg.Defaults.UsageInterval = config.Duration(90 * time.Second)
 			r := config.Resolved{Harness: config.HarnessClaude, Alias: "root", Dir: tc.dir, Account: "acct-a1", QuotaOptIn: tc.oauth, Quota: config.Quota{"claude_statusline_cache": tc.path}}
-			built := Build(cfg, []config.Resolved{r}, "node-a", "test")
+			built, err := Build(cfg, []config.Resolved{r}, "node-a", "test")
+			if err != nil {
+				t.Fatal(err)
+			}
 			var local *claude.StatuslineCacheSource
 			var oauth *claude.OAuthUsageSource
 			for _, src := range built.Sources {

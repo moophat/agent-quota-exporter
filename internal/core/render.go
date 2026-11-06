@@ -18,6 +18,11 @@ type family struct{ name, typ, help string }
 // families: every name the exporter may emit, in output order, with HELP text taken from
 // specs/metric-contract.md. A sample whose name is not here is a programming error and is dropped.
 var families = []family{
+	{"agent_event_store_write_success", "gauge", "1 if the last durable event write succeeded, 0 otherwise."},
+	{"agent_collector_backlog_bytes", "gauge", "Unread source bytes, including unvisited files."},
+	{"agent_event_store_size_bytes", "gauge", "Total local event-store footprint in bytes."},
+	{"agent_event_store_available_bytes", "gauge", "Available bytes on the event-store filesystem."},
+	{"agent_event_store_pressure", "gauge", "1 when event-store capacity is under pressure."},
 	{"agent_quota_utilization_ratio", "gauge", "Share of a subscription quota window consumed, as reported by the vendor."},
 	{"agent_quota_reset_timestamp_seconds", "gauge", "When the quota window resets, Unix seconds."},
 	{"agent_quota_limit_info", "gauge", "Vendor-reported limit state, one series per active limit entry."},
@@ -67,6 +72,7 @@ type Exposition struct {
 	Profiles     map[[2]string]int // {harness, origin} → count
 	Sched        *Scheduler
 	Clock        Clock
+	ExtraSamples func() []Sample
 }
 
 // Render writes the Prometheus text exposition (format 0.0.4).
@@ -99,6 +105,11 @@ func (e *Exposition) Render(w io.Writer) error {
 		by[s.Name] = append(by[s.Name], s)
 	}
 	add := func(s Sample) { addAt(s, time.Time{}) }
+	if e.ExtraSamples != nil {
+		for _, s := range e.ExtraSamples() {
+			add(s)
+		}
+	}
 
 	for _, sn := range e.Sched.snapshot(now) {
 		for _, s := range sn.cache {
