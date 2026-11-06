@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/events"
@@ -77,8 +78,12 @@ func quotaEventData(q *rateLimits, timestamp string) map[string]any {
 
 func (s *RolloutsSource) appendQuota(c *eventFile, rel string, end int64, now time.Time, timestamp string, data map[string]any) error {
 	structural, _ := json.Marshal(data)
-	id := digest(s.Host + "/" + s.Alias + "/" + c.ID + "/quota/" + timestamp + "/" + string(structural))
-	if s.eventSeen[id] {
+	id := digest(fmt.Sprintf("%s/%s/%s/quota/%d/%d/%s/%s", s.Host, s.Alias, c.ID, c.Offset, end, timestamp, structural))
+	seen, err := s.Events.Contains(id)
+	if err != nil {
+		return err
+	}
+	if seen {
 		return nil
 	}
 	raw, err := json.Marshal(map[string]any{"schema_version": 1, "kind": "quota_observation", "event_id": id, "source": SourceName, "parser_version": "1", "source_schema_version": nil, "host": s.Host, "profile": s.Alias, "harness": Harness, "provider": Provider, "observed_at": eventTime(timestamp), "collected_at": map[string]any{"original": nil, "epoch_seconds": float64(now.UnixNano()) / 1e9, "quality": "collection"}, "locator": map[string]any{"type": "file", "relative_path": rel, "file_id": c.ID, "generation": c.ID, "byte_start": c.Offset, "byte_end": end}, "quality": map[string]any{"status": "partial", "reasons": []string{"unattributed"}, "missing_fields": []string{"account"}}, "data": data})
@@ -88,6 +93,5 @@ func (s *RolloutsSource) appendQuota(c *eventFile, rel string, end int64, now ti
 	if err = s.Events.Append(events.Batch{Envelopes: []json.RawMessage{raw}}); err != nil {
 		return err
 	}
-	s.eventSeen[id] = true
 	return nil
 }

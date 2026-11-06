@@ -20,6 +20,24 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Q28 rewrite review followup -->
+### Q28 rewrite review followup | 2026-11-07
+**Meta:** feat/codex-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q28-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Same-metadata rewrite regression failed before fix; distinct persisted rewrite generations, same-size timestamps and index cleanup implemented; separate acceptance commands pass
+**Key:** ordinary append retains generation; copy regression passes; CLI and startup failure close index
+**Pending:** parent review; growing interior-only rewrites preserving both samples are ambiguous with append without full scan
+<!-- END STUB: 2026-11-07 | Q28 rewrite review followup -->
+
+<!-- BEGIN STUB: 2026-11-07 | Q28 Codex capture repairs -->
+### Q28 Codex capture repairs | 2026-11-07
+**Meta:** feat/codex-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q28-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Eight findings repaired; pre-fix regression evidence captured; build, focused tests, vet, gofmt and diff checks pass
+**Key:** direct implementation; medium intent; parent provides independent review; no delegation
+**Pending:** parent independent review; bounded prefix/tail fingerprints cannot detect arbitrary interior-only rewrites; missing index rebuilds once
+<!-- END STUB: 2026-11-07 | Q28 Codex capture repairs -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`

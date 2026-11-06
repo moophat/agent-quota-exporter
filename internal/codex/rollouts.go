@@ -50,7 +50,6 @@ const (
 // at once.
 type RolloutsSource struct {
 	Events     *events.Store
-	eventSeen  map[string]bool
 	Host       string
 	Alias      string
 	Account    string
@@ -275,8 +274,11 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 	res.Samples = append(res.Samples, s.quotaSamples(now)...)
 	if s.Events != nil {
 		if err := s.captureEvents(ctx, files, now); err != nil {
-			blob, _ := json.Marshal(st)
-			return res, blob, core.Fail(core.ReasonOther)
+			if res.Errors == nil {
+				res.Errors = map[string]int{}
+			}
+			res.Errors[core.ReasonOther]++
+			s.Events.ReportFailure(events.Writer{Host: s.Host, Harness: Harness, Profile: s.Alias, Source: SourceName})
 		}
 	}
 	blob, err := json.Marshal(st)

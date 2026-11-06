@@ -34,9 +34,12 @@ func TestEventTotalQuotaFailureRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &RolloutsSource{Host: "node-a", Alias: "profile-a", Dir: dir, Events: store}
-	_, state, err := s.Collect(context.Background(), time.Now(), nil)
-	if err == nil {
-		t.Fatal("write failure hidden")
+	res, state, err := s.Collect(context.Background(), time.Now(), nil)
+	if err != nil || len(res.Samples) == 0 {
+		t.Fatalf("event failure stopped metrics: samples=%d err=%v", len(res.Samples), err)
+	}
+	if s.Events.WriteOutcomes()[events.Writer{Host: "node-a", Harness: Harness, Profile: "profile-a", Source: SourceName}] {
+		t.Fatal("write failure hidden by health")
 	}
 	for _, c := range s.st.Events {
 		if c.Offset != 0 {

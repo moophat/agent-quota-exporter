@@ -3,6 +3,8 @@ package events
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -152,6 +154,13 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		if string(val) == "null" {
 			continue
 		}
+		if k == "cwd" {
+			var path string
+			if json.Unmarshal(val, &path) != nil || !SafePath(path) {
+				return errors.New("secret-bearing structural path")
+			}
+			continue
+		}
 		if k == "byte_start" || k == "byte_end" {
 			var n int64
 			if json.Unmarshal(val, &n) != nil || n < 0 {
@@ -223,6 +232,14 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		}
 	}
 	return nil
+}
+
+var pathSecret = regexp.MustCompile(`(?i)(bearer\s|sk-[a-z0-9_-]{20,}|api_key=|access_token[=:]|refresh_token[=:]|-----begin|cookie:|password=)`)
+
+// SafePath permits ordinary directory names, including scoped packages and task-*,
+// while rejecting explicit credential assignments and recognizable key material.
+func SafePath(path string) bool {
+	return filepath.IsAbs(path) && !strings.ContainsAny(path, "\x00\r\n") && !pathSecret.MatchString(path)
 }
 func leaf(v json.RawMessage) error {
 	var x any
