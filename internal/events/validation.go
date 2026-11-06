@@ -84,6 +84,9 @@ func validateEnvelope(raw []byte, kind string) error {
 			err = object(v, fields(nested[k], "scalar"), false)
 		default:
 			err = leaf(v)
+			if k == "profile" {
+				err = nil
+			} // configured identity; never used as a filesystem component
 			if k != "schema_version" {
 				var text *string
 				if json.Unmarshal(v, &text) != nil || (text == nil && k != "provider" && k != "source_schema_version") {
@@ -155,7 +158,7 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 			continue
 		}
 		// File generations are opaque identities; router generations are numeric.
-		if k == "generation" && string(m["type"]) == `"file"` {
+		if k == "generation" && (string(m["type"]) == `"file"` || (string(m["type"]) == `"database"` && len(val) > 0 && val[0] == '"')) {
 			if err := leaf(val); err != nil {
 				return err
 			}
@@ -231,6 +234,9 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 				err = json.Unmarshal(val, &text)
 				if err == nil {
 					err = leaf(val)
+					if k == "model" {
+						err = modelLeaf(val)
+					}
 				}
 			}
 		}
@@ -239,6 +245,16 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		}
 	}
 	return nil
+}
+
+func modelLeaf(v json.RawMessage) error {
+	var text string
+	if json.Unmarshal(v, &text) != nil {
+		return errors.New("invalid model")
+	}
+	// @ is a model version separator only in this field. All other secret checks remain.
+	b, _ := json.Marshal(strings.ReplaceAll(text, "@", ""))
+	return leaf(b)
 }
 
 var pathSecret = regexp.MustCompile(`(?i)(bearer\s|sk-[a-z0-9_-]{20,}|api_key=|access_token[=:]|refresh_token[=:]|-----begin|cookie:|password=)`)

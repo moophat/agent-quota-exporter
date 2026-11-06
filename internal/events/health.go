@@ -44,7 +44,10 @@ func (s *Store) Stats() (Stats, error) {
 }
 
 func safeWriter(e Envelope) bool {
-	for _, value := range []string{e.Host, e.Harness, e.Profile, e.Source} {
+	if e.Profile == "" {
+		return false
+	}
+	for _, value := range []string{e.Host, e.Harness, e.Source} {
 		if !valid(value) || leaf([]byte(`"`+value+`"`)) != nil {
 			return false
 		}

@@ -59,7 +59,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 				}
 			}
 		case config.HarnessOpencode:
-			srcs = opencode.Build(cfg, r, host)
+			srcs = opencode.Build(cfg, r, host, b.Events)
 		case config.HarnessRouter:
 			srcs = router.Build(cfg, r, host)
 			for _, src := range srcs {
