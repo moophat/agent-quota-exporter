@@ -6,6 +6,21 @@ listen: "127.0.0.1:9877"        # default port 9877; set it to what your scraper
 # host: node-a                  # label value; default = OS hostname
 state_dir: /var/lib/agent-quota-exporter
 labels: {}                      # constant labels on every series, e.g. {env: lab}
+# Optional private history; no source event adapters are enabled by this wiring.
+events:
+  enabled: false                # default; omission preserves metrics-only community mode
+  root_dir: /var/lib/agent-quota-exporter/history # separate from agent state
+  byte_budget: 10737418240       # example 10 GiB; REQUIRED positive operator allocation when enabled; no default
+  free_space_reserve: 8388608    # default/minimum 8 MiB: bounded batch plus checkpoints
+  hot_age: 2160h                # default/minimum 90 days; no automatic deletion
+  privacy_profile: community    # community | parity; parity requires enabled and forbids account_label: email
+  # identity_key_file: /etc/agent-quota-exporter/identity.key
+  # Required when any resolved profile lacks an explicit account alias. Provision
+  # 32..4096 raw random bytes separately, regular file mode 0600 owned by exporter.
+  # Never inline, export or back up the key with events; rotation changes IDs.
+  # Enabled invalid/unwritable stores fail startup. Capacity pressure is exposed
+  # via agent_event_store_{size_bytes,available_bytes,pressure}. Source write and
+  # backlog gauges are absent until adapters have observed outcomes/backlog.
 discovery:
   mode: add                     # off | add | only
   roots: ["/root", "/home/*"]   # one level: <root>/.claude and <root>/.claude-* dirs

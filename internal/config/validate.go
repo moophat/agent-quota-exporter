@@ -59,6 +59,9 @@ var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 func (c *Config) Validate() error {
 	var errs []string
 	add := func(f string, a ...any) { errs = append(errs, fmt.Sprintf(f, a...)) }
+	if err := c.ValidateEvents(); err != nil {
+		add("%s", err)
+	}
 
 	if c.Version != 1 {
 		add("version: must be 1, got %d", c.Version)

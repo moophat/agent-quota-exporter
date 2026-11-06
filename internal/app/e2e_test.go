@@ -103,7 +103,10 @@ func setup(t *testing.T) (*world, *config.Config, *httptest.Server) {
 
 func wire(t *testing.T, w *world, cfg *config.Config, srv *httptest.Server, clk core.Clock) (*core.Scheduler, *core.Exposition, func()) {
 	profiles, _ := cfg.Resolve(func(string) string { return "" })
-	b := Build(cfg, profiles, cfg.Host, "test")
+	b, buildErr := Build(cfg, profiles, cfg.Host, "test")
+	if buildErr != nil {
+		t.Fatal(buildErr)
+	}
 	for _, s := range b.Sources {
 		if q, ok := s.(*claude.OAuthUsageSource); ok {
 			q.Endpoint = srv.URL

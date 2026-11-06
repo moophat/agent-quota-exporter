@@ -1,7 +1,33 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — Q25 event sink repairs | 2026-11-06
+## Active — Q26 sink metrics repairs | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
+### Q26 sink metrics repairs | 2026-11-07
+**Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** All three findings fixed; regressions failed before fixes; acceptance tests, vet, formatting and focused race checks pass
+**Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
+**Pending:** none; no commit or push
+<!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
+- [x] Inspect findings and baseline
+- [x] Reproduce and repair all three findings
+- [x] Run acceptance checks and review diff
+
+## Paused
+None
+
+## Log
+
+<!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
+### B03 event sink configuration | 2026-11-06
+**Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/b03-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** B03 implemented; focused tests, CLI startup tests, vet, race and formatting checks pass
+**Key:** disabled compatibility; explicit byte budget; no source event writes
+**Pending:** full suite fails agy TestClientRunsAsHomeOwner/65534 permission check; no agy edits; no commit or push
+<!-- END STUB: 2026-11-06 | B03 event sink configuration -->
+
 <!-- BEGIN STUB: 2026-11-06 | Q25 event sink repairs -->
 ### Q25 event sink repairs | 2026-11-06
 **Meta:** feat/event-sink | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q25-brief.md`
@@ -10,14 +36,6 @@
 **Key:** rebuild compact hash index once on open; reconcile pending durability before checkpoints; strict recursive allowlists
 **Pending:** no requested acceptance checks pending; no commit or push
 <!-- END STUB: 2026-11-06 | Q25 event sink repairs -->
-- [x] Inspect findings, source, contract and baseline
-- [x] Repair with failing regression coverage
-- [x] Verify and review
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-06 | B01 Qodo findings -->
 ### B01 Qodo findings | 2026-11-06

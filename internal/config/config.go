@@ -43,6 +43,7 @@ type Config struct {
 	Profiles  []Profile         `yaml:"profiles"`
 	Sources   map[string]Source `yaml:"sources"`
 	OTLP      OTLP              `yaml:"otlp"`
+	Events    Events            `yaml:"events"`
 }
 
 type Discovery struct {
@@ -113,6 +114,7 @@ func Default() *Config {
 			Roots: []string{"/root", "/home/*"},
 		},
 		Metrics: Metrics{MaxModelsPerProfile: 20, AccountLabel: "alias"},
+		Events:  Events{FreeSpaceReserve: 8 << 20, HotAge: Duration(90 * 24 * time.Hour), PrivacyProfile: "community"},
 		Defaults: Defaults{
 			UsageInterval: Duration(60 * time.Second),
 			StaleAfter:    Duration(45 * time.Minute),

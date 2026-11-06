@@ -76,6 +76,8 @@ type Store struct {
 	pending  map[string]bool
 	write    func(*os.File, []byte) (int, error)
 	rollback map[string]int64
+	outcomes map[Writer]bool
+	size     func(string) (int64, error)
 }
 
 // Open creates a private store root and heals an incomplete final JSONL row before accepting new data.
@@ -108,6 +110,8 @@ func Open(opts Options) (*Store, error) {
 	}
 	s.pending = map[string]bool{}
 	s.rollback = map[string]int64{}
+	s.outcomes = map[Writer]bool{}
+	s.size = treeSize
 	var err error
 	s.seen, err = s.ids()
 	if err != nil {
@@ -121,12 +125,28 @@ func Open(opts Options) (*Store, error) {
 }
 
 // Append durably writes a batch, then invokes its cursor checkpoint. A failed write or fsync never calls Cursor.
-func (s *Store) Append(batch Batch) error {
+func (s *Store) Append(batch Batch) (result error) {
 	if len(batch.Envelopes) == 0 {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	writers := map[Writer]map[string]bool{}
+	durable := map[string]bool{}
+	validated := false
+	defer func() {
+		for _, raw := range batch.Envelopes {
+			var e Envelope
+			if json.Unmarshal(raw, &e) == nil && safeWriter(e) {
+				w := Writer{e.Host, e.Harness, e.Profile, e.Source}
+				ok := validated
+				for path := range writers[w] {
+					ok = ok && durable[path]
+				}
+				s.outcomes[w] = ok
+			}
+		}
+	}()
 
 	shards := map[string][][]byte{}
 	if err := s.reconcile(); err != nil {
@@ -159,7 +179,13 @@ func (s *Store) Append(batch Batch) error {
 		month := s.now().UTC().Format("2006-01")
 		path := filepath.Join(s.root, "events", "month="+month, e.Source+"-"+e.Profile+".jsonl")
 		shards[path] = append(shards[path], line)
+		w := Writer{e.Host, e.Harness, e.Profile, e.Source}
+		if writers[w] == nil {
+			writers[w] = map[string]bool{}
+		}
+		writers[w][path] = true
 	}
+	validated = true
 	var bytes int64
 	for _, lines := range shards {
 		for _, line := range lines {
@@ -240,6 +266,7 @@ func (s *Store) Append(batch Batch) error {
 			return err
 		}
 		delete(s.pending, path)
+		durable[path] = true
 	}
 	return checkpoint(batch)
 }
