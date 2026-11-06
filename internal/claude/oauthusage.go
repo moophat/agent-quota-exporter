@@ -115,9 +115,10 @@ func (s *OAuthUsageSource) Restore(raw json.RawMessage) core.Result {
 		return core.Result{}
 	}
 	label, uuid := s.P.Account()
-	if label != st.Acct {
+	if !sameSavedAccount(st, label, uuid) {
 		return core.Result{} // the profile now holds another login
 	}
+	st.Acct = label
 	// The per-account gate survives a restart: another profile of the same account finds this answer in the
 	// shared cache and does not call the vendor again inside the interval.
 	if uuid != "" && uuid == st.UUID && s.Cache != nil {
@@ -148,13 +149,16 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 	_ = json.Unmarshal(raw, &st)
 	_ = s.P.ResolveAccount() // re-read on change: a re-login must not reuse another account's answer
 	label, uuid := s.P.Account()
+	if sameSavedAccount(st, label, uuid) {
+		st.Acct = label // migrate legacy UUID-derived labels after event identity is enabled
+	}
 
 	// fail returns the error while still serving the last good values (the core drops them when stale).
 	fail := func(err error) (core.Result, json.RawMessage, error) {
 		blob, _ := json.Marshal(st)
 		res := core.Result{}
-		if st.Last != nil && st.LastAt > 0 && st.Acct == label { // never another login's quota under this profile
-			res = core.Result{Samples: quotaSamples(s.P, st.Acct, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
+		if st.Last != nil && st.LastAt > 0 && sameSavedAccount(st, label, uuid) { // never another login's quota under this profile
+			res = core.Result{Samples: quotaSamples(s.P, label, *st.Last, time.Unix(st.LastAt, 0)), ObservedAt: time.Unix(st.LastAt, 0)}
 		}
 		return res, blob, err
 	}
@@ -236,6 +240,13 @@ func (s *OAuthUsageSource) Collect(ctx context.Context, now time.Time, raw json.
 		s.Cache.mu.Unlock()
 	}
 	return ok(q, now)
+}
+
+func sameSavedAccount(st oauthState, label, uuid string) bool {
+	if st.UUID != "" || uuid != "" {
+		return st.UUID != "" && uuid != "" && st.UUID == uuid
+	}
+	return st.Acct == label
 }
 
 func isTimeout(err error) bool {
