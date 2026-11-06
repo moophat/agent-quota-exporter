@@ -3,6 +3,8 @@ package events
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -58,17 +59,23 @@ type Options struct {
 	Now     func() time.Time
 	Sync    func(*os.File) error
 	Free    func(string) (int64, error)
+	Write   func(*os.File, []byte) (int, error)
 }
 
 // Store is a single-process durable event sink. Its root is private to the exporter.
 type Store struct {
-	root    string
-	budget  int64
-	reserve int64
-	now     func() time.Time
-	sync    func(*os.File) error
-	free    func(string) (int64, error)
-	mu      sync.Mutex
+	root     string
+	budget   int64
+	reserve  int64
+	now      func() time.Time
+	sync     func(*os.File) error
+	free     func(string) (int64, error)
+	mu       sync.Mutex
+	seen     map[string][32]byte
+	used     int64
+	pending  map[string]bool
+	write    func(*os.File, []byte) (int, error)
+	rollback map[string]int64
 }
 
 // Open creates a private store root and heals an incomplete final JSONL row before accepting new data.
@@ -95,6 +102,21 @@ func Open(opts Options) (*Store, error) {
 	if err := s.heal(); err != nil {
 		return nil, err
 	}
+	s.write = opts.Write
+	if s.write == nil {
+		s.write = (*os.File).Write
+	}
+	s.pending = map[string]bool{}
+	s.rollback = map[string]int64{}
+	var err error
+	s.seen, err = s.ids()
+	if err != nil {
+		return nil, err
+	}
+	s.used, err = treeSize(s.root)
+	if err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -107,10 +129,10 @@ func (s *Store) Append(batch Batch) error {
 	defer s.mu.Unlock()
 
 	shards := map[string][][]byte{}
-	seen, err := s.ids()
-	if err != nil {
+	if err := s.reconcile(); err != nil {
 		return err
 	}
+	seen := map[string][32]byte{}
 	for _, raw := range batch.Envelopes {
 		e, err := parse(raw)
 		if err != nil {
@@ -122,13 +144,18 @@ func (s *Store) Append(batch Batch) error {
 		}
 		line = append(line, '\n')
 		key := e.EventID
-		if prior, ok := seen[key]; ok {
-			if string(prior) != string(line[:len(line)-1]) {
+		digest := sha256.Sum256(line[:len(line)-1])
+		prior, ok := seen[key]
+		if !ok {
+			prior, ok = s.seen[key]
+		}
+		if ok {
+			if prior != digest {
 				return fmt.Errorf("event store: event ID %q has conflicting payload", key)
 			}
 			continue
 		}
-		seen[key] = append([]byte(nil), line[:len(line)-1]...)
+		seen[key] = digest
 		month := s.now().UTC().Format("2006-01")
 		path := filepath.Join(s.root, "events", "month="+month, e.Source+"-"+e.Profile+".jsonl")
 		shards[path] = append(shards[path], line)
@@ -139,18 +166,20 @@ func (s *Store) Append(batch Batch) error {
 			bytes += int64(len(line))
 		}
 	}
-	used, err := treeSize(s.root)
-	if err != nil {
-		return fmt.Errorf("event store: measure usage: %w", err)
-	}
+	used := s.used
 	if used+bytes > s.budget {
 		return fmt.Errorf("%w: used=%d batch=%d budget=%d", ErrBudget, used, bytes, s.budget)
+	}
+	if bytes == 0 {
+		return checkpoint(batch)
 	}
 	free, err := s.free(s.root)
 	if err != nil {
 		return fmt.Errorf("event store: measure free space: %w", err)
 	}
-	if free-bytes <= s.reserve {
+	// Allow block rounding plus conservative inode/directory allocation per shard.
+	allocation := bytes + int64(len(shards))*65536
+	if free-allocation <= s.reserve {
 		return fmt.Errorf("%w: available=%d batch=%d reserve=%d", ErrFreeSpace, free, bytes, s.reserve)
 	}
 
@@ -160,7 +189,7 @@ func (s *Store) Append(batch Batch) error {
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		if err := s.mkdir(filepath.Dir(path)); err != nil {
 			return fmt.Errorf("event store: create shard directory: %w", err)
 		}
 		if err := os.Chmod(filepath.Dir(path), 0o750); err != nil {
@@ -173,11 +202,28 @@ func (s *Store) Append(batch Batch) error {
 		if err != nil {
 			return fmt.Errorf("event store: open shard: %w", err)
 		}
+		s.pending[path] = true
 		for _, line := range shards[path] {
-			if _, err = f.Write(line); err != nil {
+			info, statErr := f.Stat()
+			if statErr != nil {
+				f.Close()
+				return statErr
+			}
+			n, writeErr := s.write(f, line)
+			if writeErr != nil || n != len(line) {
+				s.rollback[path] = info.Size()
+				trimErr := f.Truncate(info.Size())
+				if trimErr == nil {
+					delete(s.rollback, path)
+				}
+				err = errors.Join(writeErr, io.ErrShortWrite, trimErr)
 				f.Close()
 				return fmt.Errorf("event store: append shard: %w", err)
 			}
+			s.used += int64(n)
+			var e Envelope
+			_ = json.Unmarshal(line, &e)
+			s.seen[e.EventID] = sha256.Sum256(line[:len(line)-1])
 		}
 		if err = s.sync(f); err == nil {
 			err = f.Close()
@@ -193,7 +239,12 @@ func (s *Store) Append(batch Batch) error {
 		if err := syncDir(filepath.Dir(path), s.sync); err != nil {
 			return err
 		}
+		delete(s.pending, path)
 	}
+	return checkpoint(batch)
+}
+
+func checkpoint(batch Batch) error {
 	if batch.Cursor != nil {
 		if err := batch.Cursor(); err != nil {
 			return fmt.Errorf("event store: cursor checkpoint: %w", err)
@@ -226,10 +277,16 @@ func (s *Store) Replay(fn func(json.RawMessage) error) error {
 		if err != nil {
 			return fmt.Errorf("event store: open replay shard: %w", err)
 		}
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(nil, 16<<20)
-		for scanner.Scan() {
-			line := append(json.RawMessage(nil), scanner.Bytes()...)
+		reader := bufio.NewReader(f)
+		for {
+			line, readErr := reader.ReadBytes('\n')
+			if readErr == io.EOF && len(line) == 0 {
+				break
+			}
+			if readErr != nil {
+				f.Close()
+				return readErr
+			}
 			if _, err := parse(line); err != nil {
 				f.Close()
 				return fmt.Errorf("event store: invalid stored envelope: %w", err)
@@ -238,10 +295,6 @@ func (s *Store) Replay(fn func(json.RawMessage) error) error {
 				f.Close()
 				return err
 			}
-		}
-		if err := scanner.Err(); err != nil {
-			f.Close()
-			return fmt.Errorf("event store: replay shard: %w", err)
 		}
 		f.Close()
 	}
@@ -277,12 +330,32 @@ func healTail(path string) error {
 		return fmt.Errorf("event store: open shard for recovery: %w", err)
 	}
 	defer f.Close()
-	b, err := io.ReadAll(f)
-	if err != nil || len(b) == 0 || b[len(b)-1] == '\n' {
+	info, err := f.Stat()
+	if err != nil {
 		return err
 	}
-	cut := strings.LastIndexByte(string(b), '\n') + 1
-	if err := f.Truncate(int64(cut)); err != nil {
+	end := info.Size()
+	buf := make([]byte, 4096)
+	cut := int64(0)
+	for end > 0 {
+		start := end - int64(len(buf))
+		if start < 0 {
+			start = 0
+		}
+		n, err := f.ReadAt(buf[:end-start], start)
+		if err != nil {
+			return err
+		}
+		if i := bytes.LastIndexByte(buf[:n], '\n'); i >= 0 {
+			cut = start + int64(i) + 1
+			break
+		}
+		end = start
+	}
+	if cut == info.Size() {
+		return nil
+	}
+	if err := f.Truncate(cut); err != nil {
 		return fmt.Errorf("event store: trim torn tail: %w", err)
 	}
 	return f.Sync()
@@ -296,11 +369,14 @@ func parse(raw []byte) (Envelope, error) {
 	if e.SchemaVersion != 1 || !kinds[e.Kind] || e.EventID == "" || !valid(e.Source) || e.ParserVersion == "" || e.Host == "" || !valid(e.Profile) || e.Harness == "" {
 		return e, errors.New("invalid required envelope fields")
 	}
+	if err := validateEnvelope(raw, e.Kind); err != nil {
+		return e, err
+	}
 	return e, nil
 }
 
-func (s *Store) ids() (map[string][]byte, error) {
-	ids := map[string][]byte{}
+func (s *Store) ids() (map[string][32]byte, error) {
+	ids := map[string][32]byte{}
 	root := filepath.Join(s.root, "events")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
@@ -311,20 +387,34 @@ func (s *Store) ids() (map[string][]byte, error) {
 			return err
 		}
 		defer f.Close()
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(nil, 16<<20)
-		for scanner.Scan() {
-			raw := scanner.Bytes()
-			var e Envelope
-			if err := json.Unmarshal(raw, &e); err != nil {
+		reader := bufio.NewReader(f)
+		for {
+			raw, err := reader.ReadBytes('\n')
+			if err == io.EOF && len(raw) == 0 {
+				break
+			}
+			if err != nil {
 				return err
 			}
-			if prior, ok := ids[e.EventID]; ok && string(prior) != string(raw) {
+			e, err := parse(raw)
+			if err != nil {
+				return err
+			}
+			compact, err := json.Marshal(json.RawMessage(raw))
+			if err != nil {
+				return err
+			}
+			digest := sha256.Sum256(compact)
+			if prior, ok := ids[e.EventID]; ok && prior != digest {
 				return fmt.Errorf("event store: event ID %q has conflicting payload", e.EventID)
 			}
-			ids[e.EventID] = append([]byte(nil), raw...)
+			ids[e.EventID] = digest
 		}
-		return scanner.Err()
+		// Reopening must establish durability even for complete rows left by failed syncs.
+		if err := s.sync(f); err != nil {
+			return err
+		}
+		return s.mkdir(filepath.Dir(path))
 	})
 	if errors.Is(err, os.ErrNotExist) {
 		return ids, nil

@@ -1,7 +1,24 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — B01 Qodo findings | 2026-11-06
+## Active — Q25 event sink repairs | 2026-11-06
+<!-- BEGIN STUB: 2026-11-06 | Q25 event sink repairs -->
+### Q25 event sink repairs | 2026-11-06
+**Meta:** feat/event-sink | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q25-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Ten findings repaired; focused tests, vet, formatting and diff checks pass; regressions exercised against original implementation
+**Key:** rebuild compact hash index once on open; reconcile pending durability before checkpoints; strict recursive allowlists
+**Pending:** no requested acceptance checks pending; no commit or push
+<!-- END STUB: 2026-11-06 | Q25 event sink repairs -->
+- [x] Inspect findings, source, contract and baseline
+- [x] Repair with failing regression coverage
+- [x] Verify and review
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-06 | B01 Qodo findings -->
 ### B01 Qodo findings | 2026-11-06
 **Meta:** feat/usage-parity-events | t9r/cx/gpt-6.1-sol | `specs/event-contract.md`
@@ -10,14 +27,6 @@
 **Key:** canonical freshness margin; bounded hot store with verified archive; no inferred owner rulings; keyed identities
 **Pending:** Runtime implementation not in scope; maintainer question on D4/private events remains open
 <!-- END STUB: 2026-11-06 | B01 Qodo findings -->
-- [x] Inspect each finding against contracts
-- [x] Correct specs and tracker header
-- [x] Verify documentation consistency
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-06 | B02 durable event sink -->
 ### B02 durable event sink | 2026-11-06

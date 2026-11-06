@@ -1,16 +1,16 @@
 # Session — feat/event-sink
-**Model:** t9r/cx/gpt-5.6-terra | **Started:** 2026-11-06T22:05:00Z
-**Last-Updated:** 2026-11-06T22:14:00Z
+**Model:** t9r/cx/gpt-6.1-sol
+**Last-Updated:** 2026-11-06T23:00:00Z
 
 ## Current Step
-Completed and verified B02 durable JSONL event sink.
+Q25 repairs verified in working tree; no commit or push.
 
-## Files Being Modified
-- internal/events/events.go — durable append, replay, recovery and capacity checks
-- internal/events/events_test.go — B02 acceptance coverage
-
-## Background Tasks
-- None
+## Verification
+- go test -count=1 ./internal/events: pass (3.031s)
+- go vet ./internal/events: clean
+- gofmt -l internal/events: empty
+- git diff --check: clean
+- Original-code overlay demonstrates regressions, with Write hook declaration added only for compilation.
 
 ## Next Action
-No further B02 action; do not commit or push.
+Maintainer reviews pending changes.

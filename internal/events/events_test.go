@@ -11,7 +11,7 @@ import (
 )
 
 func event(id string) []byte {
-	return []byte(`{"schema_version":1,"kind":"usage","event_id":"` + id + `","source":"claude","parser_version":"v1","host":"node-a","profile":"acct-a","harness":"claude-code"}`)
+	return []byte(`{"schema_version":1,"kind":"usage","event_id":"` + id + `","source":"claude","parser_version":"v1","host":"node-a","profile":"acct-a","harness":"claude-code","source_schema_version":null,"provider":null,"observed_at":{"original":null,"epoch_seconds":null,"quality":"unknown"},"collected_at":{"original":null,"epoch_seconds":1,"quality":"collection"},"locator":{"type":"probe","probe_id":"probe-1","part":"usage"},"quality":{"status":"observed","reasons":[],"missing_fields":[]},"data":{}}`)
 }
 
 func options(root string) Options {
