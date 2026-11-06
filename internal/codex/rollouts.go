@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/safefs"
 )
 
@@ -48,6 +49,8 @@ const (
 // all files. The first collect searches the tails of the newest files for them, so an idle profile has readings
 // at once.
 type RolloutsSource struct {
+	Events     *events.Store
+	eventSeen  map[string]bool
 	Host       string
 	Alias      string
 	Account    string
@@ -83,6 +86,7 @@ type usage struct {
 }
 
 type state struct {
+	Events map[string]*eventFile `json:"events,omitempty"`
 	Init   bool                  `json:"init"`
 	Files  map[string]*fileState `json:"files"`  // key: hashed path relative to sessions/
 	Totals map[string]*usage     `json:"totals"` // key: model label (decided at count time)
@@ -269,6 +273,12 @@ func (s *RolloutsSource) Collect(ctx context.Context, now time.Time, raw json.Ra
 	}
 	res.Samples = s.counterSamples()
 	res.Samples = append(res.Samples, s.quotaSamples(now)...)
+	if s.Events != nil {
+		if err := s.captureEvents(ctx, files, now); err != nil {
+			blob, _ := json.Marshal(st)
+			return res, blob, core.Fail(core.ReasonOther)
+		}
+	}
 	blob, err := json.Marshal(st)
 	if err != nil {
 		return res, nil, core.Fail(core.ReasonOther)

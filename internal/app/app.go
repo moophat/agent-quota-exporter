@@ -49,6 +49,11 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		switch r.Harness {
 		case config.HarnessCodex:
 			srcs = codex.Build(cfg, r, host, version)
+			for _, src := range srcs {
+				if rollout, ok := src.(*codex.RolloutsSource); ok {
+					rollout.Events = b.Events
+				}
+			}
 		case config.HarnessOpencode:
 			srcs = opencode.Build(cfg, r, host)
 		case config.HarnessRouter:

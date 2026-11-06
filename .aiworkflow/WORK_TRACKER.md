@@ -1,7 +1,25 @@
 # WORK_TRACKER
 **Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — Q26 sink metrics repairs | 2026-11-07
+## Paused
+## Active — B07 Codex events | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | B07 Codex events -->
+### B07 Codex events | 2026-11-07
+**Meta:** feat/codex-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/B07-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Requested continuation implemented; focused tests, vet, race, formatting pass; four tests fail under removed-feature mutations
+**Key:** independent event cursor; copied rollout replay IDs; disjoint nullable tokens; numeric store validation repaired
+**Pending:** Contract has no named raw-total payload field; implementation adds raw_total_tokens to closed allowlist, needs contract reconciliation. Dedicated archive directories/compression excluded by parity F9.
+<!-- END STUB: 2026-11-07 | B07 Codex events -->
+- [x] Inspect contracts and verify baseline
+- [x] Implement usage events with null tags and copy replay tests
+- [x] Retain total usage and passive quota, bound reads, verify failure recovery and negative mutations
+- [x] Run focused tests and vet
+
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
@@ -10,14 +28,6 @@
 **Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
 **Pending:** none; no commit or push
 <!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
-- [x] Inspect findings and baseline
-- [x] Reproduce and repair all three findings
-- [x] Run acceptance checks and review diff
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
 ### B03 event sink configuration | 2026-11-06
