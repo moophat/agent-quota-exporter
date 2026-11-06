@@ -12,6 +12,14 @@ None
 **Key:** explicit lane list; standard scheduler cache and separate network gates
 **Pending:** no commit or push; full baseline reported existing agy permission failure; live server unverified
 <!-- END STUB: 2026-11-07 | B33 Strata source -->
+<!-- BEGIN STUB: 2026-11-07 | Router merge API compatibility -->
+### Router merge API compatibility | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | user merge repair request
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Replay uses durable Contains API; requested build, focused tests, vet and formatting pass.
+**Key:** Preserve file generation identities alongside numeric router generations; tests unchanged.
+**Pending:** Maintainer completes merge; no commit made.
+<!-- END STUB: 2026-11-07 | Router merge API compatibility -->
 
 <!-- BEGIN STUB: 2026-11-07 | Q27 identity history repairs -->
 ### Q27 identity history repairs | 2026-11-07
@@ -21,6 +29,15 @@ None
 **Key:** UUID-safe quota migration, optional fallback merge, durable identity replay, 128-sample no-store cap, one-envelope retry buffer
 **Pending:** no commit or push
 <!-- END STUB: 2026-11-07 | Q27 identity history repairs -->
+
+<!-- BEGIN STUB: 2026-11-07 | B07 Codex events -->
+### B07 Codex events | 2026-11-07
+**Meta:** feat/codex-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/B07-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Requested continuation implemented; focused tests, vet, race, formatting pass; four tests fail under removed-feature mutations
+**Key:** independent event cursor; copied rollout replay IDs; disjoint nullable tokens; numeric store validation repaired
+**Pending:** Contract has no named raw-total payload field; implementation adds raw_total_tokens to closed allowlist, needs contract reconciliation. Dedicated archive directories/compression excluded by parity F9.
+<!-- END STUB: 2026-11-07 | B07 Codex events -->
 
 <!-- BEGIN STUB: 2026-11-07 | B04 identity history -->
 ### B04 identity history | 2026-11-07
@@ -32,22 +49,6 @@ None
 <!-- END STUB: 2026-11-07 | B04 identity history -->
 
 ## Paused
-## Active — B07 Codex events | 2026-11-07
-<!-- BEGIN STUB: 2026-11-07 | B07 Codex events -->
-### B07 Codex events | 2026-11-07
-**Meta:** feat/codex-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/B07-brief.md`
-**Model:** t9r/cx/gpt-6.1-sol
-**Outcome:** Requested continuation implemented; focused tests, vet, race, formatting pass; four tests fail under removed-feature mutations
-**Key:** independent event cursor; copied rollout replay IDs; disjoint nullable tokens; numeric store validation repaired
-**Pending:** Contract has no named raw-total payload field; implementation adds raw_total_tokens to closed allowlist, needs contract reconciliation. Dedicated archive directories/compression excluded by parity F9.
-<!-- END STUB: 2026-11-07 | B07 Codex events -->
-- [x] Inspect contracts and verify baseline
-- [x] Implement usage events with null tags and copy replay tests
-- [x] Retain total usage and passive quota, bound reads, verify failure recovery and negative mutations
-- [x] Run focused tests and vet
-
-None
-
 ## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Q28 rewrite review followup -->
@@ -68,6 +69,33 @@ None
 **Pending:** parent independent review; bounded prefix/tail fingerprints cannot detect arbitrary interior-only rewrites; missing index rebuilds once
 <!-- END STUB: 2026-11-07 | Q28 Codex capture repairs -->
 
+## Paused
+## Active — Q29 full regression repair | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
+### Q29 full regression repair | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
+**Key:** separate metric and capture cursors; retain original replay envelopes
+**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
+<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
+- [x] Inspect baseline and contracts
+- [x] Reproduce and disposition twelve findings
+- [x] Acceptance and review
+
+None
+
+## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q29 router repairs -->
+### Q29 router repairs | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** inspecting twelve findings and retry boundaries
+**Key:** metrics independent of durable capture; specs read-only
+**Pending:** regression tests, repairs, acceptance verification
+<!-- END STUB: 2026-11-07 | Q29 router repairs -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q26-brief.md`
@@ -76,6 +104,15 @@ None
 **Key:** per-writer durability; safe rejected identity; capacity I/O outside append mutex
 **Pending:** none; no commit or push
 <!-- END STUB: 2026-11-07 | Q26 sink metrics repairs -->
+
+<!-- BEGIN STUB: 2026-11-07 | B32 Router event coverage -->
+### B32 Router event coverage | 2026-11-07
+**Meta:** feat/router-events | claude-sonnet-4-6 | `BRIEF.md`
+**Model:** claude-sonnet-4-6
+**Outcome:** complete; requested build, focused tests, vet and formatting pass
+**Key:** three-argument Build plus SetEventStore; allowlisted router usage/collect events; durable backlog drain; null project/session
+**Pending:** none; no commit or push
+<!-- END STUB: 2026-11-07 | B32 Router event coverage -->
 
 <!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
 ### B03 event sink configuration | 2026-11-06

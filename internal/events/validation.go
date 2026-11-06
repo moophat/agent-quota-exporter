@@ -154,6 +154,13 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		if string(val) == "null" {
 			continue
 		}
+		// File generations are opaque identities; router generations are numeric.
+		if k == "generation" && string(m["type"]) == `"file"` {
+			if err := leaf(val); err != nil {
+				return err
+			}
+			continue
+		}
 		if k == "cwd" {
 			var path string
 			if json.Unmarshal(val, &path) != nil || !SafePath(path) {
@@ -168,7 +175,7 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 			}
 			continue
 		}
-		if strings.Contains(" source_reported_total input output cache_read cache_write cache_write_1h reasoning total tok_cw_1h input_tokens output_tokens files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors skip_count replay_count reset_count evicted_count abandoned_pending_count http_status reported_cost utilization_ratio original_percent duration_seconds quota_total quota_used quota_remaining requests_24h success_count error_count quota_charge balance count percent ", " "+k+" ") {
+		if strings.Contains(" source_reported_total input output cache_read cache_write cache_write_1h reasoning total tok_cw_1h input_tokens output_tokens files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors skip_count replay_count reset_count evicted_count abandoned_pending_count http_status reported_cost utilization_ratio original_percent quota_total quota_used quota_remaining requests_24h success_count error_count quota_charge balance count percent rate_limited_until generation row_id ", " "+k+" ") {
 			var number float64
 			if json.Unmarshal(val, &number) != nil {
 				return errors.New("invalid numeric structural field")
