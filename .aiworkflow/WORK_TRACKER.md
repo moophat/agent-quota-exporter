@@ -1,6 +1,24 @@
 # WORK_TRACKER
+**Last-Updated:** 2026-11-06T16:18:37Z
 
-## Active — B01 durable event contract | 2026-11-06
+## Active — B01 Qodo findings | 2026-11-06
+<!-- BEGIN STUB: 2026-11-06 | B01 Qodo findings -->
+### B01 Qodo findings | 2026-11-06
+**Meta:** feat/usage-parity-events | t9r/cx/gpt-6.1-sol | `specs/event-contract.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Five findings fixed; focused consistency checks and git diff --check pass; original decision entries byte-for-byte unchanged
+**Key:** canonical freshness margin; bounded hot store with verified archive; no inferred owner rulings; keyed identities
+**Pending:** Runtime implementation not in scope; maintainer question on D4/private events remains open
+<!-- END STUB: 2026-11-06 | B01 Qodo findings -->
+- [x] Inspect each finding against contracts
+- [x] Correct specs and tracker header
+- [x] Verify documentation consistency
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-06 | B01 durable event contract -->
 ### B01 durable event contract | 2026-11-06
 **Meta:** feat/usage-parity-events | t9r/cx/gpt-6.1-sol | `specs/event-contract.md`
@@ -9,15 +27,6 @@
 **Key:** B01 only; optional generic events; public metric dimensions bounded; Tu rulings preserved
 **Pending:** agy refresh/retained-reader authority conflict; Codex response and manual charge units remain unverified; no runtime work
 <!-- END STUB: 2026-11-06 | B01 durable event contract -->
-- [x] Inspect authority and existing contracts
-- [x] Author event envelope and reconcile companion specs
-- [x] Verify coverage, examples and decisions
-**Last-Updated:** 2026-11-04T16:45:00Z
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
 ### PR #21 cache trust and health fixes | 2026-11-05

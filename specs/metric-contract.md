@@ -22,7 +22,7 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `host` | machine the exporter runs on | config `host` or the OS hostname; never an IP unless configured so |
 | `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, ... | lowercase, fixed vocabulary per plugin |
 | `profile` | one workspace: config dir / `CODEX_HOME` / opencode instance / agy `HOME` | operator alias from config; for auto-discovered profiles a stable slug of the directory name (not the path) |
-| `account` | the login a profile holds | operator alias; default is a short stable hash of the account id. Public parity metrics use opaque identifiers, never raw emails; the existing email compatibility option is outside that privacy profile |
+| `account` | the login a profile holds | configured operator alias, otherwise keyed opaque ID under the account identity policy in [event-contract.md](event-contract.md#account-identity-policy); never an unkeyed email hash |
 | `provider` | who serves the model: `anthropic`, `openai`, `google`, `opencode-go`, ... | as reported by the source; lowercased |
 | `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
@@ -31,6 +31,11 @@ Labels are generic and defined once. A metric lists which of them it carries.
 `window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`);
 `other` when the vendor reports a window without its length (the vendor's word is then the `scope`).
 `scope` is never empty.
+
+`account_label: alias` is the default. `account_label: email` is an explicit compatibility
+opt-in, off by default: it publishes raw email addresses in the `account` label to every
+metrics consumer. It is forbidden when the parity event/metric privacy profile is enabled;
+native events never retain raw emails, regardless of this option.
 
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are
 constant per exporter, so they add no cardinality. Total label count per series is capped (default 12).
@@ -141,6 +146,9 @@ healthy ones.
 | `agent_collector_rows_appended_total` | counter | rows | same | durably appended raw rows |
 | `agent_collector_errors_total` | counter | errors | same + `class` | finite collector failure class |
 | `agent_event_store_write_success` | gauge | 0/1 | `host harness profile source` | last durable event write succeeded; absent when event recording disabled |
+| `agent_event_store_size_bytes` | gauge | bytes | `host` | total local event-store footprint, including shards, state and local backups |
+| `agent_event_store_available_bytes` | gauge | bytes | `host` | available bytes on the store filesystem |
+| `agent_event_store_pressure` | gauge | 0/1 | `host` | 1 at the warning or hard capacity thresholds defined in event-contract; absent when recording disabled |
 
 New diagnostic `class` values: `timeout`, `network`, `unauthorized`, `forbidden`, `rate_limited`,
 `invalid_data`, `unavailable`, `filesystem`, `budget`, `internal`. Existing source `reason`
@@ -151,7 +159,8 @@ These additions are non-breaking (contract remains 0); no existing family gains 
 
 ## Staleness and absence
 
-- Active Claude quota is stale at age >=900 seconds or after reset without a post-reset reading.
+- Active Claude quota follows the single [Claude freshness policy](event-contract.md#claude-freshness-policy),
+  or is absent after reset without a post-reset reading.
   Current quota then is unknown, never synthesized zero. Last-good values/reset remain history;
   a failed read or fresh scrape cannot renew observed time. Other sources retain their documented
   staleness policies. Metric eligibility must not conceal readable historical evidence.

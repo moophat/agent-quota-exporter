@@ -1,19 +1,17 @@
 # Session — feat/usage-parity-events
-**Model:** t9r/cx/gpt-6.1-sol | **Started:** 2026-11-06T16:05:00Z
-**Last-Updated:** 2026-11-06T16:12:41Z
+**Model:** t9r/cx/gpt-6.1-sol | **Started:** 2026-11-06T16:18:37Z
+**Last-Updated:** 2026-11-06T16:18:37Z
 
 ## Current Step
-B01 complete: 17/17 L1 IDs and constituent fields reviewed; original decisions byte-preserved;
-git diff --check passes. No JSON examples supplied. No runtime tests needed for docs-only work.
+B01 Qodo corrections complete; all five findings fixed in design docs. Focused consistency checks
+and git diff --check pass; original decision entries byte-for-byte unchanged. Runtime not tested.
 
 ## Files Being Modified
-- specs/event-contract.md — new durable event contract
-- specs/metric-contract.md, sources.md, decisions.md — reconcile event boundary and failure policy
-- .aiworkflow/WORK_TRACKER.md — task checkpoint
+- specs/{event-contract,metric-contract,sources,plan,decisions}.md — scoped finding fixes
+- .aiworkflow/WORK_TRACKER.md — header formatting and own task entry
 
 ## Background Tasks
 None.
 
 ## Next Action
-Handoff agy no-refresh/retained-reader conflict; Codex response/manual units remain unverified.
-No commit or push performed.
+Report findings. D4/private-event decision remains open. No commit or push authorized.

@@ -109,10 +109,13 @@ explicit).
 
 The authorized usage-parity brief replaces the agent-imposed metrics-only history boundary with
 the optional generic [event-contract.md](event-contract.md). This records that delivery requirement,
-not a new ruling attributed to Tu. All recorded Tu decisions and quotations above remain unchanged:
-in particular D4 is about per-session **metrics**, not private session event facts; D9 still excludes
-balance plugins and money-based usage. Original restricted manual charge evidence is retained with
-unit verification, not displayed as money or silently converted to quota points.
+not a new ruling attributed to Tu. This section records agent-authored delivery requirements only;
+it does not interpret, restate or settle owner rulings. Consult the original entries above directly.
+
+**Open question for maintainer:** D4 remains OPEN with its original wording. Does the proposed
+private session-event contract require a separate decision? No answer is inferred here.
+The event contract records the proposed handling of restricted manual charge evidence and its
+unverified units; that design text is not an owner ruling.
 
 The parity freshness/failure policy supersedes blanket ordinary-failure one-hour backoff and
 metric-staleness-as-history-deletion interpretations. It preserves direct Claude's 900 s floor,

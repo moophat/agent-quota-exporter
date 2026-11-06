@@ -117,7 +117,7 @@ Claude's exact metadata allowlist is:
 | `claudeAiOauth.refreshTokenExpiresAt` | `login_expires_at` |
 | `claudeAiOauth.subscriptionType` | `subscription_type` |
 | `claudeAiOauth.rateLimitTier` | `rate_tier` |
-| `oauthAccount.emailAddress` | derive opaque `account`; raw email remains only in the existing restricted legacy import store |
+| `oauthAccount.emailAddress` | derive keyed opaque `account` under the account identity policy below; raw email remains only in the existing restricted legacy import store |
 | `oauthAccount.organizationName`, `organizationType`, `billingType`, `seatTier` | corresponding exact keys in `metadata` |
 | `oauthAccount.hasExtraUsageEnabled`, `organizationRateLimitTier`, `userRateLimitTier` | corresponding exact keys in `metadata` |
 | credential filesystem mtime | `credential_mtime` |
@@ -196,11 +196,41 @@ Store `events/month=YYYY-MM/<source-profile>.jsonl`, partitioned by UTC **write*
 components are validated identifiers, never account strings. One writer/file; O_APPEND, complete
 JSON lines, torn-tail healing, fsync before cursor commit; directories 0750/files 0640. State uses
 temp/fsync/rename. On append/fsync/capacity failure stop advancement, report backlog/store failure,
-retry bounded runs. Local events survive transcript cleanup; no age-based deletion of raw events,
+retry bounded runs. Local events survive transcript cleanup; no automatic deletion of raw events,
 old shards/state or backups. Mirror/import is independent and idempotent; never append to old roots.
 At least 90 days of daily queries plus all retained history via import/Explorer is required by parity;
 metric-store retention is independent. Snapshot-only recovery cannot manufacture messages or add
 aggregate snapshots to message totals. Preserve artifact checksums, import receipts and late-day reopening.
+
+### Storage budget and recovery
+
+Event recording requires a positive operator-configured local byte budget, a free-space reserve
+(at least one bounded append batch plus state/checkpoint space), and a hot-history age budget
+of at least 90 days. Count shards, state and local backups toward the byte budget. Warn at 80%
+of that budget or when available filesystem space falls below twice the reserve. Before each
+bounded batch, refuse writes that would exceed the budget or consume the reserve. Disk-full,
+quota-exceeded and fsync failures follow the same failure path even below these thresholds.
+The byte limit wins over the hot-age target: never silently delete evidence to meet either.
+
+Expose pressure/size/free-space through the metric-contract store gauges; set
+`agent_event_store_write_success` to 0 for affected sources and increment
+`agent_collector_errors_total{class="filesystem"}` on each failed durable-write run.
+These diagnostics must remain scrapeable from memory when the store itself cannot accept an
+error event. Keep backlog and last-complete time truthful; an append failure is not completion.
+
+The operator archives closed shards to separate storage, verifies checksums and a durable import
+receipt before removing local copies, or moves/expands the store and its cursor state together.
+Archive shards past the hot-age budget; archive earlier only when needed for the byte budget,
+keeping at least 90 days queryable through the archive/import reader. Local backups need the
+same verified offload before removal. Never remove active cursor/checkpoint state to free space.
+If no verified archive is available, capture remains visibly blocked until capacity is restored.
+
+Retry automatically on each normal bounded collection interval, without a restart or cursor reset.
+After space returns, heal an incomplete tail, reconcile durable event IDs, and resume from the
+last fsynced cursor; replay after a cursor-commit failure must not duplicate accounting. Catch up
+every unread complete record still present in source transcripts, including rotated files tracked
+by their persisted identities. Source records removed before catch-up cannot be recovered: report
+an explicit coverage gap, never claim lossless capture for evidence no longer on disk.
 
 No prompt/completion, tool arguments/results, environment dump, token, API key, cookie or arbitrary
 JSON object enters events, derived storage, logs or UI. Paths/branch/IDs and restricted identity metadata
@@ -208,7 +238,31 @@ are private structural facts, never public metric dimensions. Reject secret-bear
 with a bounded reason rather than retaining them. Community examples/fixtures use invented neutral
 values only. Existing restricted legacy emails stay in their original store; native account IDs are opaque.
 
-Freshness never rewrites historical evidence. Active Claude quota is stale at 900 s; reset passed
+### Account identity policy
+
+Use an operator-configured opaque account alias where supplied. Otherwise derive the native
+event account ID and default metric account label as `acct_` plus full lowercase hex HMAC-SHA-256 of
+the UTF-8 source account identifier (email fallback trimmed, with original case preserved),
+domain-separated by `account-v1` and provider. Do not use an unkeyed or shortened email hash.
+The per-installation random key is at least 32 bytes, supplied by a restricted file reference in
+operator configuration, never inline or committed to this repository. Key files are mode 0600,
+readable only by the exporter owner; exclude the key from event exports, mirrors and data backups.
+Provision it separately for recovery: loss/rotation changes derived identities and requires explicit
+identity linkage, never silent reassignment. Missing key and missing alias blocks identity-dependent
+capture with a visible configuration error; it must not fall back to email or an unkeyed hash.
+Apply the same derivation to email-bearing account evidence before retention. The metric contract
+owns the explicit email compatibility opt-in and its parity-profile prohibition.
+
+### Claude freshness policy
+
+Freshness never rewrites historical evidence. For active direct Claude quota, define `P` as the
+effective configured account-wide poll interval (at least the source's floor), and `D` as the
+bounded maximum normal scheduling/global-gate delay beyond that interval. Stale age is
+`max(stale_after, 2*P + D + 15 seconds)`; stale means age greater than or equal to this bound.
+The 15 seconds covers request completion. Gate coordination
+must supply a finite delay bound, not an unbounded queue of holders. Failure/429 cooldowns do not
+extend this age or renew observation time. Passive statusline readings retain their separate
+short-cache freshness policy. Reset passed
 without post-reset evidence means current unknown, prior reading retained. Identity target/local capture
 is 60 s; health/collect ages remain separate. Passive Codex stays as-of its last real turn. Direct Claude
 keeps >=900 s/account globally, 15 s request/no inline retry, account-wide >=3600 s after 429.

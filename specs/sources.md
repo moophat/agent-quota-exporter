@@ -34,6 +34,8 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 
 Rules specific to `claude-oauth-usage`:
 
+- Current-series eligibility follows the canonical [Claude freshness policy](event-contract.md#claude-freshness-policy),
+  whose margin covers the effective poll interval, normal gate delay and read completion.
 - **Opt-in per profile** (`quota.claude_oauth_usage: true`). The endpoint is private and undocumented: it can change or
   rate-lock without notice (reported in public issue trackers; a lock is shared by IP, so a burst of bad requests from
   one host locks every profile on it).
@@ -63,7 +65,7 @@ Rules specific to `claude-oauth-usage`:
 - Identity history additionally allowlists exactly `claudeAiOauth.{expiresAt,refreshTokenExpiresAt,
   subscriptionType,rateLimitTier}` and `oauthAccount.{emailAddress,organizationName,organizationType,
   billingType,seatTier,hasExtraUsageEnabled,organizationRateLimitTier,userRateLimitTier}`, plus credential
-  mtime. See event-contract for destinations/nulls; no whole-object copy. Email derives opaque identity,
+  mtime. See event-contract for destinations/nulls and its keyed account identity policy; no whole-object copy. Email derives keyed opaque identity,
   never a native public metric/event email. Access token remains request-local only. Everything else
   in those files, `history.jsonl`, `message.content`, `toolUseResult` and prompts remains excluded.
 - All numeric quota windows and all reduced limits survive privately in events, even when inactive,
