@@ -38,9 +38,13 @@ func (s *Source) readConns(db *sqlro.DB, now time.Time, errs map[string]int) (ma
 	if s.EmailMode {
 		cols = append(cols, sqlro.Col("email")) // selected only when an email may become the label
 	}
-	rows, err := db.After("providerConnections", "rowid", 0, cols, connRows)
+	rows, err := db.After("providerConnections", "rowid", 0, cols, connRows+1)
 	if err != nil {
 		return nil, err
+	}
+	s.connCapped = len(rows) > connRows
+	if s.connCapped {
+		rows = rows[:connRows]
 	}
 
 	st := s.st
@@ -77,7 +81,15 @@ func (s *Source) readConns(db *sqlro.DB, now time.Time, errs map[string]int) (ma
 	labels := make(map[string]string, len(cs))
 	used := map[string]bool{"other": true, "unknown": true}
 	var hs []health
+	s.facts = nil
 	for i, c := range cs {
+		h := connHealth("", c.row, map[string]int{})
+		ts := strings.ToLower(strings.TrimSpace(toStr(c.row[4])))
+		var status *string
+		if c.row[4] != nil && (testPass[ts] || testFail[ts]) {
+			status = &ts
+		}
+		s.facts = append(s.facts, connFact{id: c.id, provider: toStr(c.row[1]), enabled: h.Enabled, testStatus: status, until: h.Until})
 		l := ""
 		if i < maxConns {
 			email := ""

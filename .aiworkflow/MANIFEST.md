@@ -1,5 +1,5 @@
 # MANIFEST: agent-quota-exporter
-**Last-Updated:** 2026-11-06T23:00:00Z
+**Last-Updated:** 2026-11-07T00:00:00Z
 
 Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release **v0.1.0** published 2026-11-04 (tag at c6f4dc8, cut on-prem after the real-node test of rc.2); fixes ship as v0.1.x. Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
 
@@ -22,6 +22,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 | Plugin: codex-rollouts (quota, credits, tokens) | done, verified on-prem (rc.2); model-after-start fix in rc.3 (#14), awaiting retest | `internal/codex`; codex-state and codex-rate-limits not built |
 | Plugin: agy-usage (opt-in) | values verified on-prem (rc.2); refresh-token rotation undetermined; on-prem recommends keeping it out of v0.2.0 until that is settled | `internal/agy`; runs the client's own /usage |
 | Plugin: router-9router | done, verified on-prem (rc.2); custom provider labels fixed in rc.3 (#14), awaiting retest | `internal/router`; declared profiles only |
+| Router durable events (B32/Q29) | done in working tree; build, focused tests and vet verified | feat/router-events; `.aiworkflow/Q29-evidence.md`; independent metrics and capture retry |
 | Provider plugins: Anthropic/OpenAI admin usage | planned | balances not built (D9) |
 | OTLP output | planned | phase 4 |
 | Packaging: binary/package, systemd unit, container | planned | phase 5 |
