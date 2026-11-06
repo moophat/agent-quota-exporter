@@ -1,7 +1,24 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-06T16:18:37Z
+**Last-Updated:** 2026-11-06T22:14:00Z
 
-## Active — B01 Qodo findings | 2026-11-06
+## Active — Q25 event sink repairs | 2026-11-06
+<!-- BEGIN STUB: 2026-11-06 | Q25 event sink repairs -->
+### Q25 event sink repairs | 2026-11-06
+**Meta:** feat/event-sink | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q25-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Ten findings repaired; focused tests, vet, formatting and diff checks pass; regressions exercised against original implementation
+**Key:** rebuild compact hash index once on open; reconcile pending durability before checkpoints; strict recursive allowlists
+**Pending:** no requested acceptance checks pending; no commit or push
+<!-- END STUB: 2026-11-06 | Q25 event sink repairs -->
+- [x] Inspect findings, source, contract and baseline
+- [x] Repair with failing regression coverage
+- [x] Verify and review
+
+## Paused
+None
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-06 | B01 Qodo findings -->
 ### B01 Qodo findings | 2026-11-06
 **Meta:** feat/usage-parity-events | t9r/cx/gpt-6.1-sol | `specs/event-contract.md`
@@ -10,14 +27,15 @@
 **Key:** canonical freshness margin; bounded hot store with verified archive; no inferred owner rulings; keyed identities
 **Pending:** Runtime implementation not in scope; maintainer question on D4/private events remains open
 <!-- END STUB: 2026-11-06 | B01 Qodo findings -->
-- [x] Inspect each finding against contracts
-- [x] Correct specs and tracker header
-- [x] Verify documentation consistency
 
-## Paused
-None
-
-## Log
+<!-- BEGIN STUB: 2026-11-06 | B02 durable event sink -->
+### B02 durable event sink | 2026-11-06
+**Meta:** feat/event-sink | t9r/cx/gpt-5.6-terra | `/root/orchestrator/plans/261106-2205-usage-parity/b02-brief.md`
+**Model:** t9r/cx/gpt-5.6-terra
+**Outcome:** B02 complete; focused tests, vet, format, diff check pass
+**Key:** JSONL monthly shards; cursor callback after shard and directory fsync; idempotent event IDs; budget and reserve preflight
+**Pending:** no B02 items; B01 permission prose (0640/0750) conflicts with B02 brief (0600/0700), followed B02 brief
+<!-- END STUB: 2026-11-06 | B02 durable event sink -->
 
 <!-- BEGIN STUB: 2026-11-06 | B01 durable event contract -->
 ### B01 durable event contract | 2026-11-06
