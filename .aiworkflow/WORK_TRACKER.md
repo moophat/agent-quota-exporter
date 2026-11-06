@@ -5,6 +5,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Claude identity event rejection -->
+### Claude identity event rejection | 2026-11-07
+**Meta:** fix/claude-identity-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/fix1-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Fixed; requested build/tests/vet/format checks pass; isolated 75-second live run reports root identity write success 1.
+**Key:** organizationName contains @; field-specific exception retains other secret checks; rejected envelopes WARN with field only
+**Pending:** none; no commit/push
+<!-- END STUB: 2026-11-07 | Claude identity event rejection -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q30 bounded event batches -->
 ### Q30 bounded event batches | 2026-11-07
 **Meta:** feat/opencode-events | t9r/cx/gpt-6.1-sol | `internal/opencode/event-cursor.go`

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,6 +163,12 @@ func (s *Store) Append(batch Batch) (result error) {
 	for _, raw := range batch.Envelopes {
 		e, err := parse(raw)
 		if err != nil {
+			field := "envelope"
+			var invalid *fieldError
+			if errors.As(err, &invalid) {
+				field = invalid.field
+			}
+			slog.Warn("event envelope rejected", "field", field)
 			return err
 		}
 		line, err := json.Marshal(json.RawMessage(raw))
