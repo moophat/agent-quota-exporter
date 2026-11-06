@@ -1,10 +1,18 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-07T00:00:00Z
-
 ## Paused
 None
 
-## Active — Q27 identity history repairs | 2026-11-07
+## Log
+
+<!-- BEGIN STUB: 2026-11-07 | B33 Strata source -->
+### B33 Strata source | 2026-11-07
+**Meta:** feat/strata-source | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/B33-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** B33 implemented; build, requested tests, vet, formatting, focused race checks and independent review pass
+**Key:** explicit lane list; standard scheduler cache and separate network gates
+**Pending:** no commit or push; full baseline reported existing agy permission failure; live server unverified
+<!-- END STUB: 2026-11-07 | B33 Strata source -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q27 identity history repairs -->
 ### Q27 identity history repairs | 2026-11-07
 **Meta:** feat/identity-history | t9r/cx/gpt-5.6-terra | `/root/orchestrator/plans/261106-2205-usage-parity/q27-brief.md`
@@ -13,11 +21,6 @@ None
 **Key:** UUID-safe quota migration, optional fallback merge, durable identity replay, 128-sample no-store cap, one-envelope retry buffer
 **Pending:** no commit or push
 <!-- END STUB: 2026-11-07 | Q27 identity history repairs -->
-- [x] Establish baseline and inspect code
-- [x] Repair confirmed findings with regressions
-- [x] Run requested verification
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-07 | B04 identity history -->
 ### B04 identity history | 2026-11-07

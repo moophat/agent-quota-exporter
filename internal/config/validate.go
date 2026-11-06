@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -45,7 +46,7 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
 var ContractLabels = []string{"host", "harness", "profile", "account", "provider", "model", "window", "scope",
-	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin"}
+	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin", "lane", "images", "context"}
 
 // MaxLabels caps labels per series (contract, "Label vocabulary").
 const MaxLabels = 12
@@ -59,6 +60,20 @@ var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 func (c *Config) Validate() error {
 	var errs []string
 	add := func(f string, a ...any) { errs = append(errs, fmt.Sprintf(f, a...)) }
+	lanes := map[string]bool{}
+	for i, l := range c.Strata {
+		if l.Name == "" || len(l.Name) > 128 || lanes[l.Name] {
+			add("strata[%d].name: required, unique and at most 128 bytes", i)
+		}
+		lanes[l.Name] = true
+		u, err := url.Parse(l.BaseURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || strings.ContainsAny(l.BaseURL, "?#") {
+			add("strata[%d].base_url: must be an HTTP(S) URL without credentials, query or fragment", i)
+		}
+		if l.PollInterval() < 5*time.Second {
+			add("strata[%d].interval: must be >= 5s", i)
+		}
+	}
 	if err := c.ValidateEvents(); err != nil {
 		add("%s", err)
 	}

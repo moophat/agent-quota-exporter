@@ -16,6 +16,7 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/opencode"
 	"github.com/moophat/agent-quota-exporter/internal/router"
+	"github.com/moophat/agent-quota-exporter/internal/strata"
 )
 
 const (
@@ -44,6 +45,9 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		return b, err
 	}
 	cache := claude.NewQuotaCache()
+	for _, lane := range cfg.Strata {
+		b.Sources = append(b.Sources, &strata.Source{Host: host, Lane: lane.Name, BaseURL: lane.BaseURL, Interval: lane.PollInterval()})
+	}
 	for _, r := range profiles {
 		var srcs []core.Source
 		switch r.Harness {
