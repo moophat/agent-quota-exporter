@@ -23,9 +23,9 @@ type Stats struct {
 }
 
 func (s *Store) Stats() (Stats, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	size, err := treeSize(s.root)
+	// Root, budget, reserve and measurement functions are immutable after Open.
+	// Filesystem I/O must not hold the mutex that serializes durable appends.
+	size, err := s.size(s.root)
 	if err != nil {
 		return Stats{}, err
 	}
@@ -34,6 +34,15 @@ func (s *Store) Stats() (Stats, error) {
 		return Stats{}, err
 	}
 	return Stats{Size: size, Available: free, Pressure: float64(size) >= .8*float64(s.budget) || free < 2*s.reserve}, nil
+}
+
+func safeWriter(e Envelope) bool {
+	for _, value := range []string{e.Host, e.Harness, e.Profile, e.Source} {
+		if !valid(value) || leaf([]byte(`"`+value+`"`)) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // CheckWritable proves startup can create and fsync data, even in an empty store.
