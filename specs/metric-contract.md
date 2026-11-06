@@ -4,6 +4,10 @@ Status: draft v0 (design phase). This is the interface between the exporter and 
 implements to this document; a consumer (dashboards, alerts, a label-mapping layer) relies on it. Breaking changes
 bump the contract version (`agent_quota_exporter_build_info{contract="0"}`).
 
+Retained structural facts use the optional [event-contract.md](event-contract.md), schema 1.
+Metric cardinality limits apply to series, not to private event fields. Event support and the
+diagnostics below are delivery requirements, not claims of runtime implementation.
+
 Naming follows Prometheus conventions: `snake_case`, a unit suffix (`_seconds`, `_ratio`, `_total` for counters,
 `_timestamp_seconds` for epoch times), base units, no unit in a label value. The prefix is `agent_` (generic, no
 vendor). Names such as `llm_quota_utilization_ratio{provider,window,scope}` in prior art are borrowed **as an idea**
@@ -18,7 +22,7 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `host` | machine the exporter runs on | config `host` or the OS hostname; never an IP unless configured so |
 | `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, ... | lowercase, fixed vocabulary per plugin |
 | `profile` | one workspace: config dir / `CODEX_HOME` / opencode instance / agy `HOME` | operator alias from config; for auto-discovered profiles a stable slug of the directory name (not the path) |
-| `account` | the login a profile holds | operator alias; default is a short stable hash of the account id. A raw email is used only if config sets `account_label: email` |
+| `account` | the login a profile holds | configured operator alias, otherwise keyed opaque ID under the account identity policy in [event-contract.md](event-contract.md#account-identity-policy); never an unkeyed email hash |
 | `provider` | who serves the model: `anthropic`, `openai`, `google`, `opencode-go`, ... | as reported by the source; lowercased |
 | `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
@@ -28,12 +32,20 @@ Labels are generic and defined once. A metric lists which of them it carries.
 `other` when the vendor reports a window without its length (the vendor's word is then the `scope`).
 `scope` is never empty.
 
+`account_label: alias` is the default. `account_label: email` is an explicit compatibility
+opt-in, off by default: it publishes raw email addresses in the `account` label to every
+metrics consumer. It is forbidden when the parity event/metric privacy profile is enabled;
+native events never retain raw emails, regardless of this option.
+
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are
 constant per exporter, so they add no cardinality. Total label count per series is capped (default 12).
 
 ## Cardinality rules
 
 1. **No session id, request id, message id, pid, prompt or path as a label on any metric** in the default set.
+   Project/cwd, branch, agent IDs, skill, timestamps and arbitrary limit names likewise stay out of
+   high-volume labels. Observed structural IDs/tags/raw names are preserved privately in events
+   before metric normalization; message content is excluded from both lanes.
 2. **State is expressed as gauges, not as label churn.** A changing state (logged in, stale, active) is a 0/1 or count
    gauge with a fixed label set. An *info-style* gauge (constant value `1`, descriptive labels such as `plan`) is used
    for slow-changing facts, and its labels change only on real change.
@@ -41,9 +53,9 @@ constant per exporter, so they add no cardinality. Total label count per series 
    profile (default top 20 by recent use, the rest folded to `model="other"`).
 4. Per-session series exist only behind `metrics.per_session: true` (default off) and are documented there as a
    cardinality hazard; they are not in the contract below.
-5. Series for a profile that disappeared stop being emitted (no stale values): the exporter does not export a last
-   known value past `stale_after` (default 3x the source interval, minimum 30 minutes). A missing series means "unknown",
-   never "zero".
+5. Series for a profile that disappeared stop being emitted. Current-value eligibility follows the
+   source freshness rules below; retained events and last-good evidence are never deleted because
+   a series is absent. Missing means unknown, never zero.
 
 ## Quota metrics (gauges)
 
@@ -84,6 +96,10 @@ After losing the state directory the counters restart at zero and Prometheus tre
 exporter never replays old data into a counter without `backfill_days`. `process_start_time_seconds` and
 `agent_quota_exporter_state_epoch` expose restarts.
 
+Historical event capture/import is independent of this live-counter start boundary. Replay adds
+no live increments; account-switch corrections never decrement counters or move old usage to
+the current login. Correctable event-time totals come from named event views, not counter increase().
+
 Example:
 
 ```
@@ -122,13 +138,32 @@ healthy ones.
 | `agent_quota_exporter_profiles` | gauge | profiles | `harness origin` | profiles known; `origin` in `config`, `discovered` |
 | `agent_quota_exporter_state_epoch` | gauge | Unix seconds | none | when the current persisted state was initialized: no `state.json` yet, or an invalid one that was set aside as `state.json.corrupt-<time>`; a change means the counters restarted from zero. A `state.json` that exists but cannot be read stops startup instead |
 | `process_start_time_seconds` | gauge | Unix seconds | none | start time of the exporter process, taken as the binary initializes (before config loading) |
+| `agent_collector_backlog_bytes` | gauge | bytes | `host harness profile source` | unread spans, including unvisited files |
+| `agent_collector_last_complete_timestamp_seconds` | gauge | Unix seconds | same | last complete collection run |
+| `agent_collector_files_seen` | gauge | files | same | files seen in latest run |
+| `agent_collector_files_read` | gauge | files | same | files read in latest run |
+| `agent_collector_bytes_read_total` | counter | bytes | same | bytes read, distinct from backlog |
+| `agent_collector_rows_appended_total` | counter | rows | same | durably appended raw rows |
+| `agent_collector_errors_total` | counter | errors | same + `class` | finite collector failure class |
+| `agent_event_store_write_success` | gauge | 0/1 | `host harness profile source` | last durable event write succeeded; absent when event recording disabled |
+| `agent_event_store_size_bytes` | gauge | bytes | `host` | total local event-store footprint, including shards, state and local backups |
+| `agent_event_store_available_bytes` | gauge | bytes | `host` | available bytes on the store filesystem |
+| `agent_event_store_pressure` | gauge | 0/1 | `host` | 1 at the warning or hard capacity thresholds defined in event-contract; absent when recording disabled |
+
+New diagnostic `class` values: `timeout`, `network`, `unauthorized`, `forbidden`, `rate_limited`,
+`invalid_data`, `unavailable`, `filesystem`, `budget`, `internal`. Existing source `reason`
+labels retain their vocabulary. Exact per-run counts and numeric HTTP outcomes live in events.
+These additions are non-breaking (contract remains 0); no existing family gains labels.
 
 `source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `codex-usage`, `opencode-db`, ...), a fixed vocabulary.
 
 ## Staleness and absence
 
-- A quota value older than its `stale_after` is dropped, not served (rule 5 above). Alert on
-  `time() - agent_quota_observed_timestamp_seconds > 3600`, or on `absent_over_time(...)`.
+- Active Claude quota follows the single [Claude freshness policy](event-contract.md#claude-freshness-policy),
+  or is absent after reset without a post-reset reading.
+  Current quota then is unknown, never synthesized zero. Last-good values/reset remain history;
+  a failed read or fresh scrape cannot renew observed time. Other sources retain their documented
+  staleness policies. Metric eligibility must not conceal readable historical evidence.
 - **Passive sources are the one exception** (v0.2: `codex-rollouts`). They read a quota the vendor's own client wrote
   to disk at its last turn, so an idle profile's reading is old but still true. Such a window is served until its own
   `resets_at` passes, then goes absent; a window with no reset time falls back to `stale_after` from the reading. Credits
