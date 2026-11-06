@@ -227,7 +227,7 @@ func TestBoundedBacklog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < pageSize+1; i++ {
+	for i := 0; i < 3*pageSize+1; i++ {
 		if _, err := tx.Exec(`INSERT INTO message(id,session_id,time_created,time_updated,data) VALUES(?, 'ses_00000000000000000001',0,0,?)`, fmt.Sprint(i), done("provider-a", "model-a", 1, 2, 0, 0, 0, 0)); err != nil {
 			t.Fatal(err)
 		}
@@ -235,13 +235,22 @@ func TestBoundedBacklog(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
+	maxRetained, batches := 0, 0
+	s.eventBatch = func(n int) {
+		batches++
+		if n > maxRetained {
+			maxRetained = n
+		}
+	}
 	r.collect(t, s, t0.Add(time.Minute))
-	n := len(qrows(t, s.Events, "usage"))
-	if n > pageSize || n == 0 {
-		t.Fatalf("unbounded event run: %d rows", n)
+	if maxRetained > pageSize || maxRetained == 0 || batches < 4 {
+		t.Fatalf("retained=%d batches=%d, want at most %d over multiple batches", maxRetained, batches, pageSize)
+	}
+	if n := len(qrows(t, s.Events, "usage")); n != 3*pageSize+1 {
+		t.Fatalf("backlog not streamed: %d", n)
 	}
 	r.collect(t, s, t0.Add(2*time.Minute))
-	if len(qrows(t, s.Events, "usage")) != pageSize+1 {
+	if len(qrows(t, s.Events, "usage")) != 3*pageSize+1 {
 		t.Fatal("bounded backlog did not resume")
 	}
 }

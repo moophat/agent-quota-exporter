@@ -27,7 +27,7 @@ func newGeneration() string {
 }
 func validCount(v any) bool { f, ok := num(v); return ok && f >= 0 && f <= 1<<53 && math.Trunc(f) == f }
 
-// captureEvents processes at most one source page and one bounded pending set.
+// captureEvents streams source pages and the bounded pending set in fixed-size batches.
 // A prepared envelope batch is durable before append, and progress is durable only
 // after Append succeeds. Thus both write and checkpoint failures replay exact bytes.
 func (s *DBSource) captureEvents(ctx context.Context, db *sqlro.DB, now time.Time, seed json.RawMessage, metricErr error, closeDB func() error) error {
@@ -105,46 +105,75 @@ func (s *DBSource) captureEvents(ctx context.Context, db *sqlro.DB, now time.Tim
 	if s.st.Pending == nil {
 		s.st.Pending = map[string]*pend{}
 	}
-	tr := &collectTracker{bounded: true}
-	tr.startupSkip = startup
-	readErr := s.read(ctx, db, fileIno(s.Path), now, map[string]int{}, tr)
-	closeErr := closeDB()
-	next := s.st
-	s.st = metric
-	next.Totals = nil
-	next.Named = nil
 	var batch []json.RawMessage
-	for _, m := range tr.completed {
-		// Generation belongs to the event cursor, never the metric checkpoint.
-		s.st = next
+	var buildErr error
+	tr := &collectTracker{startupSkip: startup}
+	tr.emit = func(m emittableMessage) {
+		if buildErr != nil {
+			return
+		}
 		b, e := s.buildUsageEvent(now, m)
-		s.st = metric
 		if e != nil {
-			return e
+			buildErr = e
+			return
 		}
 		batch = append(batch, b)
 	}
-	// A stale/missing cursor may revisit an already durable row. Recover its exact
-	// original envelope rather than changing capture time or weakening conflict checks.
-	if len(batch) > 0 {
-		indexes := map[string]int{}
-		for i, b := range batch {
-			var e events.Envelope
-			_ = json.Unmarshal(b, &e)
-			indexes[e.EventID] = i
+	flush := func() error {
+		if s.eventBatch != nil {
+			s.eventBatch(len(batch))
 		}
-		if err = s.Events.Replay(func(b json.RawMessage) error {
-			var e events.Envelope
-			if er := json.Unmarshal(b, &e); er != nil {
-				return er
+		if buildErr != nil {
+			return buildErr
+		}
+		// A stale/missing cursor may revisit an already durable row. Recover its exact
+		// original envelope rather than changing capture time or weakening conflict checks.
+		if len(batch) > 0 {
+			indexes := map[string]int{}
+			for i, b := range batch {
+				var e events.Envelope
+				_ = json.Unmarshal(b, &e)
+				indexes[e.EventID] = i
 			}
-			if i, ok := indexes[e.EventID]; ok {
-				batch[i] = append(json.RawMessage(nil), b...)
+			if err := s.Events.Replay(func(b json.RawMessage) error {
+				var e events.Envelope
+				if er := json.Unmarshal(b, &e); er != nil {
+					return er
+				}
+				if i, ok := indexes[e.EventID]; ok {
+					batch[i] = append(json.RawMessage(nil), b...)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
-			return nil
-		}); err != nil {
+		}
+		// Snapshot only bounded cursor state, never metric totals. Prepared bytes
+		// survive append failures; State advances only after the batch is durable.
+		next := *nextState
+		next.Totals, next.Named = nil, nil
+		c.Next = &next
+		c.Pending = batch
+		if err := save(); err != nil {
 			return err
 		}
+		if err := s.Events.Append(events.Batch{Envelopes: batch}); err != nil {
+			return err
+		}
+		c.State, c.Next, c.Pending = &next, nil, nil
+		if err := save(); err != nil {
+			return err
+		}
+		batch = nil
+		return nil
+	}
+	tr.flush = flush
+	readErr := s.read(ctx, db, fileIno(s.Path), now, map[string]int{}, tr)
+	closeErr := closeDB()
+	s.st = metric
+	// Never overwrite a prepared failed batch with a collect summary.
+	if readErr != nil && (buildErr != nil || len(batch) > 0 || c.Next != nil) {
+		return readErr
 	}
 	completion := "complete"
 	if readErr != nil || metricErr != nil || closeErr != nil || ctx.Err() != nil {
@@ -162,16 +191,5 @@ func (s *DBSource) captureEvents(ctx context.Context, db *sqlro.DB, now time.Tim
 		return err
 	}
 	batch = append(batch, b)
-	c.Next = next
-	c.Pending = batch
-	if err = save(); err != nil {
-		return err
-	}
-	if err = s.Events.Append(events.Batch{Envelopes: batch}); err != nil {
-		return err
-	}
-	c.State = next
-	c.Next = nil
-	c.Pending = nil
-	return save()
+	return flush()
 }

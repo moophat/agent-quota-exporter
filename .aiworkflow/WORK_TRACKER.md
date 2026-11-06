@@ -1,8 +1,19 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-07T17:19:00Z
-
 ## Paused
-## Active — Q30 review follow-up | 2026-11-07
+## Paused
+None
+
+## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q30 bounded event batches -->
+### Q30 bounded event batches | 2026-11-07
+**Meta:** feat/opencode-events | t9r/cx/gpt-6.1-sol | `internal/opencode/event-cursor.go`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Completed-message list removed; page batches persisted with durable progress; requested checks pass.
+**Key:** stream facts directly to envelopes, checkpoint each durable page, regression bounds retained envelopes across 6001 rows
+**Pending:** none; no commit
+<!-- END STUB: 2026-11-07 | Q30 bounded event batches -->
+
 <!-- BEGIN STUB: 2026-11-07 | Q30 review follow-up -->
 ### Q30 review follow-up | 2026-11-07
 **Meta:** feat/opencode-events | t9r/cx/gpt-6.1-sol | `internal/opencode/q30_test.go`
@@ -11,15 +22,6 @@
 **Key:** original event boundary persisted in metric state, close before collect summary, stable shrink generation, explicit replacement gap
 **Pending:** no commit/push; simultaneous loss of metric and event checkpoint persistence cannot recover the initial boundary
 <!-- END STUB: 2026-11-07 | Q30 review follow-up -->
-- [x] Reproduce initial checkpoint failure
-- [x] Repair boundary persistence and cycle coverage
-- [x] Final acceptance verification
-**Last-Updated:** 2026-11-07T00:00:00Z
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Router merge API compatibility -->
 ### Router merge API compatibility | 2026-11-07

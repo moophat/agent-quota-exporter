@@ -125,9 +125,10 @@ type DBSource struct {
 	Interval             time.Duration
 	Events               *events.Store // nil when events are disabled; never exposed as a metric
 
-	mu      sync.Mutex
-	st      *dbState              // in-memory state, loaded from the persisted blob on the first collect
-	closeDB func(*sqlro.DB) error // optional fault injection; otherwise DB.Close
+	mu         sync.Mutex
+	st         *dbState              // in-memory state, loaded from the persisted blob on the first collect
+	closeDB    func(*sqlro.DB) error // optional fault injection; otherwise DB.Close
+	eventBatch func(int)             // optional observation of retained envelopes before persistence
 }
 
 type pend struct {
@@ -191,7 +192,8 @@ type collectTracker struct {
 	gap         bool
 	backlog     bool
 	bounded     bool
-	completed   []emittableMessage
+	emit        func(emittableMessage)
+	flush       func() error
 	evicted     int64
 	abandoned   int64
 	inFlight    bool
@@ -331,6 +333,11 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 		if tr != nil && tr.bounded {
 			tr.backlog = st.Cursor < last
 		}
+		if tr != nil && tr.flush != nil {
+			if err := tr.flush(); err != nil {
+				return err
+			}
+		}
 		if len(rows) < pageSize || ctx.Err() != nil || (tr != nil && tr.bounded) {
 			break
 		}
@@ -361,6 +368,11 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 				delete(st.Pending, id) // the message (or its session) was deleted: nothing left to count
 			}
 		}
+		if tr != nil && tr.flush != nil {
+			if err := tr.flush(); err != nil {
+				return err
+			}
+		}
 	}
 	var ab int64
 	for id, p := range st.Pending {
@@ -378,7 +390,7 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 }
 
 // apply counts a complete assistant row once, tracks an incomplete one as pending, and ignores other roles.
-// When tr is non-nil, it appends a completed message's facts to tr.completed.
+// When tr is non-nil, it streams a completed message's facts to the event batch.
 func (s *DBSource) apply(r []any, now time.Time, errs map[string]int, tr *collectTracker) {
 	st := s.st
 	id := str(r[cID])
@@ -456,7 +468,7 @@ func (s *DBSource) apply(r []any, now time.Time, errs map[string]int, tr *collec
 				completedMs = int64(v)
 			}
 		}
-		tr.completed = append(tr.completed, emittableMessage{
+		tr.emit(emittableMessage{
 			present:     [5]bool{validCount(r[cIn]), validCount(r[cOut]), validCount(r[cReasoning]), validCount(r[cCacheRead]), validCount(r[cCacheWrite])},
 			messageID:   id,
 			rowID:       rowID,
