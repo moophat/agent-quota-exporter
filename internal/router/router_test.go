@@ -20,6 +20,7 @@ import (
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/sqlro"
 )
 
@@ -361,6 +362,81 @@ func TestBatchesAcrossCyclesAndRestart(t *testing.T) {
 	res, _ = run(t, s2, t0, st)
 	if got := requests(t, res, "work-a", "m"); got != 2*batch+1234 {
 		t.Fatalf("idle cycle changed the count: %v", got)
+	}
+}
+
+func eventStore(t testing.TB) *events.Store {
+	t.Helper()
+	store, err := events.Open(events.Options{
+		Root: t.TempDir(), Budget: 64 << 20, Reserve: 1,
+		Free: func(string) (int64, error) { return 1 << 30, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+// Events follow the same persisted cursor as metrics: a backlog over the per-cycle
+// row budget drains over successive cycles with one event for every source row.
+func TestEventsDrainBacklogWithoutLossOrDoubleCount(t *testing.T) {
+	dir := t.TempDir()
+	_, w := writer(t, dir, false)
+	defer w.Close()
+	s := newSource(dir, nil)
+	s.SetEventStore(eventStore(t))
+	_, st := run(t, s, t0, nil)
+	const n = batch + 2
+	insertUsage(t, w, 1, n, c1, "m")
+	for i := 0; i < 2; i++ {
+		_, st = run(t, s, t0.Add(time.Duration(i+1)*time.Second), st)
+	}
+	var usage []map[string]any
+	if err := s.EventStore.Replay(func(raw json.RawMessage) error {
+		var event map[string]any
+		if err := json.Unmarshal(raw, &event); err != nil {
+			return err
+		}
+		if event["kind"] == "usage" {
+			usage = append(usage, event)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(usage) != n {
+		t.Fatalf("usage events = %d, want %d", len(usage), n)
+	}
+	seen := map[float64]bool{}
+	for _, event := range usage {
+		data := event["data"].(map[string]any)
+		if data["project"] != nil || data["session_id"] != nil {
+			t.Fatalf("unknown project/session must remain null: %v", data)
+		}
+		locator := event["locator"].(map[string]any)
+		id := locator["row_id"].(float64)
+		if seen[id] {
+			t.Fatalf("row %.0f emitted twice", id)
+		}
+		seen[id] = true
+	}
+}
+
+// With no store wired, collection remains metrics-only and does not create events.
+func TestEventsDisabledLeavesMetricsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	_, w := writer(t, dir, false)
+	defer w.Close()
+	disabled, enabled := newSource(dir, nil), newSource(dir, nil)
+	store := eventStore(t)
+	enabled.SetEventStore(store)
+	_, disabledState := run(t, disabled, t0, nil)
+	_, enabledState := run(t, enabled, t0, nil)
+	insertUsage(t, w, 1, 1, c1, "m")
+	disabledResult, _ := run(t, disabled, t0, disabledState)
+	enabledResult, _ := run(t, enabled, t0, enabledState)
+	if !reflect.DeepEqual(series(t, disabledResult.Samples), series(t, enabledResult.Samples)) || !reflect.DeepEqual(disabledResult.Errors, enabledResult.Errors) {
+		t.Fatal("event wiring changed metrics-only collection")
 	}
 }
 

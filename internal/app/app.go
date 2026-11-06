@@ -53,6 +53,9 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 			srcs = opencode.Build(cfg, r, host)
 		case config.HarnessRouter:
 			srcs = router.Build(cfg, r, host)
+			for _, src := range srcs {
+				src.(*router.Source).SetEventStore(b.Events)
+			}
 		case config.HarnessAgy:
 			srcs = agy.Build(cfg, r, host)
 		}

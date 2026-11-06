@@ -19,6 +19,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | B32 Router event coverage -->
+### B32 Router event coverage | 2026-11-07
+**Meta:** feat/router-events | claude-sonnet-4-6 | `BRIEF.md`
+**Model:** claude-sonnet-4-6
+**Outcome:** complete; requested build, focused tests, vet and formatting pass
+**Key:** three-argument Build plus SetEventStore; allowlisted router usage/collect events; durable backlog drain; null project/session
+**Pending:** none; no commit or push
+<!-- END STUB: 2026-11-07 | B32 Router event coverage -->
+
 <!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
 ### B03 event sink configuration | 2026-11-06
 **Meta:** feat/event-sink-config | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/b03-brief.md`
