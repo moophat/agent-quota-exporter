@@ -5,6 +5,13 @@ import "os"
 // Writer identifies a source's bounded diagnostic dimensions.
 type Writer struct{ Host, Harness, Profile, Source string }
 
+// ReportFailure records capture failures that happened before Append was reached.
+func (s *Store) ReportFailure(w Writer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.outcomes[w] = false
+}
+
 // WriteOutcomes omits writers with no attempted durable append.
 func (s *Store) WriteOutcomes() map[Writer]bool {
 	s.mu.Lock()

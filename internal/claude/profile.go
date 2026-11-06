@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 )
 
 const (
@@ -30,6 +31,10 @@ type Profile struct {
 	AccountAlias string // operator alias from config; "" = derive
 	EmailLabel   bool   // metrics.account_label: email
 	MaxModels    int
+	Events       *events.Store
+	IdentityKey  []byte
+	history      []identitySample
+	pending      json.RawMessage
 
 	mu       sync.Mutex
 	resolved bool
@@ -48,6 +53,13 @@ func (p *Profile) Account() (label, uuid string) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.Events != nil && !p.EmailLabel && len(p.history) > 0 {
+		account := p.history[len(p.history)-1].data.Account
+		if account != nil {
+			return *account, p.uuid
+		}
+		return "unknown", p.uuid
+	}
 	return p.label, p.uuid
 }
 

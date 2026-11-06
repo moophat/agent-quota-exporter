@@ -74,6 +74,7 @@ func buildEvents(cfg *config.Config, profiles []config.Resolved) (*events.Store,
 		return nil, nil, fmt.Errorf("events: %w", err)
 	}
 	if err := s.CheckWritable(); err != nil {
+		s.Close()
 		return nil, nil, fmt.Errorf("events: startup write check: %w", err)
 	}
 	return s, key, nil

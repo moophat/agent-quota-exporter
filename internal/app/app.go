@@ -49,10 +49,18 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		switch r.Harness {
 		case config.HarnessCodex:
 			srcs = codex.Build(cfg, r, host, version)
+			for _, src := range srcs {
+				if rollout, ok := src.(*codex.RolloutsSource); ok {
+					rollout.Events = b.Events
+				}
+			}
 		case config.HarnessOpencode:
 			srcs = opencode.Build(cfg, r, host, b.Events)
 		case config.HarnessRouter:
 			srcs = router.Build(cfg, r, host)
+			for _, src := range srcs {
+				src.(*router.Source).SetEventStore(b.Events)
+			}
 		case config.HarnessAgy:
 			srcs = agy.Build(cfg, r, host)
 		}
@@ -65,7 +73,8 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		}
 		b.Profiles[[2]string{r.Harness, r.Origin}]++
 		p := &claude.Profile{Host: host, Alias: r.Alias, Dir: r.Dir, ConfigDir: r.ConfigDir, AccountAlias: r.Account,
-			EmailLabel: cfg.Metrics.AccountLabel == "email", MaxModels: cfg.Metrics.MaxModelsPerProfile}
+			EmailLabel: cfg.Metrics.AccountLabel == "email", MaxModels: cfg.Metrics.MaxModelsPerProfile,
+			Events: b.Events, IdentityKey: b.IdentityKey}
 		b.Sources = append(b.Sources,
 			&claude.AccountSource{P: p, Interval: cfg.SourceInterval("claude-account", accountInterval)},
 			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval)},

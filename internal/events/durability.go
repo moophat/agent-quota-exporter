@@ -47,6 +47,9 @@ func (s *Store) reconcile() error {
 		if err = s.mkdir(filepath.Dir(path)); err != nil {
 			return err
 		}
+		if err := s.indexShard(path); err != nil {
+			return err
+		}
 		delete(s.pending, path)
 	}
 	return nil
