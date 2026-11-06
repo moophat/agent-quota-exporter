@@ -32,3 +32,15 @@ func TestStrataConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestLaneLabelsReservedOnlyWithStrata(t *testing.T) {
+	c := Default()
+	c.Labels = map[string]string{"lane": "a", "images": "b", "context": "c"}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("static lane-named labels without strata must stay valid: %v", err)
+	}
+	c.Strata = []Lane{{Name: "lane-a", BaseURL: "http://127.0.0.1:8080"}}
+	if err := c.Validate(); err == nil {
+		t.Fatal("static lane label must collide once strata is configured")
+	}
+}
