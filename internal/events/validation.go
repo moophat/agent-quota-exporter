@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -10,6 +11,22 @@ import (
 
 // Each object is closed: structural leaves never accept caller-supplied objects.
 type shape map[string]string
+
+type fieldError struct {
+	field string
+	err   error
+}
+
+func (e *fieldError) Error() string { return fmt.Sprintf("%s: %v", e.field, e.err) }
+func (e *fieldError) Unwrap() error { return e.err }
+
+func atField(field string, err error) error {
+	var child *fieldError
+	if errors.As(err, &child) {
+		return &fieldError{field + "." + child.field, child.err}
+	}
+	return &fieldError{field, err}
+}
 
 func fields(keys, typ string) shape {
 	s := shape{}
@@ -95,7 +112,7 @@ func validateEnvelope(raw []byte, kind string) error {
 			}
 		}
 		if err != nil {
-			return err
+			return atField(k, err)
 		}
 	}
 	return nil
@@ -181,14 +198,14 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		if strings.Contains(" source_reported_total input output cache_read cache_write cache_write_1h reasoning total tok_cw_1h input_tokens output_tokens files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors skip_count replay_count reset_count evicted_count abandoned_pending_count http_status reported_cost utilization_ratio original_percent quota_total quota_used quota_remaining requests_24h success_count error_count quota_charge balance count percent rate_limited_until generation row_id ", " "+k+" ") {
 			var number float64
 			if json.Unmarshal(val, &number) != nil {
-				return errors.New("invalid numeric structural field")
+				return atField(k, errors.New("invalid numeric structural field"))
 			}
 			continue
 		}
 		if strings.Contains(" sidechain success budget_exhausted deadline_exhausted is_active available unlimited unit_verified_non_monetary hasExtraUsageEnabled ", " "+k+" ") {
 			var flag bool
 			if json.Unmarshal(val, &flag) != nil {
-				return errors.New("invalid boolean structural field")
+				return atField(k, errors.New("invalid boolean structural field"))
 			}
 			continue
 		}
@@ -241,7 +258,7 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 			}
 		}
 		if err != nil {
-			return err
+			return atField(k, err)
 		}
 	}
 	return nil
