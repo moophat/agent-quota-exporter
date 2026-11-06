@@ -3,6 +3,8 @@ package events
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -27,6 +29,7 @@ var payloadKeys = map[string]string{
 	"mirai_request":     "manual_observed_at request_at request_id model input_tokens output_tokens quota_charge status error_code unit unit_verified_non_monetary account project session_id",
 }
 var nested = map[string]string{
+	"raw_total_tokens":   "input output cache_read cache_write cache_write_1h reasoning total",
 	"raw_tokens":         "input output cache_read cache_write cache_write_1h reasoning total",
 	"tokens":             "input output cache_read cache_write reasoning tok_cw_1h",
 	"metadata":           "organizationName organizationType billingType seatTier hasExtraUsageEnabled organizationRateLimitTier userRateLimitTier",
@@ -39,6 +42,8 @@ var nested = map[string]string{
 	"connections":        "connection_id provider is_active test_status rate_limited_until",
 	"provenance":         "artifact_checksum source_pin import_epoch original_event_id original_locator since pagination_cursor page completeness",
 }
+
+func init() { payloadKeys["usage"] += " raw_total_tokens" }
 
 func validateEnvelope(raw []byte, kind string) error {
 	var obj map[string]json.RawMessage
@@ -149,7 +154,21 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		if string(val) == "null" {
 			continue
 		}
-		if strings.Contains(" input output cache_read cache_write cache_write_1h reasoning total tok_cw_1h input_tokens output_tokens files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors skip_count replay_count reset_count evicted_count abandoned_pending_count http_status reported_cost utilization_ratio original_percent duration_seconds quota_total quota_used quota_remaining requests_24h success_count error_count quota_charge balance count percent ", " "+k+" ") {
+		if k == "cwd" {
+			var path string
+			if json.Unmarshal(val, &path) != nil || !SafePath(path) {
+				return errors.New("secret-bearing structural path")
+			}
+			continue
+		}
+		if k == "byte_start" || k == "byte_end" {
+			var n int64
+			if json.Unmarshal(val, &n) != nil || n < 0 {
+				return errors.New("invalid byte offset")
+			}
+			continue
+		}
+		if strings.Contains(" source_reported_total input output cache_read cache_write cache_write_1h reasoning total tok_cw_1h input_tokens output_tokens files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors skip_count replay_count reset_count evicted_count abandoned_pending_count http_status reported_cost utilization_ratio original_percent duration_seconds quota_total quota_used quota_remaining requests_24h success_count error_count quota_charge balance count percent ", " "+k+" ") {
 			var number float64
 			if json.Unmarshal(val, &number) != nil {
 				return errors.New("invalid numeric structural field")
@@ -213,6 +232,14 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 		}
 	}
 	return nil
+}
+
+var pathSecret = regexp.MustCompile(`(?i)(bearer\s|sk-[a-z0-9_-]{20,}|api_key=|access_token[=:]|refresh_token[=:]|-----begin|cookie:|password=)`)
+
+// SafePath permits ordinary directory names, including scoped packages and task-*,
+// while rejecting explicit credential assignments and recognizable key material.
+func SafePath(path string) bool {
+	return filepath.IsAbs(path) && !strings.ContainsAny(path, "\x00\r\n") && !pathSecret.MatchString(path)
 }
 func leaf(v json.RawMessage) error {
 	var x any

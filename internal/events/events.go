@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +72,7 @@ type Store struct {
 	sync     func(*os.File) error
 	free     func(string) (int64, error)
 	mu       sync.Mutex
-	seen     map[string][32]byte
+	index    *sql.DB
 	used     int64
 	pending  map[string]bool
 	write    func(*os.File, []byte) (int, error)
@@ -113,13 +114,18 @@ func Open(opts Options) (*Store, error) {
 	s.outcomes = map[Writer]bool{}
 	s.size = treeSize
 	var err error
-	s.seen, err = s.ids()
+	err = s.openIndex()
 	if err != nil {
+		s.Close()
 		return nil, err
 	}
 	s.used, err = treeSize(s.root)
 	if err != nil {
+		s.Close()
 		return nil, err
+	}
+	if info, err := os.Stat(filepath.Join(s.root, "index.sqlite")); err == nil {
+		s.used -= info.Size() // index size is measured separately for every append
 	}
 	return s, nil
 }
@@ -167,7 +173,10 @@ func (s *Store) Append(batch Batch) (result error) {
 		digest := sha256.Sum256(line[:len(line)-1])
 		prior, ok := seen[key]
 		if !ok {
-			prior, ok = s.seen[key]
+			prior, ok, err = s.indexed(key)
+			if err != nil {
+				return err
+			}
 		}
 		if ok {
 			if prior != digest {
@@ -193,7 +202,11 @@ func (s *Store) Append(batch Batch) (result error) {
 		}
 	}
 	used := s.used
-	if used+bytes > s.budget {
+	if info, err := os.Stat(filepath.Join(s.root, "index.sqlite")); err == nil {
+		used = max(used, s.used+info.Size())
+	}
+	// Include conservative index transaction/page growth in the bounded batch.
+	if used+bytes+int64(len(seen))*8192 > s.budget {
 		return fmt.Errorf("%w: used=%d batch=%d budget=%d", ErrBudget, used, bytes, s.budget)
 	}
 	if bytes == 0 {
@@ -249,7 +262,6 @@ func (s *Store) Append(batch Batch) (result error) {
 			s.used += int64(n)
 			var e Envelope
 			_ = json.Unmarshal(line, &e)
-			s.seen[e.EventID] = sha256.Sum256(line[:len(line)-1])
 		}
 		if err = s.sync(f); err == nil {
 			err = f.Close()
@@ -267,6 +279,13 @@ func (s *Store) Append(batch Batch) (result error) {
 		}
 		delete(s.pending, path)
 		durable[path] = true
+	}
+	for _, path := range paths {
+		if err := s.indexShard(path); err != nil {
+			validated = false
+			s.pending[path] = true
+			return err
+		}
 	}
 	return checkpoint(batch)
 }
@@ -400,53 +419,6 @@ func parse(raw []byte) (Envelope, error) {
 		return e, err
 	}
 	return e, nil
-}
-
-func (s *Store) ids() (map[string][32]byte, error) {
-	ids := map[string][32]byte{}
-	root := filepath.Join(s.root, "events")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
-			return err
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		reader := bufio.NewReader(f)
-		for {
-			raw, err := reader.ReadBytes('\n')
-			if err == io.EOF && len(raw) == 0 {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			e, err := parse(raw)
-			if err != nil {
-				return err
-			}
-			compact, err := json.Marshal(json.RawMessage(raw))
-			if err != nil {
-				return err
-			}
-			digest := sha256.Sum256(compact)
-			if prior, ok := ids[e.EventID]; ok && prior != digest {
-				return fmt.Errorf("event store: event ID %q has conflicting payload", e.EventID)
-			}
-			ids[e.EventID] = digest
-		}
-		// Reopening must establish durability even for complete rows left by failed syncs.
-		if err := s.sync(f); err != nil {
-			return err
-		}
-		return s.mkdir(filepath.Dir(path))
-	})
-	if errors.Is(err, os.ErrNotExist) {
-		return ids, nil
-	}
-	return ids, err
 }
 
 func syncDir(path string, sync func(*os.File) error) error {
