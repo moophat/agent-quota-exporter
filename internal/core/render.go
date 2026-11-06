@@ -18,6 +18,11 @@ type family struct{ name, typ, help string }
 // families: every name the exporter may emit, in output order, with HELP text taken from
 // specs/metric-contract.md. A sample whose name is not here is a programming error and is dropped.
 var families = []family{
+	{"agent_lane_busy", "gauge", "1 if any lane slot is processing, 0 if all are idle."},
+	{"agent_lane_queued", "gauge", "Requests queued on the lane."},
+	{"agent_lane_slots", "gauge", "Slots reported by the lane."},
+	{"agent_lane_requests_total", "counter", "Requests reported by the lane since server start."},
+	{"agent_lane_info", "gauge", "Lane model and engine capabilities."},
 	{"agent_event_store_write_success", "gauge", "1 if the last durable event write succeeded, 0 otherwise."},
 	{"agent_collector_backlog_bytes", "gauge", "Unread source bytes, including unvisited files."},
 	{"agent_event_store_size_bytes", "gauge", "Total local event-store footprint in bytes."},

@@ -121,6 +121,25 @@ agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="
 | `agent_router_connection_up` | gauge | 0/1 | `host harness profile account provider` | a router's upstream connection (`account` = its alias or hash): 1 if active, its last test did not fail and it is not rate-limited now |
 | `agent_router_rate_limited_until_timestamp_seconds` | gauge | Unix seconds | same | when the router's own rate limit on the connection ends; absent when none |
 
+## Lane metrics (opt-in `strata`)
+
+Additive, non-breaking contract 0 families. `lane` is the configured unique lane name (1–128 bytes).
+One series per configured lane for each scalar family, one current info series per lane; model is lowercased
+and bounded to 128 bytes. No slot IDs, request IDs, URLs or paths become labels. Reserve `lane`, `images`,
+and `context` against static-label collisions.
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_lane_busy` | gauge | 0/1 | `host lane` | 1 if any slot is processing; 0 only if every slot explicitly reports idle (including an empty slot list); absent if unknown |
+| `agent_lane_queued` | gauge | requests | `host lane` | `live.queued`; absent when missing/null |
+| `agent_lane_slots` | gauge | slots | `host lane` | length of the reported slot list |
+| `agent_lane_requests_total` | counter | requests | `host lane` | upstream `totals.requests`, since server start; upstream restart may reset it; absent when missing/null |
+| `agent_lane_info` | gauge (info) | constant 1 | `host lane model images context` | current engine model, images (`true`/`false`) and max context (token count as decimal); absent unless all fields are known |
+
+Standard `agent_source_*` health uses `harness="strata"`, `profile=<lane>`, `source="strata"`.
+Failed polls never renew observation time or substitute zero. Last-good lane series remain eligible for
+`max(defaults.stale_after, 3 × interval)`, then go absent, including the counter and info family.
+
 ## Exporter health metrics
 
 Every source (one plugin on one profile) reports its own health, so a broken source is visible without hiding the

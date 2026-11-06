@@ -1,10 +1,12 @@
 # MANIFEST: agent-quota-exporter
+**Last-Updated:** 2026-11-07T01:30:00Z
 **Last-Updated:** 2026-11-07T00:00:00Z
 
 Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release **v0.1.0** published 2026-11-04 (tag at c6f4dc8, cut on-prem after the real-node test of rc.2); fixes ship as v0.1.x. Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
 
 | Component | Status | Notes |
 |---|---|---|
+| Plugin: strata lane availability | done in working tree (B33) | `internal/strata`; feat/strata-source; opt-in, HTTP fixture verification; model t9r/cx/gpt-6.1-sol |
 | Spec: plan, metric contract, sources, decisions | done (draft v0) | design phase; `specs/` |
 | Spec: optional durable event contract | done (B01 design only) | `specs/event-contract.md`, schema 1; feat/usage-parity-events; runtime not implemented |
 | Repo guards: gitleaks config, pre-commit, secrets workflow | done | copied from the TSB repos |
