@@ -12,18 +12,19 @@ import (
 func (s *Store) Originals(envs []json.RawMessage) ([]json.RawMessage, error) {
 	wanted := map[string]int{}
 	out := append([]json.RawMessage(nil), envs...)
-	s.mu.Lock()
 	for i, raw := range envs {
 		var e Envelope
 		if json.Unmarshal(raw, &e) != nil {
-			s.mu.Unlock()
 			return nil, errors.New("invalid replay envelope")
 		}
-		if _, ok := s.seen[e.EventID]; ok {
+		ok, err := s.Contains(e.EventID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			wanted[e.EventID] = i
 		}
 	}
-	s.mu.Unlock()
 	if len(wanted) == 0 {
 		return out, nil
 	}

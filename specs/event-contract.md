@@ -85,6 +85,9 @@ source evidence, never a quota unit or a price estimate. Error text/bodies are e
 - Codex raw input includes cached/write input; raw output includes reasoning. Normalize input by
   subtracting cached/write and output by subtracting reasoning, nonnegative and quality-checked.
   Reconstruct full output once, never add reasoning twice to raw output.
+  Codex usage events also keep `raw_total_tokens`: the source's own cumulative token buckets
+  (input, output, cache_read, cache_write, cache_write_1h, reasoning, total) as reported, so a
+  total can be reconciled with the normalized buckets; nullable per bucket, never derived.
 - opencode buckets already are disjoint; router input may include cached tokens with no separate
   breakdown. Missing router cache/reasoning buckets stay null, not invented zeros.
 

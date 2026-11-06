@@ -11,6 +11,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 | Fixtures | done (synthetic) | see `fixtures/README.md` |
 | Core: config loader and validation | done | `internal/config`, feat/phase1-core |
 | Optional event sink configuration and startup wiring | done in working tree (B03) | `internal/config/events.go`, `internal/app/events.go`; feat/event-sink-config; source adapters pending B04+ |
+| Claude identity history | done in working tree (B04) | `internal/claude/identity-history.go`, `identity-facts.go`; keyed identity events and profile-scoped sampled lookup; feat/identity-history |
 | Core: profile discovery | done (Claude) | `internal/config/discover.go` |
 | Core: scheduler, cache, rate gates, state store | done | `internal/core` |
 | Core: `/metrics`, `/healthz`, health metrics | done | `internal/core/render.go`, `http.go` |

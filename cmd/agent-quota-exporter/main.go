@@ -74,6 +74,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	defer built.Events.Close()
 
 	now := core.RealClock.Now()
 	st, err := core.OpenState(cfg.StateDir, now)
