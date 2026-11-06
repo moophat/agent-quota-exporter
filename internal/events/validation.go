@@ -254,12 +254,6 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 					if k == "model" {
 						err = modelLeaf(val)
 					}
-					if k == "organizationName" {
-						// Organization display names may contain @; this is
-						// allowlisted metadata, not the account identifier.
-						b, _ := json.Marshal(strings.ReplaceAll(text, "@", ""))
-						err = leaf(b)
-					}
 				}
 			}
 		}

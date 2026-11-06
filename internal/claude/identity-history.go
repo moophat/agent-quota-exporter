@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +36,15 @@ type identitySample struct {
 }
 
 const maxIdentityHistory = 128
+
+// Match email-shaped tokens without consuming possessive suffixes in display names.
+var organizationEmail = regexp.MustCompile(`[A-Za-z0-9.!#$%&*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+`)
+
+func (p *Profile) opaqueEmail(email string) string {
+	mac := hmac.New(sha256.New, p.IdentityKey)
+	mac.Write([]byte("account-v1\x00" + Provider + "\x00" + strings.TrimSpace(email)))
+	return "acct_" + hex.EncodeToString(mac.Sum(nil))
+}
 
 // IdentityBinding reports sampled evidence, not an exact historical login time.
 type IdentityBinding struct {
@@ -104,6 +114,15 @@ func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil &&
 // a single pending envelope is retried verbatim before another observation is accepted.
 func (p *Profile) SampleIdentity(now time.Time) error {
 	facts, mtime, readErr := readIdentityFacts(p)
+	if facts.Account.OrganizationName != nil {
+		redacted := organizationEmail.ReplaceAllStringFunc(*facts.Account.OrganizationName, func(email string) string {
+			if len(p.IdentityKey) < 32 {
+				return "<email>"
+			}
+			return p.opaqueEmail(email)
+		})
+		facts.Account.OrganizationName = &redacted
+	}
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
 	if readErr == nil {
 		account := p.AccountAlias
@@ -111,9 +130,7 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 			if len(p.IdentityKey) < 32 {
 				return errors.New("identity: missing installation key")
 			}
-			mac := hmac.New(sha256.New, p.IdentityKey)
-			mac.Write([]byte("account-v1\x00" + Provider + "\x00" + strings.TrimSpace(*facts.Account.Email)))
-			account = "acct_" + hex.EncodeToString(mac.Sum(nil))
+			account = p.opaqueEmail(*facts.Account.Email)
 		}
 		if account != "" {
 			d.Account = &account

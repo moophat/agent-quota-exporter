@@ -5,6 +5,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | PR33 organization email redaction -->
+### PR33 organization email redaction | 2026-11-07
+**Meta:** fix/claude-identity-events | t9r/cx/gpt-6.1-sol | user PR33 Qodo follow-up
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Both findings repaired; acceptance passes; 75-second live run on 19481 reports root write success 1 and both identity shards have zero @ lines.
+**Key:** pre-envelope email token HMAC with account-v1 domain; no-key placeholder; reverted @ exception; WARN adds source/profile without payload values
+**Pending:** none; no commit
+<!-- END STUB: 2026-11-07 | PR33 organization email redaction -->
+
 <!-- BEGIN STUB: 2026-11-07 | Claude identity event rejection -->
 ### Claude identity event rejection | 2026-11-07
 **Meta:** fix/claude-identity-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/fix1-brief.md`

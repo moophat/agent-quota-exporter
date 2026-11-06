@@ -168,7 +168,12 @@ func (s *Store) Append(batch Batch) (result error) {
 			if errors.As(err, &invalid) {
 				field = invalid.field
 			}
-			slog.Warn("event envelope rejected", "field", field)
+			// Only configured writer identities are logged, never payload values.
+			if safeWriter(e) {
+				slog.Warn("event envelope rejected", "field", field, "source", e.Source, "profile", e.Profile)
+			} else {
+				slog.Warn("event envelope rejected", "field", field)
+			}
 			return err
 		}
 		line, err := json.Marshal(json.RawMessage(raw))
