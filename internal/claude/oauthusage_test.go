@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 )
 
 // stub is a fake vendor. Any request to another host or path fails the test: the plugin must never contact
@@ -330,6 +331,33 @@ func TestOAuthUsageRestoredAfterRestart(t *testing.T) {
 	}
 }
 
+func TestOAuthUsageLegacyLabelMigratesWhenUUIDMatches(t *testing.T) {
+	st := newStub(t, fixture(t, "oauth-usage-response.json"), 200, 500)
+	p := newProfile(t, "a")
+	_, state, err := collect(t, st.source(p), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	p.IdentityKey = bytes.Repeat([]byte{1}, 32)
+	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	res := st.source(p).Restore(state)
+	if len(res.Samples) == 0 || label(res.Samples[0], "account") == "" || label(res.Samples[0], "account")[:5] != "acct_" {
+		t.Fatalf("legacy state not migrated: %+v", res)
+	}
+	st.status = []int{500}
+	res, _, err = collect(t, st.source(p), t0.Add(20*time.Minute), state)
+	if err == nil || len(res.Samples) == 0 {
+		t.Fatalf("failure lost migrated last-good reading: %+v %v", res, err)
+	}
+}
+
 // Full path through the scheduler: an hour of 1 s ticks costs four vendor calls, and the token never shows up
 // in /metrics or the logs.
 func TestOAuthUsageThroughSchedulerNoLeak(t *testing.T) {
@@ -387,6 +415,25 @@ func TestOAuthUsageNoQuotaFromPreviousLogin(t *testing.T) {
 	}
 	if r := st.source(p).Restore(state); len(r.Samples) != 0 {
 		t.Fatal("old login's quota restored")
+	}
+}
+
+func TestOAuthUsageAliasDoesNotMaskChangedUUID(t *testing.T) {
+	st := newStub(t, fixture(t, "oauth-usage-response.json"), 200, 500)
+	p := newProfile(t, "a")
+	p.AccountAlias = "stable-alias"
+	_, state, err := collect(t, st.source(p), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	write(t, filepath.Join(filepath.Dir(p.Dir), ".claude.json"), []byte(`{"oauthAccount":{"accountUuid":"another-account"}}`))
+	res, _, err := collect(t, st.source(p), t0.Add(20*time.Minute), state)
+	if err == nil || len(res.Samples) != 0 {
+		t.Fatalf("alias reused old UUID quota: %v %v", res.Samples, err)
+	}
+	if res := st.source(p).Restore(state); len(res.Samples) != 0 {
+		t.Fatal("alias restored old UUID quota")
 	}
 }
 

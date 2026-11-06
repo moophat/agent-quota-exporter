@@ -21,6 +21,7 @@ func (s *AccountSource) MinInterval() time.Duration { return s.Interval }
 func (s *AccountSource) Network() bool              { return false }
 
 func (s *AccountSource) Collect(_ context.Context, now time.Time, _ json.RawMessage) (core.Result, json.RawMessage, error) {
+	identityErr := s.P.SampleIdentity(now)
 	if err := realDir(s.P.Dir); err != nil {
 		return core.Result{}, nil, err
 	}
@@ -45,5 +46,9 @@ func (s *AccountSource) Collect(_ context.Context, now time.Time, _ json.RawMess
 		samples = append(samples, core.Sample{Name: "agent_credential_expiry_timestamp_seconds",
 			Labels: s.P.labels(label, pl), Value: float64(exp.Unix())})
 	}
-	return core.Result{Samples: samples}, nil, nil
+	result := core.Result{Samples: samples}
+	if identityErr != nil {
+		result.Errors = map[string]int{core.ReasonOther: 1}
+	}
+	return result, nil, nil
 }
