@@ -1,7 +1,24 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-06T22:14:00Z
+**Last-Updated:** 2026-11-07T00:00:00Z
 
-## Active — B04 identity history | 2026-11-07
+## Paused
+None
+
+## Active — Q27 identity history repairs | 2026-11-07
+<!-- BEGIN STUB: 2026-11-07 | Q27 identity history repairs -->
+### Q27 identity history repairs | 2026-11-07
+**Meta:** feat/identity-history | t9r/cx/gpt-5.6-terra | `/root/orchestrator/plans/261106-2205-usage-parity/q27-brief.md`
+**Model:** t9r/cx/gpt-5.6-terra
+**Outcome:** all five Qodo findings fixed; requested tests, vet, formatting, diff check and focused race checks pass
+**Key:** UUID-safe quota migration, optional fallback merge, durable identity replay, 128-sample no-store cap, one-envelope retry buffer
+**Pending:** no commit or push
+<!-- END STUB: 2026-11-07 | Q27 identity history repairs -->
+- [x] Establish baseline and inspect code
+- [x] Repair confirmed findings with regressions
+- [x] Run requested verification
+
+## Log
+
 <!-- BEGIN STUB: 2026-11-07 | B04 identity history -->
 ### B04 identity history | 2026-11-07
 **Meta:** feat/identity-history | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/b04-brief.md`
@@ -10,14 +27,6 @@
 **Key:** exact allowlist; keyed email fallback; sampled switch gaps ambiguous
 **Pending:** none; no commit or push; minimal app wiring required for B03 store/key
 <!-- END STUB: 2026-11-07 | B04 identity history -->
-- [x] Inspect contracts and baseline
-- [x] Implement sampling and lookup
-- [x] Verify regression and acceptance checks
-
-## Paused
-None
-
-## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
 ### Q26 sink metrics repairs | 2026-11-07

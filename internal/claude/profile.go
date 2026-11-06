@@ -34,6 +34,7 @@ type Profile struct {
 	Events       *events.Store
 	IdentityKey  []byte
 	history      []identitySample
+	pending      json.RawMessage
 
 	mu       sync.Mutex
 	resolved bool

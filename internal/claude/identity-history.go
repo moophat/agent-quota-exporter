@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,6 +34,8 @@ type identitySample struct {
 	raw         json.RawMessage
 }
 
+const maxIdentityHistory = 128
+
 // IdentityBinding reports sampled evidence, not an exact historical login time.
 type IdentityBinding struct {
 	Account    *string
@@ -43,10 +46,9 @@ type IdentityBinding struct {
 // IdentityAt resolves only this host/profile. A differing next sample makes the
 // unobserved gap after the last confirmation ambiguous, never the new account.
 func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for i := len(p.history) - 1; i >= 0; i-- {
-		s := p.history[i]
+	samples := p.identityHistory()
+	for i := len(samples) - 1; i >= 0; i-- {
+		s := samples[i]
 		if at.Before(s.at) {
 			continue
 		}
@@ -54,7 +56,7 @@ func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
 		if s.data.Account == nil {
 			q = "unattributed"
 		}
-		if i+1 < len(p.history) && at.After(s.last) && !sameAccount(s.data.Account, p.history[i+1].data.Account) {
+		if i+1 < len(samples) && at.After(s.last) && !sameAccount(s.data.Account, samples[i+1].data.Account) {
 			q = "ambiguous"
 		}
 		var account *string
@@ -67,10 +69,39 @@ func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
 	return IdentityBinding{Quality: "unattributed"}
 }
 
+func (p *Profile) identityHistory() []identitySample {
+	p.mu.Lock()
+	live := append([]identitySample(nil), p.history...)
+	store := p.Events
+	p.mu.Unlock()
+	var saved []identitySample
+	if store != nil {
+		_ = store.Replay(func(raw json.RawMessage) error {
+			var row struct {
+				Kind    string       `json:"kind"`
+				Source  string       `json:"source"`
+				Host    string       `json:"host"`
+				Profile string       `json:"profile"`
+				Harness string       `json:"harness"`
+				Data    IdentityData `json:"data"`
+			}
+			if json.Unmarshal(raw, &row) != nil || row.Kind != "identity" || row.Source != "claude-account" || row.Host != p.Host || row.Profile != p.Alias || row.Harness != Harness || row.Data.EffectiveFrom.EpochSeconds == nil {
+				return nil
+			}
+			when := time.Unix(0, int64(*row.Data.EffectiveFrom.EpochSeconds*1e9))
+			saved = append(saved, identitySample{data: row.Data, at: when, last: when})
+			return nil
+		})
+	}
+	samples := append(saved, live...)
+	sort.SliceStable(samples, func(i, j int) bool { return samples[i].at.Before(samples[j].at) })
+	return samples
+}
+
 func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
 
-// SampleIdentity retains history even without an event sink. Pending envelopes are
-// retried verbatim after a failed append, preserving event IDs and collection clocks.
+// SampleIdentity retains one live binding. Durable identity events supply older bindings;
+// a single pending envelope is retried verbatim before another observation is accepted.
 func (p *Profile) SampleIdentity(now time.Time) error {
 	facts, mtime, readErr := readIdentityFacts(p)
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
@@ -96,6 +127,12 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 	fingerprint := hex.EncodeToString(sum[:])
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.Events != nil && p.pending != nil {
+		if err := p.Events.Append(events.Batch{Envelopes: []json.RawMessage{p.pending}}); err != nil {
+			return err
+		}
+		p.pending = nil
+	}
 	if len(p.history) == 0 || p.history[len(p.history)-1].fingerprint != fingerprint {
 		clock := identityTime(now, "collection")
 		idSum := sha256.Sum256([]byte("identity-v1\x00" + p.Host + "\x00" + p.Alias + "\x00" + Harness + "\x00claude-account\x00" + now.UTC().Format(time.RFC3339Nano) + "\x00" + fingerprint))
@@ -119,23 +156,28 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		p.history = append(p.history, identitySample{d, now, now, fingerprint, raw})
+		if p.Events != nil {
+			p.history = []identitySample{{d, now, now, fingerprint, raw}}
+		} else {
+			p.history = append(p.history, identitySample{d, now, now, fingerprint, nil})
+			if len(p.history) > maxIdentityHistory {
+				p.history = append([]identitySample(nil), p.history[len(p.history)-maxIdentityHistory:]...)
+			}
+		}
 	} else {
 		p.history[len(p.history)-1].last = now
 	}
 	if p.Events != nil {
-		var pending []json.RawMessage
-		for _, s := range p.history {
-			if s.raw != nil {
-				pending = append(pending, s.raw)
+		if p.history[0].raw != nil {
+			p.pending = p.history[0].raw
+		}
+		if p.pending != nil {
+			if err := p.Events.Append(events.Batch{Envelopes: []json.RawMessage{p.pending}}); err != nil {
+				return err
 			}
+			p.pending = nil
 		}
-		if err := p.Events.Append(events.Batch{Envelopes: pending}); err != nil {
-			return err
-		}
-		for i := range p.history {
-			p.history[i].raw = nil
-		}
+		p.history[0].raw = nil
 	}
 	return nil
 }

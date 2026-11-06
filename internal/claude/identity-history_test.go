@@ -165,3 +165,70 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 		t.Fatalf("lost metadata %+v", m)
 	}
 }
+
+func TestIdentityOptionalFallbackKeepsAliasAndMetadata(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	p.AccountAlias = "operator-alias"
+	credential := `{"claudeAiOauth":{"expiresAt":1767232800000},"oauthAccount":{"organizationName":"Kept"}}`
+	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(credential))
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	got := p.IdentityAt(t0)
+	if got.Account == nil || *got.Account != "operator-alias" {
+		t.Fatalf("alias lost: %+v", got)
+	}
+	if p.history[0].data.Metadata.OrganizationName == nil || *p.history[0].data.Metadata.OrganizationName != "Kept" {
+		t.Fatalf("credential metadata lost: %+v", p.history[0].data.Metadata)
+	}
+	p = identityProfile(t, "profile-b")
+	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(`{"claudeAiOauth":{"expiresAt":1767232800000},"oauthAccount":{"emailAddress":"credential@example.com"}}`))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"fallback@example.com","organizationName":"Kept"}}`))
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	if p.history[0].data.Account == nil || p.history[0].data.Metadata.OrganizationName == nil || *p.history[0].data.Metadata.OrganizationName != "Kept" {
+		t.Fatalf("fallback overwrote credential metadata: %+v", p.history[0].data)
+	}
+}
+
+func TestIdentityHistoryRebuildsFromStoreAndStaysBounded(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	root := t.TempDir()
+	s, err := events.Open(events.Options{Root: root, Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	first := p.IdentityAt(t0)
+	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.history) != 1 || p.pending != nil {
+		t.Fatalf("unbounded durable history: %d pending %v", len(p.history), p.pending != nil)
+	}
+	restarted := identityProfile(t, "profile-a")
+	restarted.Events = s
+	if got := restarted.IdentityAt(t0); got.Account == nil || first.Account == nil || *got.Account != *first.Account {
+		t.Fatalf("restart lost old binding: %+v", got)
+	}
+	plain := identityProfile(t, "plain")
+	for i := 0; i < maxIdentityHistory+1; i++ {
+		write(t, filepath.Join(plain.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", string(rune('b'+i))+"@example.com")))
+		if err := plain.SampleIdentity(t0.Add(time.Duration(i) * time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(plain.history) != maxIdentityHistory {
+		t.Fatalf("history grew without bound: %d", len(plain.history))
+	}
+	for _, sample := range plain.history {
+		if sample.raw != nil {
+			t.Fatal("event-disabled history retained serialized envelope")
+		}
+	}
+}

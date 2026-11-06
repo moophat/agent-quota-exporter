@@ -2,7 +2,9 @@ package claude
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -47,10 +49,12 @@ type identityFacts struct {
 		SubscriptionType      *string `json:"subscriptionType"`
 		RateLimitTier         *string `json:"rateLimitTier"`
 	} `json:"claudeAiOauth"`
-	Account struct {
-		Email *string `json:"emailAddress"`
-		IdentityMetadata
-	} `json:"oauthAccount"`
+	Account identityAccount `json:"oauthAccount"`
+}
+
+type identityAccount struct {
+	Email *string `json:"emailAddress"`
+	IdentityMetadata
 }
 
 // readIdentityFacts decodes only named metadata leaves, never token values or arbitrary objects.
@@ -81,24 +85,60 @@ func readIdentityFacts(p *Profile) (identityFacts, IdentityTimestamp, error) {
 		return identityFacts{}, mtime, core.Fail(core.ReasonParse)
 	}
 	// Claude normally keeps oauthAccount in .claude.json, not credentials.
-	// Decode the same exact account allowlist there when it is absent in credentials.
-	if facts.Account.Email == nil {
+	// Fill only missing leaves, so credential metadata is never discarded.
+	if identityAccountIncomplete(facts.Account) {
 		b, err = readSmall(ClaudeJSONPath(p.Dir, p.ConfigDir), 64<<20)
 		if err == nil {
 			defer wipe(b)
 			var account struct {
-				Account struct {
-					Email *string `json:"emailAddress"`
-					IdentityMetadata
-				} `json:"oauthAccount"`
+				Account identityAccount `json:"oauthAccount"`
 			}
 			if json.Unmarshal(b, &account) != nil {
 				return identityFacts{}, mtime, core.Fail(core.ReasonParse)
 			}
-			facts.Account = account.Account
-		} else {
+			mergeIdentityAccount(&facts.Account, account.Account)
+		} else if !isNotFound(err) {
 			return facts, mtime, err
 		}
 	}
 	return facts, mtime, nil
+}
+
+func identityAccountIncomplete(account identityAccount) bool {
+	return account.Email == nil || account.OrganizationName == nil || account.OrganizationType == nil || account.BillingType == nil || account.SeatTier == nil || account.HasExtraUsageEnabled == nil || account.OrganizationRateLimitTier == nil || account.UserRateLimitTier == nil
+}
+
+func isNotFound(err error) bool {
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	var sourceErr *core.SourceError
+	return errors.As(err, &sourceErr) && sourceErr.Reason == core.ReasonNotFound
+}
+
+func mergeIdentityAccount(dst *identityAccount, fallback identityAccount) {
+	if dst.Email == nil {
+		dst.Email = fallback.Email
+	}
+	if dst.OrganizationName == nil {
+		dst.OrganizationName = fallback.OrganizationName
+	}
+	if dst.OrganizationType == nil {
+		dst.OrganizationType = fallback.OrganizationType
+	}
+	if dst.BillingType == nil {
+		dst.BillingType = fallback.BillingType
+	}
+	if dst.SeatTier == nil {
+		dst.SeatTier = fallback.SeatTier
+	}
+	if dst.HasExtraUsageEnabled == nil {
+		dst.HasExtraUsageEnabled = fallback.HasExtraUsageEnabled
+	}
+	if dst.OrganizationRateLimitTier == nil {
+		dst.OrganizationRateLimitTier = fallback.OrganizationRateLimitTier
+	}
+	if dst.UserRateLimitTier == nil {
+		dst.UserRateLimitTier = fallback.UserRateLimitTier
+	}
 }
