@@ -20,6 +20,12 @@
 //   - A WAL database that no writer has open is read immutable by sqlro (no -wal or -shm is created), so the final
 //     rows a closing opencode checkpointed are still counted. sqlro.ErrIdle now means only an odd state with one
 //     sidecar missing: the persisted counters are served for that cycle.
+//
+// Event emission (B31):
+//   - When an *events.Store is configured (non-nil), one usage event is emitted per complete assistant message,
+//     and one collect event per opened database cycle capturing startup skip, pending evictions and abandonments.
+//   - When events are nil, all event-related code is bypassed and plugin behaviour is identical to pre-B31.
+//   - Session, project, cwd, branch, skill, tier, speed are not selected and remain null in events — never guessed.
 package opencode
 
 import (
@@ -38,6 +44,7 @@ import (
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/sqlro"
 )
 
@@ -97,7 +104,7 @@ const (
 var allow = sqlro.Allow{table: cols[1:]}
 
 // Build returns the sources for one resolved opencode profile; r.Dir is the data dir holding opencode.db.
-func Build(cfg *config.Config, r config.Resolved, host string) []core.Source {
+func Build(cfg *config.Config, r config.Resolved, host string, ev *events.Store) []core.Source {
 	account := r.Account
 	if account == "" {
 		account = r.Alias
@@ -105,7 +112,9 @@ func Build(cfg *config.Config, r config.Resolved, host string) []core.Source {
 	return []core.Source{&DBSource{Host: host, Alias: r.Alias, Account: account,
 		Path:      filepath.Join(r.Dir, dbFile),
 		MaxModels: cfg.Metrics.MaxModelsPerProfile,
-		Interval:  cfg.SourceInterval(SourceName, cfg.Defaults.UsageInterval.D())}}
+		Interval:  cfg.SourceInterval(SourceName, cfg.Defaults.UsageInterval.D()),
+		Events:    ev,
+	}}
 }
 
 // DBSource is `opencode-db` for one profile (one opencode data dir).
@@ -114,6 +123,7 @@ type DBSource struct {
 	Path                 string // opencode.db
 	MaxModels            int    // (provider, model) series per profile; the rest count into model="other"
 	Interval             time.Duration
+	Events               *events.Store // nil when events are disabled; never exposed as a metric
 
 	mu sync.Mutex
 	st *dbState // in-memory state, loaded from the persisted blob on the first collect
@@ -173,12 +183,22 @@ func (s *DBSource) load(raw json.RawMessage) {
 	s.st = st
 }
 
+// collectTracker accumulates per-run event data when events are enabled.
+type collectTracker struct {
+	completed   []emittableMessage
+	evicted     int64
+	abandoned   int64
+	inFlight    bool
+	startupSkip bool
+}
+
 // Collect opens the database, reads what is new, closes it, and returns every counter.
 func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessage) (core.Result, json.RawMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load(raw)
 
+	collectStart := now
 	db, err := sqlro.Open(s.Path, allow)
 	if errors.Is(err, sqlro.ErrIdle) {
 		return core.Result{Samples: s.samples()}, nil, nil // nothing can have changed; state unchanged
@@ -187,7 +207,11 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 		return core.Result{}, nil, err
 	}
 	errs := map[string]int{}
-	err = s.read(ctx, db, fileIno(s.Path), now, errs)
+	var tr *collectTracker
+	if s.Events != nil {
+		tr = &collectTracker{}
+	}
+	err = s.read(ctx, db, fileIno(s.Path), now, errs, tr)
 	if cerr := db.Close(); err == nil {
 		err = cerr
 	}
@@ -199,8 +223,42 @@ func (s *DBSource) Collect(ctx context.Context, now time.Time, raw json.RawMessa
 	if merr != nil {
 		return res, nil, core.Fail(core.ReasonOther)
 	}
+	// Emit events asynchronously of the metric result; failures must not degrade metrics.
+	if tr != nil {
+		s.emitBatch(now, collectStart, tr)
+	}
 	// Progress made before a failure is kept: every row applied was read whole.
 	return res, blob, err
+}
+
+// emitBatch builds and appends a batch of usage events plus one collect event to the event store.
+// Errors from the event store are silently swallowed: they must not degrade metrics.
+func (s *DBSource) emitBatch(now, collectStart time.Time, tr *collectTracker) {
+	var envelopes []json.RawMessage
+	for _, m := range tr.completed {
+		if raw, err := s.buildUsageEvent(now, m); err == nil {
+			envelopes = append(envelopes, raw)
+		}
+	}
+	// Always emit a collect event capturing startup skip, evictions and abandonments.
+	rid := runID(s.Host, s.Alias, SourceName, now)
+	filesRead := int64(1) // the database was opened (this function is only called when it was)
+	cf := collectFields{
+		startedAt:        collectStart,
+		endedAt:          now,
+		filesRead:        filesRead,
+		startupSkip:      tr.startupSkip,
+		pendingEvicted:   tr.evicted,
+		pendingAbandoned: tr.abandoned,
+		inFlight:         tr.inFlight,
+		completion:       "complete",
+	}
+	if raw, err := s.buildCollectEvent(now, rid, cf); err == nil {
+		envelopes = append(envelopes, raw)
+	}
+	if len(envelopes) > 0 {
+		_ = s.Events.Append(events.Batch{Envelopes: envelopes})
+	}
 }
 
 // fileIno is the database file's inode (0 if unknown). sqlro has already refused a path with a link on it.
@@ -215,7 +273,9 @@ func fileIno(path string) uint64 {
 	return 0
 }
 
-func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.Time, errs map[string]int) error {
+// read reads new rows from db into s.st. When tr is non-nil (events enabled), it also populates tr with
+// per-message facts and pending-drop counts for event emission.
+func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.Time, errs map[string]int, tr *collectTracker) error {
 	st := s.st
 	last, err := db.MaxRowid(table)
 	if err != nil {
@@ -223,6 +283,9 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 	}
 	if !st.Init {
 		st.Init, st.Cursor, st.Ino = true, last, ino
+		if tr != nil {
+			tr.startupSkip = true
+		}
 		return nil
 	}
 	if ino != 0 && st.Ino != 0 && ino != st.Ino {
@@ -244,7 +307,7 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 			return err
 		}
 		for _, r := range rows {
-			s.apply(r, now, errs)
+			s.apply(r, now, errs, tr)
 			if id, ok := r[cRowid].(int64); ok && id > st.Cursor {
 				st.Cursor = id
 			}
@@ -254,7 +317,10 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 		}
 	}
 
-	s.capPending(errs)
+	evicted := s.capPendingCounted(errs)
+	if tr != nil {
+		tr.evicted = evicted
+	}
 	ids := make([]string, 0, len(st.Pending))
 	for id := range st.Pending {
 		ids = append(ids, id)
@@ -269,7 +335,7 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 		found := make(map[string]bool, len(rows))
 		for _, r := range rows {
 			found[str(r[cID])] = true
-			s.apply(r, now, errs)
+			s.apply(r, now, errs, tr)
 		}
 		for _, id := range chunk {
 			if !found[id] {
@@ -277,17 +343,24 @@ func (s *DBSource) read(ctx context.Context, db *sqlro.DB, ino uint64, now time.
 			}
 		}
 	}
+	var ab int64
 	for id, p := range st.Pending {
 		if now.Sub(time.Unix(p.Seen, 0)) > pendingMaxAge {
 			delete(st.Pending, id)
 			errs[core.ReasonOther]++
+			ab++
 		}
+	}
+	if tr != nil {
+		tr.abandoned = ab
+		tr.inFlight = len(st.Pending) > 0
 	}
 	return nil
 }
 
 // apply counts a complete assistant row once, tracks an incomplete one as pending, and ignores other roles.
-func (s *DBSource) apply(r []any, now time.Time, errs map[string]int) {
+// When tr is non-nil, it appends a completed message's facts to tr.completed.
+func (s *DBSource) apply(r []any, now time.Time, errs map[string]int, tr *collectTracker) {
 	st := s.st
 	id := str(r[cID])
 	role, ok := r[cRole].(string)
@@ -321,31 +394,73 @@ func (s *DBSource) apply(r []any, now time.Time, errs map[string]int) {
 		t = &total{}
 		st.Totals[key] = t
 	}
-	t.In += count(r[cIn])
-	t.Out += count(r[cOut])
-	t.Reasoning += count(r[cReasoning])
-	t.CacheRead += count(r[cCacheRead])
-	t.CacheW += count(r[cCacheWrite])
+	inTok := count(r[cIn])
+	outTok := count(r[cOut])
+	rsnTok := count(r[cReasoning])
+	crTok := count(r[cCacheRead])
+	cwTok := count(r[cCacheWrite])
+	t.In += inTok
+	t.Out += outTok
+	t.Reasoning += rsnTok
+	t.CacheRead += crTok
+	t.CacheW += cwTok
+	var cost float64
 	if c, ok := num(r[cCost]); ok && c > 0 {
 		t.Cost += c
-	}
-	if errName == "" {
-		t.OK++
-		return
-	}
-	t.Err++
-	if t.Codes == nil {
-		t.Codes = map[string]int64{}
+		cost = c
 	}
 	status, _ := num(r[cErrStatus])
-	t.Codes[errCode(errName, status)]++
+	if errName == "" {
+		t.OK++
+	} else {
+		t.Err++
+		if t.Codes == nil {
+			t.Codes = map[string]int64{}
+		}
+		t.Codes[errCode(errName, status)]++
+	}
+
+	// Collect emittable facts when events are enabled. The raw message ID and rowid are used for the
+	// event locator and event_id; model/provider use the pre-cap raw labels (before labelFor reduces them)
+	// so the event preserves the original observed value. The metric label that may become "other" is
+	// separate from the durable event fact.
+	if tr != nil {
+		rowID, _ := r[cRowid].(int64)
+		rawProvider := providerLabel(str(r[cProvider])) // already bounded
+		rawModel := modelLabel(str(r[cModel]))          // already bounded; event stores the observed value
+		var completedMs int64
+		switch v := r[cCompleted].(type) {
+		case int64:
+			completedMs = v
+		case float64:
+			if !math.IsNaN(v) && !math.IsInf(v, 0) && v > 0 && v < 1<<53 {
+				completedMs = int64(v)
+			}
+		}
+		tr.completed = append(tr.completed, emittableMessage{
+			messageID:   id,
+			rowID:       rowID,
+			provider:    rawProvider,
+			model:       rawModel,
+			in:          inTok,
+			out:         outTok,
+			reasoning:   rsnTok,
+			cacheRead:   crTok,
+			cacheW:      cwTok,
+			errName:     errName,
+			errStatus:   status,
+			cost:        cost,
+			completedMs: completedMs,
+		})
+	}
 }
 
-// capPending drops the oldest pending messages beyond pendingCap, counting each as a source error.
-func (s *DBSource) capPending(errs map[string]int) {
+// capPendingCounted drops the oldest pending messages beyond pendingCap, counting each as a source error,
+// and returns the count of dropped messages.
+func (s *DBSource) capPendingCounted(errs map[string]int) int64 {
 	p := s.st.Pending
 	if len(p) <= pendingCap {
-		return
+		return 0
 	}
 	ids := make([]string, 0, len(p))
 	for id := range p {
@@ -357,10 +472,13 @@ func (s *DBSource) capPending(errs map[string]int) {
 		}
 		return ids[i] < ids[j]
 	})
+	var n int64
 	for _, id := range ids[:len(ids)-pendingCap] {
 		delete(p, id)
 		errs[core.ReasonOther]++
+		n++
 	}
+	return n
 }
 
 // errCode maps opencode's error name (and an APIError's HTTP status) to the contract's bounded `code`. The

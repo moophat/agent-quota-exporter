@@ -1,5 +1,5 @@
 # WORK_TRACKER
-**Last-Updated:** 2026-11-06T22:14:00Z
+**Last-Updated:** 2026-11-07T17:19:00Z
 
 ## Active — Q26 sink metrics repairs | 2026-11-07
 <!-- BEGIN STUB: 2026-11-07 | Q26 sink metrics repairs -->
@@ -18,6 +18,15 @@
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-07 | B31 opencode event coverage -->
+### B31 opencode event coverage | 2026-11-07
+**Meta:** feat/opencode-events | t9r/cx/gpt-5.6-terra | `BRIEF.md`
+**Model:** t9r/cx/gpt-5.6-terra
+**Outcome:** complete; build, focused tests, vet and format pass
+**Key:** optional usage and collect events; deterministic replay; explicit in-flight partial coverage; locator row_id validation
+**Pending:** none; no commit or push
+<!-- END STUB: 2026-11-07 | B31 opencode event coverage -->
 
 <!-- BEGIN STUB: 2026-11-06 | B03 event sink configuration -->
 ### B03 event sink configuration | 2026-11-06

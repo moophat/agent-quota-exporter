@@ -16,6 +16,7 @@ import (
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
+	"github.com/moophat/agent-quota-exporter/internal/events"
 	"github.com/moophat/agent-quota-exporter/internal/sqlro"
 )
 
@@ -230,14 +231,14 @@ func TestGolden(t *testing.T) {
 // Build wires the profile: account falls back to the alias, interval to the usage default, path to <dir>/opencode.db.
 func TestBuild(t *testing.T) {
 	cfg := config.Default()
-	srcs := Build(cfg, config.Resolved{Harness: "opencode", Alias: "lane-2", Dir: "/data/oc"}, "node-a")
+	srcs := Build(cfg, config.Resolved{Harness: "opencode", Alias: "lane-2", Dir: "/data/oc"}, "node-a", nil)
 	s := srcs[0].(*DBSource)
 	if len(srcs) != 1 || s.Name() != "opencode-db" || s.Harness() != "opencode" || s.Profile() != "lane-2" ||
 		s.Account != "lane-2" || s.Path != "/data/oc/opencode.db" || s.Network() ||
 		s.MinInterval() != cfg.Defaults.UsageInterval.D() || s.MaxModels != cfg.Metrics.MaxModelsPerProfile {
 		t.Fatalf("build: %+v", s)
 	}
-	srcs = Build(cfg, config.Resolved{Harness: "opencode", Alias: "lane-2", Account: "acct-x", Dir: "/d"}, "h")
+	srcs = Build(cfg, config.Resolved{Harness: "opencode", Alias: "lane-2", Account: "acct-x", Dir: "/d"}, "h", nil)
 	if srcs[0].(*DBSource).Account != "acct-x" {
 		t.Fatal("configured account must win over the alias")
 	}
@@ -686,5 +687,232 @@ func TestDeletionKeepsOtherPending(t *testing.T) {
 	got := r.collect(t, s, t0.Add(3*time.Minute))
 	if got["agent_tokens_total{provider-a,model-y,input}"] != 42 {
 		t.Fatalf("an in-flight message was lost when newer rows were deleted: %v", got)
+	}
+}
+
+// --- B31 event-emission tests ---
+// All three tests below are designed to fail without the event-emission code in opencode.go / events.go.
+
+// openStore opens a fresh event store in a temp directory and returns its root for restart tests.
+func openStore(t *testing.T) (*events.Store, string) {
+	t.Helper()
+	root := t.TempDir()
+	now := t0
+	st, err := events.Open(events.Options{
+		Root:    root,
+		Budget:  1 << 24, // 16 MiB
+		Reserve: 1 << 20,
+		Now:     func() time.Time { return now },
+		Free:    func(string) (int64, error) { return 1 << 30, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, root
+}
+
+// replayKinds replays all events from the store and returns a map of kind → count.
+func replayKinds(t *testing.T, st *events.Store) map[string]int {
+	t.Helper()
+	counts := map[string]int{}
+	if err := st.Replay(func(raw json.RawMessage) error {
+		var e struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return err
+		}
+		counts[e.Kind]++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return counts
+}
+
+// replayEventIDs returns the set of event_ids stored in the event store.
+func replayEventIDs(t *testing.T, st *events.Store) map[string]bool {
+	t.Helper()
+	ids := map[string]bool{}
+	if err := st.Replay(func(raw json.RawMessage) error {
+		var e struct {
+			EventID string `json:"event_id"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return err
+		}
+		ids[e.EventID] = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+// TestEventsDisabledNoOp verifies that setting Events=nil leaves metric behaviour identical to pre-B31.
+// This test fails before the B31 change because without events.Store support in Build/DBSource, the
+// field does not exist and cannot be set to nil.
+func TestEventsDisabledNoOp(t *testing.T) {
+	path, w := emptyDB(t, false)
+	s, r := source(path, 20), &run{}
+	// s.Events is nil (zero value) — events must be a no-op.
+	if s.Events != nil {
+		t.Fatal("Events must default to nil")
+	}
+	r.collect(t, s, t0)
+	insert(t, w, "m1", done("provider-a", "model-y", 10, 2, 0, 0, 0, 0))
+	got := r.collect(t, s, t0.Add(time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 10 {
+		t.Fatalf("events disabled: metrics wrong: %v", got)
+	}
+}
+
+// TestEventRepeatImportIdempotent verifies that appending the same events a second time (same rows, same
+// collect cycle) does not produce duplicate events in the store. This is the "repeat import idempotent"
+// acceptance criterion from the BRIEF.
+//
+// Without the B31 change this test fails because DBSource has no Events field and Build ignores a store.
+func TestEventRepeatImportIdempotent(t *testing.T) {
+	path, w := emptyDB(t, false)
+	st, root := openStore(t)
+
+	s := &DBSource{
+		Host: "node-a", Alias: "lane-1", Account: "acct-b1",
+		Path: path, MaxModels: 20, Interval: time.Minute,
+		Events: st,
+	}
+	r := &run{}
+	r.collect(t, s, t0) // init cycle; records startup skip
+	stateBeforeMessage := append(json.RawMessage(nil), r.state...)
+
+	insert(t, w, "m1", done("provider-a", "model-y", 100, 50, 10, 5, 3, 0.01))
+	collectedAt := t0.Add(time.Minute)
+	r.collect(t, s, collectedAt) // counts m1, emits usage+collect events
+
+	ids1 := replayEventIDs(t, st)
+	if len(ids1) == 0 {
+		t.Fatal("no events stored after first run; Events field not wired")
+	}
+
+	// Re-open the same store and replay the pre-message source state at the same collection instant.
+	// This models a retry before the source cursor checkpoint; the deterministic event id and payload
+	// must keep the physical message at one durable event.
+	st2, err := events.Open(events.Options{
+		Root:    root,
+		Budget:  1 << 24,
+		Reserve: 1 << 20,
+		Now:     func() time.Time { return collectedAt },
+		Free:    func(string) (int64, error) { return 1 << 30, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Re-run the same source record from its pre-message state.
+	s2 := &DBSource{
+		Host: "node-a", Alias: "lane-1", Account: "acct-b1",
+		Path: path, MaxModels: 20, Interval: time.Minute,
+		Events: st2,
+	}
+	r2 := &run{state: stateBeforeMessage}
+	r2.collect(t, s2, collectedAt)
+
+	ids2 := replayEventIDs(t, st2)
+	// The usage event from m1 must appear exactly once (idempotent replay).
+	var usageCount int
+	if err := st2.Replay(func(raw json.RawMessage) error {
+		var e struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		if e.Kind == "usage" {
+			usageCount++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if usageCount != 1 || len(ids2) != len(ids1) {
+		t.Fatalf("want exactly 1 usage event (idempotent), got %d; total event ids: %d vs %d", usageCount, len(ids1), len(ids2))
+	}
+}
+
+// TestIncompleteInFlightVisibleNotZero verifies that an incomplete (streaming) assistant message is
+// visible in the collect event as a pending item — specifically, the collect event's pending awareness
+// is non-zero — rather than being silently zeroed. The spec acceptance criterion:
+// "an incomplete in-flight message is visible as incomplete, not zero."
+//
+// The test checks this by:
+//  1. Inserting a streaming (incomplete) message.
+//  2. Running a collect cycle — the message goes into the pending set.
+//  3. Verifying that the collect event carries a non-zero evicted_count or omission_reason
+//     reflecting that there is pending work, OR that the pending set is non-empty after the cycle.
+//     (The latter is the direct observable; the event is the durable record.)
+//
+// Without the B31 change this test fails because DBSource has no Events field.
+func TestIncompleteInFlightVisibleNotZero(t *testing.T) {
+	path, w := emptyDB(t, false)
+	st, _ := openStore(t)
+
+	s := &DBSource{
+		Host: "node-a", Alias: "lane-1", Account: "acct-b1",
+		Path: path, MaxModels: 20, Interval: time.Minute,
+		Events: st,
+	}
+	r := &run{}
+	r.collect(t, s, t0) // init
+
+	// Insert a message that is still streaming (incomplete): no time.completed, no error.
+	insert(t, w, "streaming-msg", streaming("provider-a", "model-y", 50))
+	r.collect(t, s, t0.Add(time.Minute)) // msg goes to pending; no metric output yet
+
+	// The in-flight message must be in the pending set (not silently dropped or zeroed).
+	if len(s.st.Pending) != 1 {
+		t.Fatalf("in-flight message not tracked as pending: %v", s.st.Pending)
+	}
+
+	// The durable collection record must explicitly say that coverage is partial because the
+	// message is in flight, rather than recording an observed zero.
+	var partial bool
+	var usageCount int
+	if err := st.Replay(func(raw json.RawMessage) error {
+		var e struct {
+			Kind    string `json:"kind"`
+			Quality struct {
+				Status  string   `json:"status"`
+				Reasons []string `json:"reasons"`
+			} `json:"quality"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return err
+		}
+		if e.Kind == "usage" {
+			usageCount++
+		}
+		if e.Kind == "collect" && e.Quality.Status == "partial" &&
+			reflect.DeepEqual(e.Quality.Reasons, []string{"in_flight_message"}) {
+			partial = true
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !partial || usageCount != 0 {
+		t.Fatalf("in-flight coverage: partial=%v usage events=%d", partial, usageCount)
+	}
+
+	// Now complete the message and verify it transitions from pending to counted (not stuck at zero).
+	update(t, w, "streaming-msg", done("provider-a", "model-y", 100, 200, 0, 0, 0, 0))
+	got := r.collect(t, s, t0.Add(2*time.Minute))
+	if got["agent_tokens_total{provider-a,model-y,input}"] != 100 {
+		t.Fatalf("in-flight message not counted after completion: %v", got)
+	}
+	if len(s.st.Pending) != 0 {
+		t.Fatalf("pending set not cleared after completion: %v", s.st.Pending)
+	}
+
+	// A usage event must have been emitted for the now-completed message.
+	kinds2 := replayKinds(t, st)
+	if kinds2["usage"] == 0 {
+		t.Fatalf("no usage event for completed message; Events field not wired")
 	}
 }

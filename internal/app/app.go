@@ -50,7 +50,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		case config.HarnessCodex:
 			srcs = codex.Build(cfg, r, host, version)
 		case config.HarnessOpencode:
-			srcs = opencode.Build(cfg, r, host)
+			srcs = opencode.Build(cfg, r, host, b.Events)
 		case config.HarnessRouter:
 			srcs = router.Build(cfg, r, host)
 		case config.HarnessAgy:
