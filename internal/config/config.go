@@ -44,6 +44,21 @@ type Config struct {
 	Sources   map[string]Source `yaml:"sources"`
 	OTLP      OTLP              `yaml:"otlp"`
 	Events    Events            `yaml:"events"`
+	Strata    []Lane            `yaml:"strata"`
+}
+
+// Lane opts into one read-only Strata server. An empty list makes no requests.
+type Lane struct {
+	Name     string   `yaml:"name"`
+	BaseURL  string   `yaml:"base_url"`
+	Interval Duration `yaml:"interval"`
+}
+
+func (l Lane) PollInterval() time.Duration {
+	if l.Interval == 0 {
+		return 30 * time.Second
+	}
+	return l.Interval.D()
 }
 
 type Discovery struct {

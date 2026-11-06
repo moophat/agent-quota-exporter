@@ -21,6 +21,24 @@ General rules for every source:
   `-shm`, `specs/decisions.md` D8.) Never invoke an agent CLI that can start sessions or refresh logins, unless the
   source below says so and it is opt-in.
 
+## Strata (harness `strata`, source `strata`)
+
+Explicit opt-in with top-level `strata: [{name: lane-a, base_url: "http://127.0.0.1:8080", interval: 30s}]`;
+absent/empty by default, no discovery. Each entry names a unique lane. Default poll interval 30 s, hard floor
+5 s. Only read-only GET `/slots` and `/metrics` (JSON, not Prometheus) below the configured base URL;
+no credentials, token reads, inference calls or redirects. URLs must have no credentials, query or fragment.
+Each response is bounded to 1 MiB and reads to the scheduler's 10 s timeout. Each lane has its own network
+gate, 5 s minimum spacing and 1 min 429 backoff, independent of vendor sources. Other failures retry at the
+normal jittered interval. The scheduler persists attempt/backoff gates and emits standard source health.
+
+Allowlist: slot `is_processing` and list length; `live.queued`, `totals.requests`,
+`engine.{model,images,max_context}`. Ignore per-request histories, prompts and conversation cache data.
+Map to the five `agent_lane_*` families in metric-contract.md; missing/null numeric values are absent,
+never synthesized zero. A failed endpoint fails the poll atomically; last-good samples age out at
+`max(defaults.stale_after, 3 × interval)` without a failed poll refreshing them. No persisted lane samples
+are restored after restart. Evidence: supplied captured response fixtures in `internal/strata/testdata/`;
+runtime tested with a local HTTP server, no live server verification.
+
 ## Claude Code (harness `claude-code`, provider `anthropic`)
 
 A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separated by separate config dirs).

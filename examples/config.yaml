@@ -1,6 +1,11 @@
 # Example configuration for agent-quota-exporter (Claude Code profiles only in this version).
 # Path: --config FILE or AGENT_QUOTA_EXPORTER_CONFIG. Every key is optional except version.
 version: 1
+# Optional lane monitoring (off by default):
+# strata:
+#   - name: lane-a
+#     base_url: http://127.0.0.1:8080
+#     interval: 30s              # default 30s, minimum 5s
 listen: "127.0.0.1:9877"        # default port 9877; set it to what your scraper expects. A port in use fails startup (exit 1).
                                 # Expose beyond localhost only behind your scraper's network.
 # host: node-a                  # label value; default = OS hostname
