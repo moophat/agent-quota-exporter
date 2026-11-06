@@ -102,3 +102,21 @@ static release build) is not wanted.
 
 Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always
 explicit).
+
+## Usage parity contract revision (B01)
+
+**AI-Model:** t9r/cx/gpt-6.1-sol
+
+The authorized usage-parity brief replaces the agent-imposed metrics-only history boundary with
+the optional generic [event-contract.md](event-contract.md). This records that delivery requirement,
+not a new ruling attributed to Tu. All recorded Tu decisions and quotations above remain unchanged:
+in particular D4 is about per-session **metrics**, not private session event facts; D9 still excludes
+balance plugins and money-based usage. Original restricted manual charge evidence is retained with
+unit verification, not displayed as money or silently converted to quota points.
+
+The parity freshness/failure policy supersedes blanket ordinary-failure one-hour backoff and
+metric-staleness-as-history-deletion interpretations. It preserves direct Claude's 900 s floor,
+actual rate-limit cooldowns, guard stops and no-refresh rule. These are implementation requirements,
+not completed repairs. The existing agy CLI's possible credential refresh conflicts with the parity
+no-refresh boundary; no new permission to launch/refresh a client is inferred. Resolve before claiming
+runtime parity. Codex real-response verification and unverified manual quota units remain explicit.

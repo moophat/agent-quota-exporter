@@ -1,10 +1,32 @@
 # WORK_TRACKER
+
+## Active — B01 durable event contract | 2026-11-06
+<!-- BEGIN STUB: 2026-11-06 | B01 durable event contract -->
+### B01 durable event contract | 2026-11-06
+**Meta:** feat/usage-parity-events | t9r/cx/gpt-6.1-sol | `specs/event-contract.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** B01 contract complete; 17/17 L1 coverage verified; original decisions preserved; documentation checks pass
+**Key:** B01 only; optional generic events; public metric dimensions bounded; Tu rulings preserved
+**Pending:** agy refresh/retained-reader authority conflict; Codex response and manual charge units remain unverified; no runtime work
+<!-- END STUB: 2026-11-06 | B01 durable event contract -->
+- [x] Inspect authority and existing contracts
+- [x] Author event envelope and reconcile companion specs
+- [x] Verify coverage, examples and decisions
 **Last-Updated:** 2026-11-04T16:45:00Z
 
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
+### PR #21 cache trust and health fixes | 2026-11-05
+**Meta:** feat/claude-statusline-cache | codex | PR #21
+**Model:** codex
+**Outcome:** complete in working tree; focused regressions, go vet ./... and go test -race ./... exit 0; diff reviewed
+**Key:** synthetic files only; no live machine, credential contents, claude, commits, push or tags
+**Pending:** live cache/systemd and non-root execution unverified; existing SQLite root-only skip and helper skip; no commit, push or tag
+<!-- END STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
 
 <!-- BEGIN STUB: 2026-11-05 | Claude statusline cache (#20) -->
 ### Claude statusline cache (#20) | 2026-11-05
@@ -60,16 +82,3 @@ None
 <!-- END STUB: 2026-10-28 | Repo convention setup -->
 
 (Earlier entry, 2026-10-28 03:38 +07, claude-sonnet-5-5: initial repo setup, docs/plan, contract, sources, fixtures, no code.)
-
-## Active — PR #21 cache trust and health fixes | 2026-11-05
-<!-- BEGIN STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
-### PR #21 cache trust and health fixes | 2026-11-05
-**Meta:** feat/claude-statusline-cache | codex | PR #21
-**Model:** codex
-**Outcome:** complete in working tree; focused regressions, go vet ./... and go test -race ./... exit 0; diff reviewed
-**Key:** synthetic files only; no live machine, credential contents, claude, commits, push or tags
-**Pending:** live cache/systemd and non-root execution unverified; existing SQLite root-only skip and helper skip; no commit, push or tag
-<!-- END STUB: 2026-11-05 | PR #21 cache trust and health fixes -->
-- [x] Inspect requested files and prove affected paths; baseline verification
-- [x] Implement trust, credential mtime and classified failure handling
-- [x] Verify regression tests, review diff and run required vet/race checks

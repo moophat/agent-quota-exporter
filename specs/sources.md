@@ -6,6 +6,11 @@ binary's own help), **unverified** (reported by others, not run). A builder must
 
 General rules for every source:
 
+- Optional private structural history follows [event-contract.md](event-contract.md). Its field
+  allowlists and freshness/failure requirements supersede metrics-only exclusions below. Current
+  implementation details remain evidence of existing behavior, not proof the new event lane is built.
+  Capture original IDs/tags/raw model/window names before metric caps; never copy whole objects.
+
 - Open files and databases **read-only**. SQLite: `file:<path>?mode=ro` (a live WAL database must not be opened
   `immutable`, and never copied with a full backup on every poll). Query **explicit column lists**, never `SELECT *`.
 - Read incrementally (by id, sequence number or byte offset), keep the offset in the exporter's own state dir.
@@ -22,10 +27,10 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
-| `claude-transcripts` | per-message token usage and model | tail `<config>/projects/**/*.jsonl` (including `subagents/*.jsonl`) by byte offset; from each `assistant` line take `message.id`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_creation.ephemeral_1h_input_tokens}`, `timestamp`; skip `model == "<synthetic>"`; dedupe by `message.id` (keep the highest `output_tokens`, a message can be logged more than once while streaming) | 1 to 5 min, incremental | verified |
+| `claude-transcripts` | structural per-message usage and tags | tail `<config>/projects/**/*.jsonl` including subagents by byte offset; preserve event-contract usage IDs/timestamps/session/parent/agent/sidechain/cwd/branch/model/version/entrypoint/skill/tier/speed and token buckets where present, never content. Retain revisions; named views define deduplication; skip synthetic models | target <=60 s capture, bounded recovery with explicit backlog | existing token shape verified; new event capture requires implementation verification |
 | `claude-sessions` | live session count and state | read `<config>/sessions/<pid>.json`: `status`, `updatedAt`, `startedAt`, `pid` (check the pid is alive). Count by `status`. Do not read `cwd`/`name` | each scrape (cheap, local) | verified |
-| `claude-account` | account identity, plan | `<config>/.claude.json` `oauthAccount` object: account uuid/email domain only if needed to derive the alias hash; **never** other keys of that file. `<config>/.credentials.json` `claudeAiOauth`: `expiresAt`, whether `accessToken` is a non-empty string (never its value), and `subscriptionType` for the `plan` label (bounded to `pro`, `max`, `team`, else `unknown`) | at start, on change | verified (file shape) |
-| `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (model-family limits, and windows of unstated length), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account**; 60 min after a 429; stop for the profile after two consecutive 401s until the credential file changes | verified (field names), **undocumented endpoint** |
+| `claude-account` | account identity, plan and historical binding | existing UUID/opaque alias derivation and bounded plan label; event metadata uses the exact identity allowlist below, never other file keys or token values | local metadata target 60 s, on change | existing file shape verified; history requires implementation verification |
+| `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (model-family limits, and windows of unstated length), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account globally**; >=60 min after a 429; two-401 holder exclusion as below | verified (field names), **undocumented endpoint** |
 
 Rules specific to `claude-oauth-usage`:
 
@@ -36,7 +41,9 @@ Rules specific to `claude-oauth-usage`:
   mechanism that cannot be rewritten or echoed by logging layers; a malformed `Authorization` value that reaches the
   endpoint counts toward the rate lock.
 - **Never refresh.** On 401 the token is stale (an idle client stops refreshing; the next real session revives it). Report
-  `agent_source_errors_total{reason="auth_expired"}` and wait for the credential file's mtime or expiry to change.
+  `agent_source_errors_total{reason="auth_expired"}`. Record each attempt; after two 401s exclude that
+  holder for an hour. Another holder requires the same global account gate; credential change clears
+  auth-specific backoff only, never a 429 or the global gate.
 - **Mapping to series** (`agent_quota_utilization_ratio` = `utilization` / 100, `agent_quota_reset_timestamp_seconds`
   only when `resets_at` is given; a null object or null `utilization` is absent, never zero):
   - `five_hour` → `window="5h"`, `seven_day` → `7d`, scope `all`; `five_hour_X` / `seven_day_X` → scope `X`.
@@ -53,8 +60,14 @@ Rules specific to `claude-oauth-usage`:
     gives `agent_quota_limit_info` with its `severity`.
 - One request per **account**, not per profile, when two profiles hold the same grant (they should not; see the profile
   principle). If detected, warn once and query only one.
-- Never-read columns/files: `.credentials.json` other than `accessToken`, `expiresAt` and `subscriptionType`; `.claude.json` other than the
-  allowed `oauthAccount` fields; `history.jsonl` and all `message.content`, `toolUseResult`, prompts.
+- Identity history additionally allowlists exactly `claudeAiOauth.{expiresAt,refreshTokenExpiresAt,
+  subscriptionType,rateLimitTier}` and `oauthAccount.{emailAddress,organizationName,organizationType,
+  billingType,seatTier,hasExtraUsageEnabled,organizationRateLimitTier,userRateLimitTier}`, plus credential
+  mtime. See event-contract for destinations/nulls; no whole-object copy. Email derives opaque identity,
+  never a native public metric/event email. Access token remains request-local only. Everything else
+  in those files, `history.jsonl`, `message.content`, `toolUseResult` and prompts remains excluded.
+- All numeric quota windows and all reduced limits survive privately in events, even when inactive,
+  unknown, or over metric caps. Passive cache time is payload observation time, not file scan time.
 
 ## Codex (harness `codex`, provider `openai`)
 
@@ -106,8 +119,10 @@ Rules specific to `codex-rollouts`:
   `balance` (a string in Codex, a number accepted) when not unlimited and numeric. A reading with null `credits` keeps
   the scope's previous credits; credits are served at most until the longest window of their own reading resets
   (reading + 7 days with none).
-- Never decoded or kept: any other line type (`response_item`, `session_meta`, other `event_msg`), and in the two
-  decoded kinds every field not listed above (`cwd`, instructions, `limit_name`, message text). A relevant line over
+- The existing metric parser does not decode other line types. Event capture may retain locally verified
+  structural metadata (including session_meta IDs/cwd/branch/version), never instructions or message
+  text; unverified or absent tags remain null. Full historical/archive capture is separate from the
+  metric startup-tail optimization. A relevant line over
   4 MiB is skipped and counted as a parse error; an irrelevant line is never buffered.
 - Missing or linked `sessions/` is `not_found` / `permission`, never zero values. Links at any level are refused.
 - Not exported: session counts (no live-session signal with a pid), Codex `error` events (no real sample of their shape yet).
@@ -254,7 +269,7 @@ Rules specific to `agy-usage`:
   `SIGTERM`, grace, `SIGKILL`.
 - **One client at a time** per exporter, across all profiles. agy has its own gate group (`agy`) for spacing and backoff,
   so a backoff on Claude's endpoint never pauses agy and the reverse. Spacing inside the group is 10 s, so many accounts are all read within one interval. `sources.agy-usage.backoff_429` sets the backoff after
-  a non-zero exit or timeout (floor 60 min).
+  a genuine rate limit (floor 60 min), not every non-zero exit or timeout under the parity requirement.
 - **Zero-cost guard.** The output is used only if `command.name == "usage"`, `num_turns == 0` and `usage.total_tokens == 0`,
   each present. Anything else means the client changed in a way that may spend model turns: no sample is taken from that
   output, the error is `reason="other"` and the source pauses for 24 h.
@@ -350,6 +365,25 @@ Keys for these plugins are referenced from config as `env:NAME` or `file:/path` 
 file.
 
 ## Out of scope
+
+Parity failure policy: ordinary timeout/network/5xx/parse failures preserve last-good observations,
+append classified attempts and retry at the normal interval; repeated local/agy failures use 2x/4x
+backoff capped at 15 min. Actual agy 429 remains >=1 h; zero-cost/guard failure remains 24 h.
+Missing local files retry normally. Direct Claude remains >=900 s/account globally, 15 s/no inline
+retry, >=3600 s account-wide cooldown on 429; repeated non-rate failures may extend to one hour.
+Persist gates across restart; credential changes never clear rate limits. A generic external permit
+supports coordination without fleet code. Corrupt network gate state keeps one-hour quarantine.
+Active Claude stale threshold is 900 s or reset-passed; retained history remains readable.
+
+The agy table and refresh paragraphs document existing behavior, which is **not** proof of compliance:
+its unconditional ordinary-failure one-hour suppression is superseded by the policy above. Its CLI
+can refresh credentials, conflicting with the parity no-client-launch/no-refresh boundary. The brief
+also requires retaining the verified agy reader; this conflict needs an explicit integration decision
+before runtime parity can pass. B01 neither activates a new endpoint nor authorizes credential mutation.
+
+Manual Mirai receipts are an import contract, not a new exporter provider plugin: preserve summary
+and paginated/since request facts with units, original manual age and unknown tags per event-contract.
+Unverified monetary/non-monetary charge units remain restricted evidence with unknown presentation.
 
 - Anything that requires **refreshing, minting or rotating an OAuth token**, or logging a client in or out.
 - Calling a model (no inference to "test" an account; no tokens spent by the exporter).
