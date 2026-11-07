@@ -6,6 +6,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 
 | Component | Status | Notes |
 |---|---|---|
+| Claude session-owner attribution (B06) | done in working tree | feat/claude-session-owner; per-file owner + IdentityAt fallback; requested checks pass; five-minute live capture verified, no new live Claude token series observed; model t9r/cx/gpt-6.1-sol |
 | Claude transcript recovery (B05) | done in working tree | feat/claude-transcripts; durable historical events, bounded recovery; B06 event-time attribution pending; model t9r/cx/gpt-6.1-sol |
 | Plugin: strata lane availability | done in working tree (B33) | `internal/strata`; feat/strata-source; opt-in, HTTP fixture verification; model t9r/cx/gpt-6.1-sol |
 | Spec: plan, metric contract, sources, decisions | done (draft v0) | design phase; `specs/` |

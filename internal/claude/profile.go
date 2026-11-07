@@ -24,17 +24,20 @@ const (
 
 // Profile is one CLAUDE_CONFIG_DIR. All plugins of a profile share it, so they agree on the account label.
 type Profile struct {
-	Host         string
-	Alias        string
-	Dir          string // real path (symlinks resolved at start)
-	ConfigDir    string // the path as configured or discovered; decides where a default install keeps .claude.json
-	AccountAlias string // operator alias from config; "" = derive
-	EmailLabel   bool   // metrics.account_label: email
-	MaxModels    int
-	Events       *events.Store
-	IdentityKey  []byte
-	history      []identitySample
-	pending      json.RawMessage
+	Host                                string
+	Alias                               string
+	Dir                                 string // real path (symlinks resolved at start)
+	ConfigDir                           string // the path as configured or discovered; decides where a default install keeps .claude.json
+	AccountAlias                        string // operator alias from config; "" = derive
+	EmailLabel                          bool   // metrics.account_label: email
+	MaxModels                           int
+	Events                              *events.Store
+	IdentityKey                         []byte
+	history                             []identitySample
+	pending                             json.RawMessage
+	ownerHistory                        []identitySample
+	ownerSnapshotReady                  bool
+	ownerLabel, ownerUUID, ownerPrivate string
 
 	mu       sync.Mutex
 	resolved bool

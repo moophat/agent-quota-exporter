@@ -47,6 +47,7 @@ func captureDigest(identity string) string {
 	return "v2:" + hex.EncodeToString(h[:])
 }
 func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptCursor, start, end int64, now time.Time) (json.RawMessage, string, error) {
+	transcriptOwner(b, &c.Owner)
 	var l struct {
 		Type       string `json:"type"`
 		Timestamp  string `json:"timestamp"`
@@ -94,6 +95,9 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 	if l.Cwd != "" && !events.SafePath(l.Cwd) {
 		data["cwd"] = nil
 	}
+	_, account, interval, evidence, quality := s.messageOwner(l.Timestamp, c.Owner)
+	data["account"], data["identity_interval_id"] = account, interval
+	data["account_evidence"], data["attribution_quality"] = map[string]any{"comparison": evidence}, quality
 	data["message_id"] = text(l.Message.ID)
 	negative := false
 	for key, count := range map[string]*int64{"input": u.In, "output": u.Out, "cache_read": u.Read, "cache_write": u.Write, "tok_cw_1h": hour} {
@@ -120,7 +124,11 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 			missing = append(missing, key)
 		}
 	}
-	env["quality"] = map[string]any{"status": "partial", "reasons": []string{"missing_attribution"}, "missing_fields": missing}
+	reasons := []string{}
+	if account == nil {
+		reasons = append(reasons, "missing_attribution")
+	}
+	env["quality"] = map[string]any{"status": "partial", "reasons": reasons, "missing_fields": missing}
 	encoded, err := json.Marshal(env)
 	return encoded, env["event_id"].(string), err
 }

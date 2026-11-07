@@ -132,6 +132,10 @@ Billing/seat flags are metadata, not money presentation. Secrets and token claim
 references, plus comparison (`match`, `conflict`, `sampled`, `none`). A reliable embedded claim is
 compared, never silently overwritten. `attribution_quality` is `embedded`, `sampled`,
 `sampled_legacy`, `ambiguous`, `conflict` or `unattributed`.
+Claude transcript capture uses `account_evidence.comparison` values `session_owner`,
+`identity_binding`, or `none`, with attribution quality `embedded`, `sampled`, or
+`unattributed` respectively. A session-owner claim applies forward within its file;
+without one, only a non-ambiguous IdentityAt binding at message time is eligible.
 Resolve by host **and profile** at message time, not the login when collected. Before first identity
 is unattributed; events in an unobserved A-to-B gap are ambiguous, with separate totals. A late A
 message is never assigned to current B by default. Legacy host-ASOF import is `sampled_legacy`,

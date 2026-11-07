@@ -49,15 +49,20 @@ func (p *Profile) opaqueEmail(email string) string {
 
 // IdentityBinding reports sampled evidence, not an exact historical login time.
 type IdentityBinding struct {
-	Account    *string
-	IntervalID string
-	Quality    string // sampled, ambiguous, or unattributed
+	Account       *string
+	MetricAccount *string
+	IntervalID    string
+	Quality       string // sampled, ambiguous, or unattributed
 }
 
 // IdentityAt resolves only this host/profile. A differing next sample makes the
 // unobserved gap after the last confirmation ambiguous, never the new account.
 func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
 	samples := p.identityHistory()
+	return identityAt(samples, at)
+}
+
+func identityAt(samples []identitySample, at time.Time) IdentityBinding {
 	for i := len(samples) - 1; i >= 0; i-- {
 		s := samples[i]
 		if at.Before(s.at) {
@@ -75,7 +80,7 @@ func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
 			a := *s.data.Account
 			account = &a
 		}
-		return IdentityBinding{account, s.data.IntervalID, q}
+		return IdentityBinding{Account: account, MetricAccount: s.data.MetricAccount, IntervalID: s.data.IntervalID, Quality: q}
 	}
 	return IdentityBinding{Quality: "unattributed"}
 }

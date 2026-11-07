@@ -20,18 +20,18 @@ agent_quota_limit_info{host="node-a",harness="claude-code",profile="work",accoun
 agent_quota_observed_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",env="lab"} 1767225660
 # HELP agent_tokens_total Tokens consumed, read from local agent state.
 # TYPE agent_tokens_total counter
-agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
-agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
-agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="input",env="lab"} 5
-agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",type="output",env="lab"} 507
-agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
-agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
-agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="input",env="lab"} 5
-agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="output",env="lab"} 507
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="unknown",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="unknown",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="unknown",provider="anthropic",model="model-x",type="input",env="lab"} 5
+agent_tokens_total{host="node-a",harness="claude-code",profile="acct-b",account="unknown",provider="anthropic",model="model-x",type="output",env="lab"} 507
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",type="cache_read",env="lab"} 77647
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",type="cache_write",env="lab"} 26495
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",type="input",env="lab"} 5
+agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",type="output",env="lab"} 507
 # HELP agent_requests_total Model calls, read from local agent state.
 # TYPE agent_requests_total counter
-agent_requests_total{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
-agent_requests_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
+agent_requests_total{host="node-a",harness="claude-code",profile="acct-b",account="unknown",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
+agent_requests_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",outcome="ok",env="lab"} 2
 # HELP agent_account_logged_in 1 if the profile holds a usable login (credential present and not known-expired).
 # TYPE agent_account_logged_in gauge
 agent_account_logged_in{host="node-a",harness="claude-code",profile="acct-b",account="acct-6223be27",provider="anthropic",env="lab"} 1
