@@ -53,13 +53,7 @@ func (p *Profile) Account() (label, uuid string) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.Events != nil && !p.EmailLabel && len(p.history) > 0 {
-		account := p.history[len(p.history)-1].data.Account
-		if account != nil {
-			return *account, p.uuid
-		}
-		return "unknown", p.uuid
-	}
+	// Private event identities must never replace the public metric label.
 	return p.label, p.uuid
 }
 

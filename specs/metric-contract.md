@@ -22,7 +22,7 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `host` | machine the exporter runs on | config `host` or the OS hostname; never an IP unless configured so |
 | `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, ... | lowercase, fixed vocabulary per plugin |
 | `profile` | one workspace: config dir / `CODEX_HOME` / opencode instance / agy `HOME` | operator alias from config; for auto-discovered profiles a stable slug of the directory name (not the path) |
-| `account` | the login a profile holds | configured operator alias, otherwise keyed opaque ID under the account identity policy in [event-contract.md](event-contract.md#account-identity-policy); never an unkeyed email hash |
+| `account` | the login a profile holds | configured operator alias, otherwise the source's existing short stable hash (Claude: `acct-` plus the first 8 lowercase hex SHA-256 digits of the account UUID); `unknown` if unavailable |
 | `provider` | who serves the model: `anthropic`, `openai`, `google`, `opencode-go`, ... | as reported by the source; lowercased |
 | `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
@@ -36,6 +36,12 @@ Labels are generic and defined once. A metric lists which of them it carries.
 opt-in, off by default: it publishes raw email addresses in the `account` label to every
 metrics consumer. It is forbidden when the parity event/metric privacy profile is enabled;
 native events never retain raw emails, regardless of this option.
+
+The identity key is private-event-store-only. Enabling events, setting or rotating
+`events.identity_key_file` must not change any metric's `account` label, including
+account info, quota and token series. Identity events carry `metric_account` to join
+private keyed identities to the existing metric label. This restores compatibility;
+metric contract version remains 0 (no new metric names, labels or units).
 
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are
 constant per exporter, so they add no cardinality. Total label count per series is capped (default 12).

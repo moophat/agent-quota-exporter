@@ -17,6 +17,7 @@ import (
 // IdentityData is the native identity event payload. Raw emails never leave the reader.
 type IdentityData struct {
 	Account          *string            `json:"account"`
+	MetricAccount    *string            `json:"metric_account"`
 	IntervalID       string             `json:"identity_interval_id"`
 	EffectiveFrom    IdentityTimestamp  `json:"effective_from"`
 	EffectiveUntil   *IdentityTimestamp `json:"effective_until"`
@@ -124,6 +125,12 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 		facts.Account.OrganizationName = &redacted
 	}
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
+	// Resolve independently of private history so key provisioning/rotation cannot
+	// rename metric series. Email compatibility labels are never retained in events.
+	if err := p.ResolveAccount(); err == nil && !p.EmailLabel {
+		label, _ := p.Account()
+		d.MetricAccount = &label
+	}
 	if readErr == nil {
 		account := p.AccountAlias
 		if account == "" && facts.Account.Email != nil && strings.TrimSpace(*facts.Account.Email) != "" && (p.Events != nil || len(p.IdentityKey) >= 32) {

@@ -38,7 +38,7 @@ func fields(keys, typ string) shape {
 
 var payloadKeys = map[string]string{
 	"usage":             "message_id request_id message_at session_id parent_session_id agent_id sidechain cwd project project_mapping_version branch model harness_version entrypoint skill tier speed account identity_interval_id account_evidence attribution_quality raw_tokens tokens accounting_quality outcome error_class http_status source_status connection_id reported_cost reported_cost_unit",
-	"identity":          "account identity_interval_id effective_from effective_until credential_mtime access_expires_at login_expires_at subscription_type rate_tier metadata",
+	"identity":          "account metric_account identity_interval_id effective_from effective_until credential_mtime access_expires_at login_expires_at subscription_type rate_tier metadata",
 	"quota_observation": "account windows limits credits reset_credits normalization_quality",
 	"quota_attempt":     "account started_at ended_at http_status success failure_class gate_until cooldown_until gate_reason probe_id",
 	"collect":           "run_id started_at ended_at files_seen files_read bytes_read rows_appended backlog_bytes duration_seconds errors first_error_class budget_exhausted deadline_exhausted skip_count replay_count reset_count evicted_count abandoned_pending_count completion coverage_start coverage_end omission_reasons connections",

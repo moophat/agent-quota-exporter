@@ -331,9 +331,10 @@ func TestOAuthUsageRestoredAfterRestart(t *testing.T) {
 	}
 }
 
-func TestOAuthUsageLegacyLabelMigratesWhenUUIDMatches(t *testing.T) {
+func TestOAuthUsageRestoredLabelStableWithIdentityKey(t *testing.T) {
 	st := newStub(t, fixture(t, "oauth-usage-response.json"), 200, 500)
 	p := newProfile(t, "a")
+	wantLabel, _ := p.Account()
 	_, state, err := collect(t, st.source(p), t0, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -348,8 +349,8 @@ func TestOAuthUsageLegacyLabelMigratesWhenUUIDMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := st.source(p).Restore(state)
-	if len(res.Samples) == 0 || label(res.Samples[0], "account") == "" || label(res.Samples[0], "account")[:5] != "acct_" {
-		t.Fatalf("legacy state not migrated: %+v", res)
+	if len(res.Samples) == 0 || label(res.Samples[0], "account") != wantLabel {
+		t.Fatalf("restored metric label changed: %+v", res)
 	}
 	st.status = []int{500}
 	res, _, err = collect(t, st.source(p), t0.Add(20*time.Minute), state)
