@@ -106,7 +106,8 @@ archive deduplication and historical corrections never inflate or decrement curr
 
 ## Identity payload and attribution
 
-`identity.data`: `account` (stable opaque account ID or null), `identity_interval_id`,
+`identity.data`: `account` (stable opaque account ID or null), `metric_account`
+(metric account label at observation, or null when unavailable/email compatibility mode), `identity_interval_id`,
 `effective_from`, `effective_until` (nullable timestamp objects), `credential_mtime`,
 `access_expires_at`, `login_expires_at` (timestamp objects), `subscription_type`, `rate_tier`,
 and restricted `metadata`. The next sample closes the preceding sampled binding; closure is a
@@ -244,7 +245,7 @@ values only. Existing restricted legacy emails stay in their original store; nat
 ### Account identity policy
 
 Use an operator-configured opaque account alias where supplied. Otherwise derive the native
-event account ID and default metric account label as `acct_` plus full lowercase hex HMAC-SHA-256 of
+event account ID as `acct_` plus full lowercase hex HMAC-SHA-256 of
 the UTF-8 source account identifier (email fallback trimmed, with original case preserved),
 domain-separated by `account-v1` and provider. Do not use an unkeyed or shortened email hash.
 The per-installation random key is at least 32 bytes, supplied by a restricted file reference in
@@ -255,6 +256,12 @@ identity linkage, never silent reassignment. Missing key and missing alias block
 capture with a visible configuration error; it must not fall back to email or an unkeyed hash.
 Apply the same derivation to email-bearing account evidence before retention. The metric contract
 owns the explicit email compatibility opt-in and its parity-profile prohibition.
+The key applies only to private events, never metric labels. Metrics retain their
+operator alias or existing short stable hash with or without the key. Identity
+events record `metric_account` alongside private `account` so history can join to
+metrics by host/profile and identity interval. Older schema-1 events may omit this
+additive field; readers must tolerate its absence. Key rotation changes private
+identities only, not the metric join label. Schema version remains 1.
 
 ### Claude freshness policy
 

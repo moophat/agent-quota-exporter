@@ -133,9 +133,6 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 	if _, _, err := collect(t, &AccountSource{P: p}, t0, nil); err != nil {
 		t.Fatal(err)
 	}
-	if label, _ := p.Account(); label != *p.IdentityAt(t0).Account {
-		t.Fatal("metric and event account identities differ")
-	}
 	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +160,96 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 	m := d.Metadata
 	if m.OrganizationName == nil || *m.OrganizationName != "Example" || m.OrganizationType == nil || *m.OrganizationType != "team" || m.BillingType == nil || *m.BillingType != "subscription" || m.SeatTier == nil || *m.SeatTier != "standard" || m.HasExtraUsageEnabled == nil || *m.HasExtraUsageEnabled || m.OrganizationRateLimitTier == nil || *m.OrganizationRateLimitTier != "org-a" || m.UserRateLimitTier == nil || *m.UserRateLimitTier != "user-a" {
 		t.Fatalf("lost metadata %+v", m)
+	}
+}
+
+func TestMetricAccountStableWithIdentityKey(t *testing.T) {
+	for _, alias := range []string{"", "operator-alias"} {
+		t.Run("alias="+alias, func(t *testing.T) {
+			p := identityProfile(t, "profile-a")
+			p.AccountAlias = alias
+			p.IdentityKey = nil
+			write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"accountUuid":"synthetic-account-a"}}`))
+			before, _, err := collect(t, &AccountSource{P: p}, t0, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			label, _ := p.Account()
+			if alias == "" && !strings.HasPrefix(label, "acct-") {
+				t.Fatalf("not a short hash: %s", label)
+			}
+			s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			p.Events, p.IdentityKey = s, bytes.Repeat([]byte{1}, 32)
+			after, _, err := collect(t, &AccountSource{P: p}, t0.Add(time.Minute), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := json.Marshal(before.Samples)
+			a, _ := json.Marshal(after.Samples)
+			if !bytes.Equal(a, b) {
+				t.Fatalf("metrics changed with identity key:\nbefore %s\nafter %s", b, a)
+			}
+			if err := s.Replay(func(raw json.RawMessage) error {
+				var row struct {
+					Data IdentityData `json:"data"`
+				}
+				if err := json.Unmarshal(raw, &row); err != nil {
+					return err
+				}
+				if row.Data.MetricAccount == nil || *row.Data.MetricAccount != label {
+					t.Fatalf("missing metric join: %+v", row.Data)
+				}
+				if row.Data.Account == nil || (alias == "" && !strings.HasPrefix(*row.Data.Account, "acct_")) {
+					t.Fatalf("private identity lost: %+v", row.Data)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestMetricAccountNullWithoutAliasOrAccount(t *testing.T) {
+	// Credentials readable, no .claude.json: no account UUID, so no join label.
+	for alias, want := range map[string]*string{"": nil, "unknown": func() *string { s := "unknown"; return &s }()} {
+		t.Run("alias="+alias, func(t *testing.T) {
+			p := identityProfile(t, "profile-a")
+			p.AccountAlias = alias
+			s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			p.Events = s
+			if err := p.SampleIdentity(t0); err != nil {
+				t.Fatal(err)
+			}
+			rows := 0
+			if err := s.Replay(func(raw json.RawMessage) error {
+				var row struct {
+					Data IdentityData `json:"data"`
+				}
+				if err := json.Unmarshal(raw, &row); err != nil {
+					return err
+				}
+				rows++
+				got := row.Data.MetricAccount
+				if (want == nil) != (got == nil) || (want != nil && *got != *want) {
+					t.Fatalf("metric_account %v, want %v", got, want)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if rows == 0 {
+				t.Fatal("no identity event written")
+			}
+		})
 	}
 }
 

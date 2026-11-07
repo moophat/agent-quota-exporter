@@ -5,6 +5,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Stable metric account labels -->
+### Stable metric account labels | 2026-11-07
+**Meta:** fix/metric-labels-stable | t9r/cx/gpt-6.1-sol | user acceptance brief
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Fixed; build, six package tests, vet, formatting pass; live daemon with a key, 4 min: root label acct-de696934 unchanged, every event writer write_success 1.
+**Key:** private keyed identity separated from metric label; identity event carries join field
+**Pending:** None. Codex rollout writers read 0 in a 60-second run only: their first backlog read times out, later reads write.
+<!-- END STUB: 2026-11-07 | Stable metric account labels -->
+
 <!-- BEGIN STUB: 2026-11-07 | PR33 organization email redaction -->
 ### PR33 organization email redaction | 2026-11-07
 **Meta:** fix/claude-identity-events | t9r/cx/gpt-6.1-sol | user PR33 Qodo follow-up
