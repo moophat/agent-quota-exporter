@@ -66,7 +66,7 @@ event references; never arbitrary source objects. Cursors advance only after loc
 `usage.data` contains nullable `message_id`, `request_id`, `message_at` (timestamp object),
 `session_id`, `parent_session_id`, `agent_id`, `sidechain` (boolean), `cwd` (original directory),
 `project`, `project_mapping_version`, `branch`, `model`, `harness_version`, `entrypoint`, `skill`,
-`tier`, `speed`, `account`, `identity_interval_id`, plus `account_evidence` and `attribution_quality`.
+`tier`, `speed`, `account`, `metric_account` (string or null), `identity_interval_id`, plus `account_evidence` and `attribution_quality`.
 No tag is inferred from the current checkout. Project mapping is optional consumer configuration:
 longest-prefix mapping, explicit worktree/repository aliases and overhead; a shared basename proves nothing.
 Session key is `(host,profile,harness,session_id)`; cross-host continuation needs explicit linkage.
@@ -144,6 +144,13 @@ Claude transcript capture uses `account_evidence.comparison` values `session_own
 `identity_binding`, or `none`, with attribution quality `embedded`, `sampled`, or
 `unattributed` respectively. A session-owner claim applies forward within its file;
 without one, only a non-ambiguous IdentityAt binding at message time is eligible.
+Non-breaking schema-1 extension (2026-11-07): every Claude usage event carries
+`metric_account`, the public account label used by metric attribution, separately
+from private keyed `account`. For `session_owner`, it is `acct-` plus the first
+eight lowercase hex digits of SHA-256 of `accountUuid`, or the profile's alias/email
+label when the owner is the verified current login, exactly as `messageOwner`
+resolves it. For `identity_binding`, it is the binding's metric account label;
+for `none`, it is null. Older usage events may omit the field.
 Resolve by host **and profile** at message time, not the login when collected. Before first identity
 is unattributed; events in an unobserved A-to-B gap are ambiguous, with separate totals. A late A
 message is never assigned to current B by default. Legacy host-ASOF import is `sampled_legacy`,

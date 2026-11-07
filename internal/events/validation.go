@@ -60,7 +60,7 @@ var nested = map[string]string{
 	"provenance":         "artifact_checksum source_pin import_epoch original_event_id original_locator since pagination_cursor page completeness",
 }
 
-func init() { payloadKeys["usage"] += " raw_total_tokens" }
+func init() { payloadKeys["usage"] += " raw_total_tokens metric_account" }
 
 func validateEnvelope(raw []byte, kind string) error {
 	var obj map[string]json.RawMessage
