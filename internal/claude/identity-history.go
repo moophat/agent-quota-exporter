@@ -127,9 +127,11 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
 	// Resolve independently of private history so key provisioning/rotation cannot
 	// rename metric series. Email compatibility labels are never retained in events.
+	// Only a real label joins: an operator alias, or the hash of a known account UUID.
 	if err := p.ResolveAccount(); err == nil && !p.EmailLabel {
-		label, _ := p.Account()
-		d.MetricAccount = &label
+		if label, uuid := p.Account(); p.AccountAlias != "" || uuid != "" {
+			d.MetricAccount = &label
+		}
 	}
 	if readErr == nil {
 		account := p.AccountAlias

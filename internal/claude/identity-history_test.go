@@ -214,6 +214,45 @@ func TestMetricAccountStableWithIdentityKey(t *testing.T) {
 	}
 }
 
+func TestMetricAccountNullWithoutAliasOrAccount(t *testing.T) {
+	// Credentials readable, no .claude.json: no account UUID, so no join label.
+	for alias, want := range map[string]*string{"": nil, "unknown": func() *string { s := "unknown"; return &s }()} {
+		t.Run("alias="+alias, func(t *testing.T) {
+			p := identityProfile(t, "profile-a")
+			p.AccountAlias = alias
+			s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			p.Events = s
+			if err := p.SampleIdentity(t0); err != nil {
+				t.Fatal(err)
+			}
+			rows := 0
+			if err := s.Replay(func(raw json.RawMessage) error {
+				var row struct {
+					Data IdentityData `json:"data"`
+				}
+				if err := json.Unmarshal(raw, &row); err != nil {
+					return err
+				}
+				rows++
+				got := row.Data.MetricAccount
+				if (want == nil) != (got == nil) || (want != nil && *got != *want) {
+					t.Fatalf("metric_account %v, want %v", got, want)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if rows == 0 {
+				t.Fatal("no identity event written")
+			}
+		})
+	}
+}
+
 func TestIdentityOptionalFallbackKeepsAliasAndMetadata(t *testing.T) {
 	p := identityProfile(t, "profile-a")
 	p.AccountAlias = "operator-alias"
