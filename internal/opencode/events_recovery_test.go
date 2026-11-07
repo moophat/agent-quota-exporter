@@ -55,6 +55,25 @@ func TestRapidPolls(t *testing.T) {
 		t.Fatalf("rapid poll lost usage: %d", got)
 	}
 }
+
+func TestNewRowsDoNotReplay(t *testing.T) {
+	path, w := emptyDB(t, false)
+	s := source(path, 20)
+	calls := 0
+	ev, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 30, Reserve: 1,
+		Free: func(string) (int64, error) { return 1 << 40, nil }, Replay: func() { calls++ }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Events = ev
+	r := run{}
+	r.collect(t, s, t0)
+	insert(t, w, "one", done("provider-a", "model-a", 1, 2, 0, 0, 0, 0))
+	r.collect(t, s, t0.Add(time.Minute))
+	if calls != 0 {
+		t.Fatalf("new rows caused %d replays", calls)
+	}
+}
 func TestRestartOldCursor(t *testing.T) {
 	path, w := emptyDB(t, false)
 	ev := qstore(t, nil)
@@ -79,6 +98,33 @@ func TestRestartOldCursor(t *testing.T) {
 	b, _ := json.Marshal(after[0])
 	if string(a) != string(b) {
 		t.Fatal("original envelope changed")
+	}
+}
+
+func TestRecoveredOriginalPreservesSourceRevisions(t *testing.T) {
+	path, w := emptyDB(t, false)
+	s := source(path, 20)
+	ev := qstore(t, nil)
+	s.Events = ev
+	r := run{}
+	r.collect(t, s, t0)
+	key := s.Host + "\x00" + s.Alias + "\x00" + Harness + "\x00" + SourceName
+	old, err := ev.Checkpoint(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insert(t, w, "one", done("provider-a", "model-a", 1, 2, 0, 0, 0, 0))
+	r.collect(t, s, t0.Add(time.Minute))
+	if err := ev.SaveCheckpoint(key, old); err != nil {
+		t.Fatal(err)
+	}
+	exec(t, w, `UPDATE message SET data = '`+done("provider-a", "model-a", 9, 2, 0, 0, 0, 0)+`' WHERE id = 'one'`)
+	_, _, err = s.Collect(context.Background(), t0.Add(2*time.Minute), r.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qrows(t, ev, "usage")) != 2 {
+		t.Fatal("changed source revision was not retained alongside original")
 	}
 }
 func TestStoreFailureRetry(t *testing.T) {

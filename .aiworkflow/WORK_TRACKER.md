@@ -6,6 +6,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Remove collection-wide replay -->
+### Remove collection-wide replay | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/no-full-replay-per-collection | t9r/cx/gpt-6.1-sol | user replay-fix brief
+**Outcome:** Implemented; replay-count regressions failed before fixes and pass after; requested package tests, build and vet passed.
+**Key:** Originals index fast path, once-per-profile identity shard load, retained live identity transitions, size-bounded unlocked replay callbacks
+**Pending:** None; live-node performance not retested. No commit or push.
+<!-- END STUB: 2026-11-07 | Remove collection-wide replay -->
+
 <!-- BEGIN STUB: 2026-11-07 | Session owner follow-up fixes -->
 ### Session owner follow-up fixes | 2026-11-07
 **Model:** t9r/cx/gpt-6.1-sol

@@ -58,6 +58,37 @@ func identityProfile(t *testing.T, alias string) *Profile {
 	return p
 }
 
+func TestIdentityHistoryLoadsOnce(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	calls := 0
+	s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1,
+		Free: func(string) (int64, error) { return 1 << 30, nil }, Replay: func() { calls++ }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	first := p.IdentityAt(t0)
+	if calls != 1 {
+		t.Fatalf("first load: %d replays", calls)
+	}
+	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.IdentityAt(t0); got.Account == nil || first.Account == nil || *got.Account != *first.Account {
+		t.Fatal("old identity lost")
+	}
+	if got := p.IdentityAt(t0.Add(time.Minute)); got.Account == nil || *got.Account == *first.Account {
+		t.Fatal("live switch lost")
+	}
+	if calls != 1 {
+		t.Fatalf("later history lookup replayed: %d calls", calls)
+	}
+}
+
 func TestIdentityAccountSwitchHistory(t *testing.T) {
 	p := identityProfile(t, "profile-a")
 	if err := p.SampleIdentity(t0); err != nil {

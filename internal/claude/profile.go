@@ -34,6 +34,9 @@ type Profile struct {
 	Events                              *events.Store
 	IdentityKey                         []byte
 	history                             []identitySample
+	historyOnce                         sync.Once
+	savedHistory                        []identitySample
+	liveHistory                         []identitySample
 	pending                             json.RawMessage
 	ownerHistory                        []identitySample
 	ownerSnapshotReady                  bool

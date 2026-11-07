@@ -86,13 +86,22 @@ func identityAt(samples []identitySample, at time.Time) IdentityBinding {
 }
 
 func (p *Profile) identityHistory() []identitySample {
+	p.historyOnce.Do(func() {
+		p.savedHistory = p.loadIdentityHistory()
+	})
 	p.mu.Lock()
-	live := append([]identitySample(nil), p.history...)
-	store := p.Events
+	live := append(append([]identitySample(nil), p.liveHistory...), p.history...)
 	p.mu.Unlock()
+	samples := append(append([]identitySample(nil), p.savedHistory...), live...)
+	sort.SliceStable(samples, func(i, j int) bool { return samples[i].at.Before(samples[j].at) })
+	return samples
+}
+
+func (p *Profile) loadIdentityHistory() []identitySample {
+	store := p.Events
 	var saved []identitySample
 	if store != nil {
-		_ = store.Replay(func(raw json.RawMessage) error {
+		_ = store.ReplaySource("claude-account", p.Alias, func(raw json.RawMessage) error {
 			var row struct {
 				Kind    string       `json:"kind"`
 				Source  string       `json:"source"`
@@ -109,9 +118,7 @@ func (p *Profile) identityHistory() []identitySample {
 			return nil
 		})
 	}
-	samples := append(saved, live...)
-	sort.SliceStable(samples, func(i, j int) bool { return samples[i].at.Before(samples[j].at) })
-	return samples
+	return saved
 }
 
 func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
@@ -188,6 +195,7 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 			return err
 		}
 		if p.Events != nil {
+			p.liveHistory = append(p.liveHistory, p.history...)
 			p.history = []identitySample{{d, now, now, fingerprint, raw}}
 		} else {
 			p.history = append(p.history, identitySample{d, now, now, fingerprint, nil})
@@ -199,8 +207,9 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 		p.history[len(p.history)-1].last = now
 	}
 	if p.Events != nil {
-		if p.history[0].raw != nil {
-			p.pending = p.history[0].raw
+		latest := &p.history[len(p.history)-1]
+		if latest.raw != nil {
+			p.pending = latest.raw
 		}
 		if p.pending != nil {
 			if err := p.Events.Append(events.Batch{Envelopes: []json.RawMessage{p.pending}}); err != nil {
@@ -208,7 +217,7 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 			}
 			p.pending = nil
 		}
-		p.history[0].raw = nil
+		latest.raw = nil
 	}
 	return nil
 }
