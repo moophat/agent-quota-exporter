@@ -78,8 +78,10 @@ type Store struct {
 	pending  map[string]bool
 	write    func(*os.File, []byte) (int, error)
 	rollback map[string]int64
-	outcomes map[Writer]bool
-	size     func(string) (int64, error)
+	// outcomesMu guards outcomes alone, so a scrape reading them never waits on an append's disk I/O under mu.
+	outcomesMu sync.Mutex
+	outcomes   map[Writer]bool
+	size       func(string) (int64, error)
 }
 
 // Open creates a private store root and heals an incomplete final JSONL row before accepting new data.
@@ -150,7 +152,9 @@ func (s *Store) Append(batch Batch) (result error) {
 				for path := range writers[w] {
 					ok = ok && durable[path]
 				}
+				s.outcomesMu.Lock()
 				s.outcomes[w] = ok
+				s.outcomesMu.Unlock()
 			}
 		}
 	}()
