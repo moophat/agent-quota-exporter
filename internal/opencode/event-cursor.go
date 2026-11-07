@@ -128,25 +128,10 @@ func (s *DBSource) captureEvents(ctx context.Context, db *sqlro.DB, now time.Tim
 		}
 		// A stale/missing cursor may revisit an already durable row. Recover its exact
 		// original envelope rather than changing capture time or weakening conflict checks.
-		if len(batch) > 0 {
-			indexes := map[string]int{}
-			for i, b := range batch {
-				var e events.Envelope
-				_ = json.Unmarshal(b, &e)
-				indexes[e.EventID] = i
-			}
-			if err := s.Events.Replay(func(b json.RawMessage) error {
-				var e events.Envelope
-				if er := json.Unmarshal(b, &e); er != nil {
-					return er
-				}
-				if i, ok := indexes[e.EventID]; ok {
-					batch[i] = append(json.RawMessage(nil), b...)
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
+		var err error
+		batch, err = s.Events.Originals(batch)
+		if err != nil {
+			return err
 		}
 		// Snapshot only bounded cursor state, never metric totals. Prepared bytes
 		// survive append failures; State advances only after the batch is durable.

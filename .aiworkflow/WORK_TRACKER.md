@@ -6,6 +6,24 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Retry and preserve identity evidence -->
+### Retry and preserve identity evidence | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/no-full-replay-per-collection | t9r/cx/gpt-6.1-sol | PR 38 fix round
+**Outcome:** Three regressions failed before fixes; requested package tests, build, vet, gofmt and diff checks pass.
+**Key:** retry failed loads, append-only confirmation observations, sorted immutable durable cache, 128 live samples
+**Pending:** None; no commit or push. Durable cache retains older intervals in memory to preserve old lookups without replay.
+<!-- END STUB: 2026-11-07 | Retry and preserve identity evidence -->
+
+<!-- BEGIN STUB: 2026-11-07 | Remove collection-wide replay -->
+### Remove collection-wide replay | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/no-full-replay-per-collection | t9r/cx/gpt-6.1-sol | user replay-fix brief
+**Outcome:** Implemented; replay-count regressions failed before fixes and pass after; requested package tests, build and vet passed.
+**Key:** Originals index fast path, once-per-profile identity shard load, retained live identity transitions, size-bounded unlocked replay callbacks
+**Pending:** None; live-node performance not retested. No commit or push.
+<!-- END STUB: 2026-11-07 | Remove collection-wide replay -->
+
 <!-- BEGIN STUB: 2026-11-07 | Session owner follow-up fixes -->
 ### Session owner follow-up fixes | 2026-11-07
 **Model:** t9r/cx/gpt-6.1-sol

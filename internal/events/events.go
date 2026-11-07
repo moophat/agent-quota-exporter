@@ -62,6 +62,7 @@ type Options struct {
 	Sync    func(*os.File) error
 	Free    func(string) (int64, error)
 	Write   func(*os.File, []byte) (int, error)
+	Replay  func() // Optional instrumentation, called before acquiring the store lock.
 }
 
 // Store is a single-process durable event sink. Its root is private to the exporter.
@@ -82,6 +83,7 @@ type Store struct {
 	outcomesMu sync.Mutex
 	outcomes   map[Writer]bool
 	size       func(string) (int64, error)
+	replay     func()
 }
 
 // Open creates a private store root and heals an incomplete final JSONL row before accepting new data.
@@ -95,7 +97,7 @@ func Open(opts Options) (*Store, error) {
 	if err := os.Chmod(opts.Root, 0o750); err != nil {
 		return nil, fmt.Errorf("event store: chmod root: %w", err)
 	}
-	s := &Store{root: opts.Root, budget: opts.Budget, reserve: opts.Reserve, now: opts.Now, sync: opts.Sync, free: opts.Free}
+	s := &Store{root: opts.Root, budget: opts.Budget, reserve: opts.Reserve, now: opts.Now, sync: opts.Sync, free: opts.Free, replay: opts.Replay}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -322,12 +324,37 @@ func checkpoint(batch Batch) error {
 
 // Replay calls fn for every intact envelope in lexical shard order.
 func (s *Store) Replay(fn func(json.RawMessage) error) error {
+	return s.replayShards("", fn)
+}
+
+// ReplaySource reads only one source/profile's shards. Callers must still
+// filter envelopes by host and harness, which are not part of shard filenames.
+func (s *Store) ReplaySource(source, profile string, fn func(json.RawMessage) error) error {
+	if !valid(profile) {
+		sum := sha256.Sum256([]byte(profile))
+		profile = fmt.Sprintf("profile~%x", sum)
+	}
+	return s.replayShards(source+"-"+profile+".jsonl", fn)
+}
+
+func (s *Store) replayShards(name string, fn func(json.RawMessage) error) error {
+	if s.replay != nil {
+		s.replay()
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			s.mu.Unlock()
+		}
+	}()
 	var paths []string
 	err := filepath.WalkDir(filepath.Join(s.root, "events"), func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return err
+		}
+		if name != "" && d.Name() != name {
+			return nil
 		}
 		paths = append(paths, path)
 		return nil
@@ -339,12 +366,25 @@ func (s *Store) Replay(fn func(json.RawMessage) error) error {
 		return fmt.Errorf("event store: list shards: %w", err)
 	}
 	sort.Strings(paths)
-	for _, path := range paths {
+	// Snapshot complete durable shard boundaries while Append is excluded, then
+	// release the mutex before reading or invoking callbacks. Appends only extend
+	// these files; their new rows belong to the next replay.
+	sizes := make([]int64, len(paths))
+	for i, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		sizes[i] = info.Size()
+	}
+	s.mu.Unlock()
+	locked = false
+	for i, path := range paths {
 		f, err := os.Open(path)
 		if err != nil {
 			return fmt.Errorf("event store: open replay shard: %w", err)
 		}
-		reader := bufio.NewReader(f)
+		reader := bufio.NewReader(io.NewSectionReader(f, 0, sizes[i]))
 		for {
 			line, readErr := reader.ReadBytes('\n')
 			if readErr == io.EOF && len(line) == 0 {

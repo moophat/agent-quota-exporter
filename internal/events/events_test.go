@@ -18,6 +18,47 @@ func options(root string) Options {
 	return Options{Root: root, Budget: 1 << 20, Reserve: 128, Now: func() time.Time { return time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC) }, Free: func(string) (int64, error) { return 1 << 30, nil }}
 }
 
+func TestReplaySnapshotDoesNotHoldAppendLock(t *testing.T) {
+	s, err := Open(options(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(Batch{Envelopes: []json.RawMessage{event("first")}}); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	err = s.Replay(func(json.RawMessage) error {
+		count++
+		if !s.mu.TryLock() {
+			return errors.New("replay callback holds append lock")
+		}
+		s.mu.Unlock()
+		return s.Append(Batch{Envelopes: []json.RawMessage{event("later")}})
+	})
+	if err != nil || count != 1 {
+		t.Fatalf("snapshot count=%d err=%v", count, err)
+	}
+}
+
+func TestReplaySourceSkipsUnrelatedShard(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(options(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(Batch{Envelopes: []json.RawMessage{event("first")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "events", "month=2026-11", "unrelated.jsonl"), []byte("invalid\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	err = s.ReplaySource("claude", "acct-a", func(json.RawMessage) error { count++; return nil })
+	if err != nil || count != 1 {
+		t.Fatalf("scoped count=%d err=%v", count, err)
+	}
+}
+
 func TestAppendSyncBeforeCursorAndReplayAfterCrash(t *testing.T) {
 	root := t.TempDir()
 	opts := options(root)
