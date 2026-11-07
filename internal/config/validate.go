@@ -141,6 +141,16 @@ func (c *Config) Validate() error {
 	}
 
 	for name, s := range c.Sources {
+		if s.ByteBudget < 0 || s.Deadline < 0 {
+			add("sources.%s: byte_budget and deadline must be nonnegative", name)
+		}
+		// A budget below the transcript line limit could never finish a valid long line and would stall that file.
+		if s.ByteBudget > 0 && s.ByteBudget < 64<<20 {
+			add("sources.%s: byte_budget must be 0 (default) or at least 64 MiB, the transcript line limit", name)
+		}
+		if name != "claude-transcripts" && (s.ByteBudget != 0 || s.Deadline != 0) {
+			add("sources.%s: byte_budget and deadline are only supported for claude-transcripts", name)
+		}
 		f, ok := Floors[name]
 		if !ok {
 			add("sources.%s: unknown source", name)

@@ -5,6 +5,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | B05 transcript recovery -->
+### B05 transcript recovery | 2026-11-07
+**Meta:** feat/claude-transcripts | t9r/cx/gpt-6.1-sol | user B05 acceptance brief
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Implemented; focused tests, build, vet and requested package checks pass; isolated four-minute live check captured 14194 root usage rows.
+**Key:** historical capture independent of live metric startup boundary; B06 excluded
+**Pending:** B06 separate; budget smaller than a single valid line can stall; live backlog not fully drained; final small validation changes not live-retested
+<!-- END STUB: 2026-11-07 | B05 transcript recovery -->
+
 <!-- BEGIN STUB: 2026-11-07 | Stable metric account labels -->
 ### Stable metric account labels | 2026-11-07
 **Meta:** fix/metric-labels-stable | t9r/cx/gpt-6.1-sol | user acceptance brief
