@@ -186,7 +186,7 @@ func TestEndToEnd(t *testing.T) {
 	sched2.Tick(ctx, nil, true, true)
 	out2 := renderString(t, exp2)
 	for _, line := range []string{
-		`agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",model="model-x",type="output",env="lab"} 507`,
+		`agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="unknown",provider="anthropic",model="model-x",type="output",env="lab"} 507`,
 		`agent_quota_utilization_ratio{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",provider="anthropic",window="5h",scope="all",env="lab"} 0.42`,
 	} {
 		if !strings.Contains(out2, line) {

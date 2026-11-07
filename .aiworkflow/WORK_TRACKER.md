@@ -6,6 +6,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | B06 session ownership -->
+### B06 session ownership | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** feat/claude-session-owner | t9r/cx/gpt-6.1-sol | user narrowed B06 request
+**Outcome:** Implemented; five before-fix failures captured; requested package tests/build/vet/format pass; isolated five-minute live run cleaned up.
+**Key:** per-file forward owner, bounded backward recovery, timestamp IdentityAt fallback
+**Pending:** No commit/push. Live saw no new Claude token series; historical capture only none/unattributed. Full baseline race suite timed out.
+<!-- END STUB: 2026-11-07 | B06 session ownership -->
+
 <!-- BEGIN STUB: 2026-11-07 | Transcript review fixes -->
 ### Transcript review fixes | 2026-11-07
 **Model:** t9r/cx/gpt-6.1-sol

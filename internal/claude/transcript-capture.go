@@ -18,6 +18,8 @@ import (
 )
 
 type transcriptCursor struct {
+	Owner                    string
+	OwnerReady               bool
 	Device, Inode            uint64
 	Offset, Size, Generation int64
 	Skipping                 bool
@@ -78,8 +80,13 @@ func (s *TranscriptsSource) saveCapture() error {
 	defer d.Close()
 	return d.Sync()
 }
+
+// captureSlice bounds history capture inside one collection: the live counters computed before it are only
+// published when Collect returns, so a long backlog must drain over several collections instead of delaying them.
+const captureSlice = 30 * time.Second
+
 func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Time, res *core.Result) {
-	ctx, cancel := context.WithTimeout(ctx, s.ReadTimeout())
+	ctx, cancel := context.WithTimeout(ctx, min(s.ReadTimeout(), captureSlice))
 	defer cancel()
 	if s.capture == nil {
 		var b []byte
@@ -186,10 +193,15 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 			cur.Inode = st.Ino
 			cur.Offset = 0
 			cur.Skipping = false
+			cur.Owner, cur.OwnerReady = "", true
 			cur.Generation++
 			resets++
 		}
 		cur.Size = fi.Size()
+		if !cur.OwnerReady {
+			cur.Owner = recoverTranscriptOwner(ctx, f, cur.Offset)
+			cur.OwnerReady = true
+		}
 		// Persist generation before emitting anything, including after a replacement.
 		if err = s.saveCapture(); err != nil {
 			f.Close()

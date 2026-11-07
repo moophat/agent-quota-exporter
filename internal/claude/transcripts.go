@@ -50,8 +50,10 @@ type TranscriptsSource struct {
 }
 
 type fileState struct {
-	Off int64  `json:"o"`
-	Ino uint64 `json:"i"`
+	Owner      string `json:"owner,omitempty"`
+	OwnerReady bool   `json:"owner_ready,omitempty"`
+	Off        int64  `json:"o"`
+	Ino        uint64 `json:"i"`
 	// First: lines older than First - copyGrace are history, not new usage; 0 = no filter. Lines inside the grace
 	// (clock skew between writer and reader) rely on the seen set for dedupe.
 	First int64 `json:"f,omitempty"`
@@ -245,13 +247,19 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	for _, f := range files {
 		live[hashKey(f.rel)] = true
 	}
-	account, _ := s.P.Account()
+	account := "unknown"
 	for i, f := range files {
 		k := hashKey(f.rel)
 		live[k] = true
 		fst := st.Files[k]
 		if !st.Init {
-			st.Files[k] = &fileState{Off: f.size, Ino: f.ino}
+			fst = &fileState{Off: f.size, Ino: f.ino}
+			if opened, _, err := openRegular(f.path); err == nil {
+				fst.Owner = recoverTranscriptOwner(ctx, opened, f.size)
+				opened.Close()
+				fst.OwnerReady = true
+			}
+			st.Files[k] = fst
 			continue
 		}
 		if fst == nil {
@@ -261,6 +269,7 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		if fst.Ino != f.ino || f.size < fst.Off {
 			// replaced or truncated: read again from the start; dedupe stops double counting.
 			fst.Off, fst.Ino, fst.First = 0, f.ino, since
+			fst.Owner, fst.OwnerReady = "", true
 		}
 		if f.size == fst.Off {
 			continue
@@ -313,6 +322,10 @@ func (s *TranscriptsSource) readFile(ctx context.Context, path string, fst *file
 		return 0, 0
 	}
 	defer f.Close()
+	if !fst.OwnerReady {
+		fst.Owner = recoverTranscriptOwner(ctx, f, fst.Off)
+		fst.OwnerReady = true
+	}
 	if _, err := f.Seek(fst.Off, io.SeekStart); err != nil {
 		return 0, 0
 	}
@@ -355,6 +368,7 @@ func (s *TranscriptsSource) readFile(ctx context.Context, path string, fst *file
 			ln = append(buf, chunk...)
 			buf = nil
 		}
+		transcriptOwner(ln, &fst.Owner)
 		if !bytes.Contains(ln, assistantMarker) {
 			continue
 		}
@@ -380,6 +394,7 @@ func (s *TranscriptsSource) count(ln []byte, fst *fileState, account string, now
 		}
 	}
 	st := s.st
+	account, _, _, _, _ = s.messageOwner(l.Timestamp, fst.Owner)
 	u := usage{l.Message.Usage.In, l.Message.Usage.Out, l.Message.Usage.CR, l.Message.Usage.CW}
 	key := hashKey(l.Message.ID)
 	tk := account + "\x00" + s.labelFor(account, modelLabel(l.Message.Model), now)

@@ -106,6 +106,11 @@ Historical event capture/import is independent of this live-counter start bounda
 no live increments; account-switch corrections never decrement counters or move old usage to
 the current login. Correctable event-time totals come from named event views, not counter increase().
 
+Claude transcript counters use the latest preceding session-owner in that file, otherwise
+the profile's sampled identity binding at the message timestamp. Without reliable ownership
+or a covering non-ambiguous binding, usage counts under `account="unknown"`, never the
+login at collection time. This is non-breaking contract 0; names and label sets are unchanged.
+
 Example:
 
 ```
