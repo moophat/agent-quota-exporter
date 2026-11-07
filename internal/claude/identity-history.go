@@ -20,6 +20,7 @@ type IdentityData struct {
 	MetricAccount    *string            `json:"metric_account"`
 	IntervalID       string             `json:"identity_interval_id"`
 	EffectiveFrom    IdentityTimestamp  `json:"effective_from"`
+	LastConfirmedAt  *IdentityTimestamp `json:"last_confirmed_at,omitempty"`
 	EffectiveUntil   *IdentityTimestamp `json:"effective_until"`
 	CredentialMtime  IdentityTimestamp  `json:"credential_mtime"`
 	AccessExpiresAt  IdentityTimestamp  `json:"access_expires_at"`
@@ -86,22 +87,60 @@ func identityAt(samples []identitySample, at time.Time) IdentityBinding {
 }
 
 func (p *Profile) identityHistory() []identitySample {
-	p.historyOnce.Do(func() {
-		p.savedHistory = p.loadIdentityHistory()
-	})
+	if p.Events == nil {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return append([]identitySample(nil), p.history...)
+	}
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+	if !p.historyLoaded {
+		saved, err := p.loadIdentityHistory()
+		if err == nil {
+			p.mu.Lock()
+			for _, sample := range saved {
+				p.mergeIdentity(sample)
+			}
+			p.mu.Unlock()
+			p.historyLoaded = true
+		}
+	}
 	p.mu.Lock()
-	live := append(append([]identitySample(nil), p.liveHistory...), p.history...)
-	p.mu.Unlock()
-	samples := append(append([]identitySample(nil), p.savedHistory...), live...)
-	sort.SliceStable(samples, func(i, j int) bool { return samples[i].at.Before(samples[j].at) })
-	return samples
+	defer p.mu.Unlock()
+	for _, sample := range p.liveHistory {
+		p.mergeIdentity(sample)
+	}
+	for _, sample := range p.history {
+		p.mergeIdentity(sample)
+	}
+	return p.savedHistory
 }
 
-func (p *Profile) loadIdentityHistory() []identitySample {
+// Published slices are immutable; allocate only when evidence changes, not per lookup.
+// Caller holds p.mu. Durable samples remain available beyond the live retention cap.
+func (p *Profile) mergeIdentity(sample identitySample) {
+	i := sort.Search(len(p.savedHistory), func(i int) bool { return !p.savedHistory[i].at.Before(sample.at) })
+	if i < len(p.savedHistory) && p.savedHistory[i].data.IntervalID == sample.data.IntervalID {
+		if !sample.last.After(p.savedHistory[i].last) {
+			return
+		}
+		next := append([]identitySample(nil), p.savedHistory...)
+		next[i] = sample
+		p.savedHistory = next
+		return
+	}
+	next := make([]identitySample, len(p.savedHistory)+1)
+	copy(next, p.savedHistory[:i])
+	next[i] = sample
+	copy(next[i+1:], p.savedHistory[i:])
+	p.savedHistory = next
+}
+
+func (p *Profile) loadIdentityHistory() ([]identitySample, error) {
 	store := p.Events
 	var saved []identitySample
 	if store != nil {
-		_ = store.ReplaySource("claude-account", p.Alias, func(raw json.RawMessage) error {
+		err := store.ReplaySource("claude-account", p.Alias, func(raw json.RawMessage) error {
 			var row struct {
 				Kind    string       `json:"kind"`
 				Source  string       `json:"source"`
@@ -114,11 +153,18 @@ func (p *Profile) loadIdentityHistory() []identitySample {
 				return nil
 			}
 			when := time.Unix(0, int64(*row.Data.EffectiveFrom.EpochSeconds*1e9))
-			saved = append(saved, identitySample{data: row.Data, at: when, last: when})
+			last := when
+			if row.Data.LastConfirmedAt != nil && row.Data.LastConfirmedAt.EpochSeconds != nil {
+				last = time.Unix(0, int64(*row.Data.LastConfirmedAt.EpochSeconds*1e9))
+			}
+			saved = append(saved, identitySample{data: row.Data, at: when, last: last})
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	return saved
+	return saved, nil
 }
 
 func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
@@ -176,6 +222,7 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 		idSum := sha256.Sum256([]byte("identity-v1\x00" + p.Host + "\x00" + p.Alias + "\x00" + Harness + "\x00claude-account\x00" + now.UTC().Format(time.RFC3339Nano) + "\x00" + fingerprint))
 		id := hex.EncodeToString(idSum[:])
 		d.IntervalID, d.EffectiveFrom = id, clock
+		d.LastConfirmedAt = &clock
 		status := "observed"
 		reasons, missing := []string{}, []string{}
 		if d.Account == nil {
@@ -195,7 +242,13 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 			return err
 		}
 		if p.Events != nil {
+			for _, sample := range p.history {
+				p.mergeIdentity(sample)
+			}
 			p.liveHistory = append(p.liveHistory, p.history...)
+			if len(p.liveHistory) >= maxIdentityHistory {
+				p.liveHistory = append([]identitySample(nil), p.liveHistory[len(p.liveHistory)-maxIdentityHistory+1:]...)
+			}
 			p.history = []identitySample{{d, now, now, fingerprint, raw}}
 		} else {
 			p.history = append(p.history, identitySample{d, now, now, fingerprint, nil})
@@ -204,7 +257,21 @@ func (p *Profile) SampleIdentity(now time.Time) error {
 			}
 		}
 	} else {
-		p.history[len(p.history)-1].last = now
+		latest := &p.history[len(p.history)-1]
+		latest.last = now
+		clock := identityTime(now, "collection")
+		latest.data.LastConfirmedAt = &clock
+		if p.Events != nil {
+			// Confirmation envelopes are append-only observations of the same interval.
+			id := sha256.Sum256([]byte(latest.data.IntervalID + "\x00confirmation\x00" + now.UTC().Format(time.RFC3339Nano)))
+			probe := hex.EncodeToString(id[:])
+			latest.raw, _ = json.Marshal(map[string]any{
+				"schema_version": 1, "kind": "identity", "event_id": probe, "source": "claude-account", "parser_version": "1",
+				"source_schema_version": nil, "host": p.Host, "profile": p.Alias, "harness": Harness, "provider": Provider,
+				"observed_at": clock, "collected_at": clock, "locator": map[string]any{"type": "probe", "probe_id": probe, "part": "identity"},
+				"quality": map[string]any{"status": "observed", "reasons": []string{}, "missing_fields": []string{}}, "data": latest.data,
+			})
+		}
 	}
 	if p.Events != nil {
 		latest := &p.history[len(p.history)-1]

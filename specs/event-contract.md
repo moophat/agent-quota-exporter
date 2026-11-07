@@ -108,10 +108,18 @@ archive deduplication and historical corrections never inflate or decrement curr
 
 `identity.data`: `account` (stable opaque account ID or null), `metric_account`
 (metric account label at observation, or null when unavailable/email compatibility mode), `identity_interval_id`,
-`effective_from`, `effective_until` (nullable timestamp objects), `credential_mtime`,
+`effective_from`, `effective_until` (nullable timestamp objects), optional `last_confirmed_at`, `credential_mtime`,
 `access_expires_at`, `login_expires_at` (timestamp objects), `subscription_type`, `rate_tier`,
 and restricted `metadata`. The next sample closes the preceding sampled binding; closure is a
 derived interval, not a mutation of the raw event. No sample proves an exact switch time in a gap.
+
+Non-breaking schema-1 extension (2026-11-07): `last_confirmed_at` is a timestamp
+object recording the latest confirmation of the interval's unchanged facts.
+Repeated confirmations append identity envelopes with distinct observation IDs,
+the same `identity_interval_id` and `effective_from`, and advancing
+`last_confirmed_at`; replay folds these by interval, taking the latest confirmation.
+Older events without the field use `effective_from` as their last confirmation.
+The gap after that confirmation and before a differing account stays ambiguous.
 
 Claude's exact metadata allowlist is:
 

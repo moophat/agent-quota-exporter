@@ -44,7 +44,7 @@ func TestIdentityStoreFailurePreservesMetricsAndRetries(t *testing.T) {
 		t.Fatal(paths)
 	}
 	b, err := os.ReadFile(paths[0])
-	if err != nil || bytes.Count(b, []byte{'\n'}) != 1 || !bytes.Contains(b, []byte(id)) {
+	if err != nil || bytes.Count(b, []byte{'\n'}) != 2 || !bytes.Contains(b, []byte(id)) {
 		t.Fatalf("retry lost identity: %s %v", b, err)
 	}
 }
@@ -56,6 +56,91 @@ func identityProfile(t *testing.T, alias string) *Profile {
 	p := &Profile{Host: "node-a", Alias: alias, Dir: t.TempDir(), IdentityKey: bytes.Repeat([]byte{1}, 32)}
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(identityFixture))
 	return p
+}
+
+func TestIdentityHistoryRetriesFailedLoad(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	root := t.TempDir()
+	s, err := events.Open(events.Options{Root: root, Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := filepath.Glob(filepath.Join(root, "events", "month=*", "*.jsonl"))
+	if len(paths) != 1 {
+		t.Fatal(paths)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths[0], []byte("invalid\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	restarted := identityProfile(t, "profile-a")
+	restarted.Events = s
+	if got := restarted.IdentityAt(t0); got.Account != nil {
+		t.Fatal("failed load published history")
+	}
+	if err := os.WriteFile(paths[0], data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := restarted.IdentityAt(t0); got.Account == nil {
+		t.Fatal("readable history was not retried")
+	}
+}
+
+func TestIdentityConfirmationSurvivesRestart(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 22, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	for _, at := range []time.Time{t0, t0.Add(2 * time.Minute)} {
+		if err := p.SampleIdentity(at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	if err := p.SampleIdentity(t0.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	before := p.IdentityAt(t0.Add(time.Minute))
+	restarted := identityProfile(t, "profile-a")
+	restarted.Events = s
+	after := restarted.IdentityAt(t0.Add(time.Minute))
+	if before.Quality != "sampled" || after.Quality != before.Quality || after.Account == nil || *after.Account != *before.Account {
+		t.Fatalf("before=%+v after=%+v", before, after)
+	}
+}
+
+func TestIdentityLiveRetentionKeepsOlderBindings(t *testing.T) {
+	p := identityProfile(t, "profile-a")
+	s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 24, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Events = s
+	if err := p.SampleIdentity(t0); err != nil {
+		t.Fatal(err)
+	}
+	first := p.IdentityAt(t0)
+	for i := 1; i < maxIdentityHistory+5; i++ {
+		p.AccountAlias = strings.Repeat("a", i)
+		if err := p.SampleIdentity(t0.Add(time.Duration(i) * time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(p.liveHistory)+len(p.history) > maxIdentityHistory {
+		t.Fatalf("retained %d live samples", len(p.liveHistory)+len(p.history))
+	}
+	if got := p.IdentityAt(t0); got.Account == nil || *got.Account != *first.Account {
+		t.Fatal("older durable binding lost")
+	}
 }
 
 func TestIdentityHistoryLoadsOnce(t *testing.T) {
@@ -175,13 +260,13 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Count(b, []byte{'\n'}) != 1 || bytes.Contains(b, []byte("example.com")) {
+	if bytes.Count(b, []byte{'\n'}) != 2 || bytes.Contains(b, []byte("example.com")) {
 		t.Fatalf("unsafe or repeated event %s", b)
 	}
 	var row struct {
 		Data IdentityData `json:"data"`
 	}
-	if err := json.Unmarshal(b, &row); err != nil {
+	if err := json.Unmarshal(bytes.Split(b, []byte{'\n'})[0], &row); err != nil {
 		t.Fatal(err)
 	}
 	d := row.Data
