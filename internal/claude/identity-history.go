@@ -59,6 +59,10 @@ type IdentityBinding struct {
 // unobserved gap after the last confirmation ambiguous, never the new account.
 func (p *Profile) IdentityAt(at time.Time) IdentityBinding {
 	samples := p.identityHistory()
+	return identityAt(samples, at)
+}
+
+func identityAt(samples []identitySample, at time.Time) IdentityBinding {
 	for i := len(samples) - 1; i >= 0; i-- {
 		s := samples[i]
 		if at.Before(s.at) {

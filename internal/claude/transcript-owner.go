@@ -26,7 +26,10 @@ func transcriptOwner(raw []byte, owner *string) {
 
 // Search backwards in bounded blocks, retaining only complete structural lines.
 // At most 64 MiB preceding the cursor is examined; older evidence stays unknown.
-func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) string {
+func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	const capBytes int64 = 64 << 20
 	floor := max(int64(0), offset-capBytes)
 	end := offset
@@ -39,7 +42,7 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) strin
 		block := make([]byte, end-start)
 		n, err := f.ReadAt(block, start)
 		if err != nil && n != len(block) {
-			return ""
+			return "", err
 		}
 		if trailing {
 			if split := bytes.LastIndexByte(block, '\n'); split >= 0 {
@@ -58,7 +61,7 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) strin
 			var owner string
 			transcriptOwner(line, &owner)
 			if owner != "" {
-				return owner
+				return owner, nil
 			}
 			block = block[:split+1]
 			fragments = nil
@@ -73,7 +76,7 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) strin
 			var owner string
 			transcriptOwner(tail, &owner)
 			if owner != "" {
-				return owner
+				return owner, nil
 			}
 			block = block[:last]
 		}
@@ -82,6 +85,9 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) strin
 		}
 		end = start
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if floor == 0 {
 		var owner string
 		var line []byte
@@ -89,14 +95,45 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) strin
 			line = append(line, fragments[i]...)
 		}
 		transcriptOwner(line, &owner)
-		return owner
+		return owner, nil
 	}
-	return ""
+	return "", nil
+}
+
+// Refresh once before both transcript passes; never retain a raw email in history.
+func (p *Profile) refreshOwnerSnapshot() {
+	samples := p.identityHistory()
+	err := p.ResolveAccount()
+	label, uuid := p.Account()
+	private := ""
+	if err != nil {
+		uuid = ""
+	}
+	if p.EmailLabel && p.AccountAlias == "" && label != "unknown" && len(p.IdentityKey) >= 32 {
+		private = p.opaqueEmail(label)
+	}
+	p.mu.Lock()
+	p.ownerHistory, p.ownerSnapshotReady = samples, true
+	p.ownerLabel, p.ownerUUID, p.ownerPrivate = label, uuid, private
+	p.mu.Unlock()
 }
 
 func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string, account any, interval any, evidence, quality string) {
+	s.P.mu.Lock()
+	ready := s.P.ownerSnapshotReady
+	s.P.mu.Unlock()
+	if !ready {
+		s.P.refreshOwnerSnapshot()
+	}
+	s.P.mu.Lock()
+	samples := s.P.ownerHistory
+	currentLabel, currentUUID, currentPrivate := s.P.ownerLabel, s.P.ownerUUID, s.P.ownerPrivate
+	s.P.mu.Unlock()
 	if owner != "" {
 		label := fmt.Sprintf("acct-%x", sha256.Sum256([]byte(owner)))[:13]
+		if s.P.AccountAlias != "" && owner == currentUUID {
+			label = currentLabel
+		}
 		private := label
 		if len(s.P.IdentityKey) >= 32 {
 			private = s.P.opaqueEmail(owner)
@@ -105,12 +142,15 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 	}
 	at, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err == nil {
-		binding := s.P.IdentityAt(at)
+		binding := identityAt(samples, at)
 		if binding.Account != nil && binding.Quality == "sampled" {
 			// MetricAccount belongs to the same historical interval, never today's login.
 			metric = "unknown"
 			if binding.MetricAccount != nil {
 				metric = *binding.MetricAccount
+			}
+			if s.P.EmailLabel && currentPrivate != "" && *binding.Account == currentPrivate {
+				metric = currentLabel
 			}
 			return metric, *binding.Account, binding.IntervalID, "identity_binding", "sampled"
 		}

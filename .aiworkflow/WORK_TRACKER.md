@@ -6,6 +6,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Session owner follow-up fixes -->
+### Session owner follow-up fixes | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** feat/claude-session-owner | t9r/cx/gpt-6.1-sol | user four-finding brief
+**Outcome:** Four regressions demonstrated before implementation; fixes and requested checks pass.
+**Key:** preserve capture slice, shared collection snapshot, verified labels, retry incomplete recovery
+**Pending:** Parent independent inspection; no commit/push or live run.
+<!-- END STUB: 2026-11-07 | Session owner follow-up fixes -->
+
 <!-- BEGIN STUB: 2026-11-07 | B06 session ownership -->
 ### B06 session ownership | 2026-11-07
 **Model:** t9r/cx/gpt-6.1-sol

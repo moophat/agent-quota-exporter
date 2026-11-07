@@ -175,7 +175,7 @@ func TestSessionOwnerBackwardLatestAndCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if got := recoverTranscriptOwner(context.Background(), f, fi.Size()); got != "owner-b" {
+	if got, err := recoverTranscriptOwner(context.Background(), f, fi.Size()); err != nil || got != "owner-b" {
 		t.Fatalf("latest backward owner: %q", got)
 	}
 	if err := f.Close(); err != nil {
@@ -195,7 +195,7 @@ func TestSessionOwnerBackwardLatestAndCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if got := recoverTranscriptOwner(context.Background(), f, fi.Size()); got != "" {
+	if got, err := recoverTranscriptOwner(context.Background(), f, fi.Size()); err != nil || got != "" {
 		t.Fatalf("owner beyond cap: %q", got)
 	}
 }

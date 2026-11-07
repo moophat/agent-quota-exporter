@@ -140,6 +140,7 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	ctx, cancel := context.WithTimeout(ctx, s.ReadTimeout())
 	defer cancel()
 	s.readBytes = 0
+	s.P.refreshOwnerSnapshot()
 	if s.st == nil {
 		st := &tState{}
 		if len(raw) > 0 {
@@ -255,9 +256,10 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		if !st.Init {
 			fst = &fileState{Off: f.size, Ino: f.ino}
 			if opened, _, err := openRegular(f.path); err == nil {
-				fst.Owner = recoverTranscriptOwner(ctx, opened, f.size)
+				var err error
+				fst.Owner, err = recoverTranscriptOwner(ctx, opened, f.size)
 				opened.Close()
-				fst.OwnerReady = true
+				fst.OwnerReady = err == nil
 			}
 			st.Files[k] = fst
 			continue
@@ -323,7 +325,11 @@ func (s *TranscriptsSource) readFile(ctx context.Context, path string, fst *file
 	}
 	defer f.Close()
 	if !fst.OwnerReady {
-		fst.Owner = recoverTranscriptOwner(ctx, f, fst.Off)
+		owner, err := recoverTranscriptOwner(ctx, f, fst.Off)
+		if err != nil {
+			return 0, 0
+		}
+		fst.Owner = owner
 		fst.OwnerReady = true
 	}
 	if _, err := f.Seek(fst.Off, io.SeekStart); err != nil {

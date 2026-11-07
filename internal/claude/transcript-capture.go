@@ -199,7 +199,13 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 		}
 		cur.Size = fi.Size()
 		if !cur.OwnerReady {
-			cur.Owner = recoverTranscriptOwner(ctx, f, cur.Offset)
+			owner, err := recoverTranscriptOwner(ctx, f, cur.Offset)
+			if err != nil {
+				f.Close()
+				runErr = err
+				break
+			}
+			cur.Owner = owner
 			cur.OwnerReady = true
 		}
 		// Persist generation before emitting anything, including after a replacement.
