@@ -1,9 +1,28 @@
 # WORK_TRACKER
+
 ## Paused
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Transcript review fixes -->
+### Transcript review fixes | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** feat/claude-transcripts | t9r/cx/gpt-6.1-sol | PR #35
+**Outcome:** Eight review fixes implemented; regression tests observed failing first; requested checks pass.
+**Key:** independent bounded capture budget, rotating metric turns, incomplete discovery retains offsets, safe structural projection, full digest with legacy lookup
+**Pending:** None; no commit or push requested.
+<!-- END STUB: 2026-11-07 | Transcript review fixes -->
+
+<!-- BEGIN STUB: 2026-11-07 | B05 transcript recovery -->
+### B05 transcript recovery | 2026-11-07
+**Meta:** feat/claude-transcripts | t9r/cx/gpt-6.1-sol | user B05 acceptance brief
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** Implemented; focused tests, build, vet and requested package checks pass; isolated four-minute live check captured 14194 root usage rows.
+**Key:** historical capture independent of live metric startup boundary; B06 excluded
+**Pending:** B06 separate; budget smaller than a single valid line can stall; live backlog not fully drained; final small validation changes not live-retested
+<!-- END STUB: 2026-11-07 | B05 transcript recovery -->
 
 <!-- BEGIN STUB: 2026-11-07 | Stable metric account labels -->
 ### Stable metric account labels | 2026-11-07

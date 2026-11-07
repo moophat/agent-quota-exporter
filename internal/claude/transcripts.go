@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	maxLine        = 16 << 20 // longer lines are skipped and counted as parse errors
+	maxLine        = 64 << 20 // longer lines are skipped and counted as parse errors
 	seenCap        = 20000    // message ids kept in memory for dedupe
 	seenPersistCap = 2000     // newest ids persisted (covers a stream that straddles a restart)
 	copyGrace      = time.Hour
@@ -36,8 +36,14 @@ const (
 //   - lines past a stored offset are always counted, however old (an exporter outage loses nothing);
 //   - a message id seen again adds only the positive difference per field (streamed duplicates).
 type TranscriptsSource struct {
-	P        *Profile
-	Interval time.Duration
+	P                 *Profile
+	Interval          time.Duration
+	StateDir          string
+	ByteBudget        int64
+	Deadline          time.Duration
+	capture           *transcriptCapture
+	readBytes         int64
+	captureOpenSubdir func(*os.File, string) (*os.File, error)
 
 	mu sync.Mutex
 	st *tState // in-memory state, loaded from the persisted blob on the first collect
@@ -79,7 +85,8 @@ type tState struct {
 	Named map[string]map[string]int64 `json:"named"`
 	// LastCollect is the end of the previous collect. A file first seen after it (or replaced since) is new
 	// unless its lines predate it: lines written during an exporter outage still count.
-	LastCollect int64 `json:"last_collect,omitempty"`
+	LastCollect int64  `json:"last_collect,omitempty"`
+	NextFile    string `json:"next_file,omitempty"`
 }
 
 func (s *TranscriptsSource) Name() string               { return "claude-transcripts" }
@@ -108,6 +115,7 @@ func modelLabel(m string) string {
 }
 
 type line struct {
+	RequestID string `json:"requestId"`
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
 	Message   *struct {
@@ -127,6 +135,9 @@ var assistantMarker = []byte(`"assistant"`)
 func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json.RawMessage) (core.Result, json.RawMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, s.ReadTimeout())
+	defer cancel()
+	s.readBytes = 0
 	if s.st == nil {
 		st := &tState{}
 		if len(raw) > 0 {
@@ -155,8 +166,10 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		path string
 		size int64
 		ino  uint64
+		mod  time.Time
 	}
 	var files []found
+	walkComplete := true
 	root := filepath.Join(s.P.Dir, "projects")
 	// Walk by directory handle: no link is followed at any level (safefs.go). Depth is bounded; Claude Code
 	// keeps projects/<project>/<session>.jsonl and <session>/subagents/*.jsonl.
@@ -164,20 +177,34 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	walk = func(d *os.File, rel string, depth int) {
 		ents, err := d.ReadDir(-1)
 		if err != nil {
+			walkComplete = false
 			return
 		}
 		for _, e := range ents {
+			if ctx.Err() != nil {
+				walkComplete = false
+				return
+			}
 			name := e.Name()
 			r := filepath.Join(rel, name)
 			switch {
-			case e.IsDir() && depth < 6:
+			case e.IsDir():
 				if sd, err := openSubdir(d, name); err == nil {
 					walk(sd, r, depth+1)
 					sd.Close()
+				} else {
+					walkComplete = false
 				}
 			case e.Type().IsRegular() && strings.HasSuffix(name, ".jsonl"):
 				if size, ino, ok := statAt(d, name); ok {
-					files = append(files, found{r, filepath.Join(root, r), size, ino})
+					info, err := e.Info()
+					if err == nil {
+						files = append(files, found{r, filepath.Join(root, r), size, ino, info.ModTime()})
+					} else {
+						walkComplete = false
+					}
+				} else {
+					walkComplete = false
 				}
 			}
 		}
@@ -194,7 +221,20 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 			return res, nil, err // projects is a link or not a directory: never followed
 		}
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].mod.Equal(files[j].mod) {
+			return files[i].rel < files[j].rel
+		}
+		return files[i].mod.After(files[j].mod)
+	})
+	if st.NextFile != "" {
+		for i, f := range files {
+			if f.rel == st.NextFile {
+				files = append(files[i:], files[:i]...)
+				break
+			}
+		}
+	}
 
 	// since: files that are new or replaced since the last collect count lines from that moment on.
 	since := st.LastCollect
@@ -202,8 +242,11 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		since = now.Unix()
 	}
 	live := map[string]bool{}
-	account, _ := s.P.Account()
 	for _, f := range files {
+		live[hashKey(f.rel)] = true
+	}
+	account, _ := s.P.Account()
+	for i, f := range files {
 		k := hashKey(f.rel)
 		live[k] = true
 		fst := st.Files[k]
@@ -228,9 +271,19 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		n, perr := s.readFile(ctx, f.path, fst, account, now)
 		parseErr += perr
 		fst.Off += n
+		if len(files) > 0 {
+			st.NextFile = files[(i+1)%len(files)].rel
+		}
+		budget := s.ByteBudget
+		if budget <= 0 {
+			budget = 256 << 20
+		}
+		if s.readBytes >= budget {
+			break
+		}
 	}
 	for k := range st.Files {
-		if !live[k] && st.Init {
+		if !live[k] && st.Init && walkComplete {
 			delete(st.Files, k)
 		}
 	}
@@ -242,6 +295,9 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		res.Errors = map[string]int{core.ReasonParse: parseErr}
 	}
 	res.Samples = s.samples()
+	if s.P.Events != nil {
+		s.captureTranscripts(ctx, now, &res)
+	}
 	blob, err := json.Marshal(s.persistView())
 	if err != nil {
 		return res, nil, core.Fail(core.ReasonOther)
@@ -260,17 +316,22 @@ func (s *TranscriptsSource) readFile(ctx context.Context, path string, fst *file
 	if _, err := f.Seek(fst.Off, io.SeekStart); err != nil {
 		return 0, 0
 	}
-	r := bufio.NewReaderSize(f, 64<<10)
+	budget := s.ByteBudget
+	if budget <= 0 {
+		budget = 256 << 20
+	}
+	r := bufio.NewReaderSize(io.LimitReader(f, max(0, budget-s.readBytes)), 4<<20)
 	var pos, lineEnd int64 // bytes read; bytes up to the end of the last complete line
 	parseErr := 0
 	var buf []byte
 	oversized := false
 	for n := 0; ; n++ {
-		if n%1000 == 999 && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return lineEnd, parseErr
 		}
 		chunk, err := r.ReadSlice('\n')
 		pos += int64(len(chunk))
+		s.readBytes += int64(len(chunk))
 		if errors.Is(err, bufio.ErrBufferFull) {
 			if !oversized {
 				buf = append(buf, chunk...)

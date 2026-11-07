@@ -46,3 +46,16 @@ func TestEventsConfigDefaultsAndValidation(t *testing.T) {
 		t.Fatal("parity accepted disabled store")
 	}
 }
+
+func TestTranscriptByteBudgetCoversOneLine(t *testing.T) {
+	for budget, ok := range map[string]bool{"0": true, "67108864": true, "1048576": false} {
+		c := Default()
+		if err := decode([]byte("version: 1\nsources:\n  claude-transcripts:\n    byte_budget: "+budget+"\n"), c); err != nil {
+			t.Fatal(err)
+		}
+		err := c.Validate()
+		if (err == nil) != ok || (err != nil && !strings.Contains(err.Error(), "64 MiB")) {
+			t.Fatalf("byte_budget %s: %v", budget, err)
+		}
+	}
+}

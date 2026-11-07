@@ -97,6 +97,8 @@ func (q Quota) Enabled(key string) bool { v, _ := q[key].(bool); return v }
 func (q Quota) StatuslinePath() string  { v, _ := q["claude_statusline_cache"].(string); return v }
 
 type Source struct {
+	ByteBudget            int64    `yaml:"byte_budget"`
+	Deadline              Duration `yaml:"deadline"`
 	MinInterval           Duration `yaml:"min_interval"`
 	Backoff429            Duration `yaml:"backoff_429"`
 	IKnowThisCanLockMyAcc bool     `yaml:"i_know_this_can_lock_my_account"`
