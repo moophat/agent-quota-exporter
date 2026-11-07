@@ -150,7 +150,7 @@ from private keyed `account`. For `session_owner`, it is `acct-` plus the first
 eight lowercase hex digits of SHA-256 of `accountUuid`, or the profile's alias/email
 label when the owner is the verified current login, exactly as `messageOwner`
 resolves it. For `identity_binding`, it is the binding's metric account label;
-for `none`, it is null. Older usage events may omit the field.
+for `none`, an `unknown` label, or an email-shaped label (email-label mode), it is null. Older usage events may omit the field.
 Resolve by host **and profile** at message time, not the login when collected. Before first identity
 is unattributed; events in an unobserved A-to-B gap are ambiguous, with separate totals. A late A
 message is never assigned to current B by default. Legacy host-ASOF import is `sampled_legacy`,

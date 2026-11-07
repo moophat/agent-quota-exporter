@@ -96,8 +96,9 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 		data["cwd"] = nil
 	}
 	metric, account, interval, evidence, quality := s.messageOwner(l.Timestamp, c.Owner)
+	// Email-label profiles name metrics by raw email; events never store emails, so that case stays null.
 	data["metric_account"] = nil
-	if evidence != "none" {
+	if evidence != "none" && metric != "unknown" && !strings.Contains(metric, "@") {
 		data["metric_account"] = metric
 	}
 	data["account"], data["identity_interval_id"] = account, interval

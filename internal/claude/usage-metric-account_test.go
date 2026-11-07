@@ -12,8 +12,10 @@ import (
 func TestUsageMetricAccountStored(t *testing.T) {
 	for _, tc := range []struct {
 		name, owner, alias, currentUUID, binding string
+		email                                    bool
 		want                                     any
 	}{
+		{name: "email label current login", owner: "owner-a", currentUUID: "owner-a", alias: "user@example.com", email: true, want: nil},
 		{name: "session owner", owner: "owner-a", want: ownerLabel("owner-a")},
 		{name: "verified owner alias", owner: "owner-a", currentUUID: "owner-a", alias: "acct-alias", want: "acct-alias"},
 		{name: "different owner ignores alias", owner: "owner-a", currentUUID: "owner-b", alias: "acct-alias", want: ownerLabel("owner-a")},
@@ -23,6 +25,10 @@ func TestUsageMetricAccountStored(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			x, store := recoverySource(t)
 			x.p.AccountAlias = tc.alias
+			if tc.email {
+				x.p.AccountAlias, x.p.EmailLabel = "", true
+				x.p.IdentityKey = make([]byte, 32) // email mode stores only keyed private ids
+			}
 			// Freeze the same owner snapshot both metric and event attribution use.
 			x.p.ownerSnapshotReady = true
 			x.p.ownerLabel, x.p.ownerUUID = tc.alias, tc.currentUUID
