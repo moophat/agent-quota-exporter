@@ -112,7 +112,22 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 		tokens["tok_cw_1h"] = nil
 	}
 	if negative || subset || uncertain {
-		data["accounting_quality"] = map[string]any{"normalization_basis": "claude_disjoint", "invalid_arithmetic": negative || subset, "negative_arithmetic": negative, "subset_violations": subset}
+		// subset_violations names the violated subset fields (a list, as the event contract and Codex use);
+		// a bool here made the store reject the envelope and stalled capture on that message.
+		violations := []string{}
+		if subset {
+			violations = append(violations, "tok_cw_1h")
+		}
+		// Scalars in accounting_quality are strings or null (the event contract's scalar rule, as Codex emits).
+		var invalid, negativeReason any
+		if negative {
+			negativeReason = "negative token count"
+			invalid = "negative token count"
+		}
+		if subset {
+			invalid = "tok_cw_1h exceeds cache_write"
+		}
+		data["accounting_quality"] = map[string]any{"normalization_basis": "claude_disjoint", "invalid_arithmetic": invalid, "negative_arithmetic": negativeReason, "subset_violations": violations}
 	}
 	// The store rejects secret-bearing structural strings; retain no arbitrary objects.
 	locator := map[string]any{"type": "file", "relative_path": rel, "file_id": hashKey(fmt.Sprintf("%s:%d:%d", rel, c.Device, c.Inode)), "generation": c.Generation, "byte_start": start, "byte_end": end}
