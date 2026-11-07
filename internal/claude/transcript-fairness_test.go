@@ -38,7 +38,7 @@ func TestInvalidTokenArithmeticIsQualified(t *testing.T) {
 	if d["tokens"].(map[string]any)["input"] != nil {
 		t.Fatal("negative normalized input retained")
 	}
-	if d["accounting_quality"].(map[string]any)["invalid_arithmetic"] != true {
+	if v, _ := d["accounting_quality"].(map[string]any)["invalid_arithmetic"].(string); v == "" {
 		t.Fatal("invalid arithmetic unqualified")
 	}
 }
@@ -135,5 +135,19 @@ func TestCaptureProgressWithMetricBacklog(t *testing.T) {
 	x.collect()
 	if usageRows(t, store) != 1 {
 		t.Fatal("metric reads starved capture")
+	}
+}
+
+func TestSubsetViolationMessageIsStored(t *testing.T) {
+	// Live 2026-11-07: a 1h cache-write larger than the total cache write made the store reject the envelope
+	// (subset_violations was a bool), and capture stalled on that message every run.
+	x, store := recoverySource(t)
+	bad := []byte(`{"type":"assistant","timestamp":"2026-01-01T00:00:00Z","message":{"id":"subset","model":"claude-x","content":[],` +
+		`"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":2,"cache_creation":{"ephemeral_1h_input_tokens":3}}}}` + "\n")
+	write(t, x.file("subset.jsonl"), append(bad, asstLine("after", "claude-x", "2026-01-01T00:00:01Z", 1)...))
+	res := core.Result{}
+	x.src.captureTranscripts(context.Background(), time.Now(), &res)
+	if got := usageRows(t, store); got != 2 {
+		t.Fatalf("stored %d usage rows, want 2 (subset violation must not block capture)", got)
 	}
 }
