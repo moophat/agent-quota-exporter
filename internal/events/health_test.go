@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteOutcomeTracksDurability(t *testing.T) {
@@ -85,5 +86,25 @@ func TestStatsCapacityIOWithoutWriteLock(t *testing.T) {
 	}
 	if _, err := s.Stats(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWriteOutcomesDoNotWaitForAppend(t *testing.T) {
+	s, err := Open(options(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ReportFailure(Writer{"node-a", "claude-code", "root", "claude-transcripts"})
+	s.mu.Lock() // an append in progress holds the write lock across its disk I/O
+	defer s.mu.Unlock()
+	done := make(chan map[Writer]bool, 1)
+	go func() { done <- s.WriteOutcomes() }()
+	select {
+	case got := <-done:
+		if len(got) != 1 {
+			t.Fatalf("outcomes %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WriteOutcomes waited for the append lock; scrapes stall behind event writes")
 	}
 }

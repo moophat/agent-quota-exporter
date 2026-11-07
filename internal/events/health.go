@@ -7,15 +7,15 @@ type Writer struct{ Host, Harness, Profile, Source string }
 
 // ReportFailure records capture failures that happened before Append was reached.
 func (s *Store) ReportFailure(w Writer) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.outcomesMu.Lock()
+	defer s.outcomesMu.Unlock()
 	s.outcomes[w] = false
 }
 
 // WriteOutcomes omits writers with no attempted durable append.
 func (s *Store) WriteOutcomes() map[Writer]bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.outcomesMu.Lock()
+	defer s.outcomesMu.Unlock()
 	out := make(map[Writer]bool, len(s.outcomes))
 	for w, ok := range s.outcomes {
 		out[w] = ok
