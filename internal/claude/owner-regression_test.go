@@ -132,6 +132,19 @@ func TestSampledOwnerEmailVerification(t *testing.T) {
 	}
 }
 
+func TestEmbeddedOwnerVerifiedEmailLabel(t *testing.T) {
+	x := newTT(t)
+	x.p.EmailLabel = true
+	write(t, filepath.Join(x.p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"accountUuid":"owner-a","emailAddress":"acct-a@example.com"}}`))
+	x.collect()
+	for _, tc := range []struct{ owner, want string }{{"owner-a", "acct-a@example.com"}, {"owner-b", ownerLabel("owner-b")}} {
+		got, _, _, _, _ := x.src.messageOwner("", tc.owner)
+		if got != tc.want {
+			t.Errorf("owner %s: got %s, want %s", tc.owner, got, tc.want)
+		}
+	}
+}
+
 func TestInterruptedOwnerRecoveryRetries(t *testing.T) {
 	x := newTT(t)
 	x.collect()

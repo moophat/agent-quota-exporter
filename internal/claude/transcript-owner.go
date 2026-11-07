@@ -131,7 +131,9 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 	s.P.mu.Unlock()
 	if owner != "" {
 		label := fmt.Sprintf("acct-%x", sha256.Sum256([]byte(owner)))[:13]
-		if s.P.AccountAlias != "" && owner == currentUUID {
+		// The verified current login keeps the profile's own label (alias or email), so its owner-bearing and
+		// ownerless usage stay one series.
+		if (s.P.AccountAlias != "" || s.P.EmailLabel) && currentUUID != "" && owner == currentUUID {
 			label = currentLabel
 		}
 		private := label
