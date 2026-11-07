@@ -105,6 +105,11 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 	c := s.capture
 	root := filepath.Join(s.P.Dir, "projects")
 	var files []transcriptFile
+	var discoveryErr error
+	openChild := s.captureOpenSubdir
+	if openChild == nil {
+		openChild = openSubdir
+	}
 	var walk func(*os.File, string) error
 	walk = func(d *os.File, rel string) error {
 		if ctx.Err() != nil {
@@ -117,19 +122,22 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 		for _, e := range es {
 			r := filepath.Join(rel, e.Name())
 			if e.IsDir() {
-				sd, err := openSubdir(d, e.Name())
+				sd, err := openChild(d, e.Name())
 				if err != nil {
-					return err
+					discoveryErr = err
+					continue
 				}
 				err = walk(sd, r)
 				sd.Close()
 				if err != nil {
-					return err
+					discoveryErr = err
+					continue
 				}
 			} else if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl") {
 				fi, err := e.Info()
 				if err != nil {
-					return err
+					discoveryErr = err
+					continue
 				}
 				files = append(files, transcriptFile{r, filepath.Join(root, r), fi.ModTime(), fi.Size()})
 			}
@@ -153,7 +161,8 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 	if budget <= 0 {
 		budget = 256 << 20
 	}
-	read := s.readBytes
+	// Each pass has its own bounded budget so metric traffic cannot starve capture.
+	read := int64(0)
 	var rows, skips, resets int64
 	readFiles := 0
 	for _, file := range files {
@@ -229,6 +238,12 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 					skips++
 				} else if raw != nil {
 					exists, err := s.P.Events.Contains(id)
+					// Existing checkpoints remain valid. A replay after an upgrade must
+					// recognize the old physical observation ID before allocating v2.
+					if err == nil && !exists {
+						physical := fmt.Sprintf("%s:%d:%d:%d:%d:%d", file.rel, cur.Device, cur.Inode, cur.Generation, start, end)
+						exists, err = s.P.Events.Contains(hashKey(s.P.Host + "\x00" + s.P.Alias + "\x00" + s.Name() + "\x00" + physical))
+					}
 					if err == nil && !exists {
 						err = s.P.Events.Append(events.Batch{Envelopes: []json.RawMessage{raw}})
 						if err == nil {
@@ -262,6 +277,9 @@ func (s *TranscriptsSource) captureTranscripts(ctx context.Context, now time.Tim
 	}
 	c.Bytes += read
 	c.Rows += rows
+	if runErr == nil {
+		runErr = discoveryErr
+	}
 	complete := runErr == nil && ctx.Err() == nil && backlog == 0
 	if complete {
 		c.LastComplete = now.Unix()

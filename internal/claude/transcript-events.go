@@ -1,8 +1,11 @@
 package claude
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/events"
@@ -14,7 +17,7 @@ func captureTime(t time.Time) map[string]any {
 func sourceTime(v string) map[string]any {
 	out := map[string]any{"original": nil, "epoch_seconds": nil, "quality": "unknown"}
 	if v != "" {
-		out["original"] = v
+		out["original"] = captureText(v)
 		out["quality"] = "unparseable"
 		if t, e := time.Parse(time.RFC3339Nano, v); e == nil {
 			out["epoch_seconds"] = float64(t.UnixNano()) / 1e9
@@ -23,8 +26,25 @@ func sourceTime(v string) map[string]any {
 	}
 	return out
 }
+
+func captureText(v string) any {
+	if v == "" {
+		return nil
+	}
+	for _, marker := range []string{"bearer ", "sk-", "api_key=", "access_token", "refresh_token", "-----begin", "cookie:", "password=", "@"} {
+		if strings.Contains(strings.ToLower(v), marker) {
+			return nil
+		}
+	}
+	return v
+}
 func (s *TranscriptsSource) captureEnvelope(kind, id string, locator, observed map[string]any, now time.Time, data map[string]any) map[string]any {
-	return map[string]any{"schema_version": 1, "kind": kind, "event_id": hashKey(s.P.Host + "\x00" + s.P.Alias + "\x00" + s.Name() + "\x00" + id), "source": s.Name(), "parser_version": "1", "source_schema_version": nil, "host": s.P.Host, "profile": s.P.Alias, "harness": Harness, "provider": Provider, "observed_at": observed, "collected_at": captureTime(now), "locator": locator, "quality": map[string]any{"status": "partial", "reasons": []string{}, "missing_fields": []string{}}, "data": data}
+	return map[string]any{"schema_version": 1, "kind": kind, "event_id": captureDigest(s.P.Host + "\x00" + s.P.Alias + "\x00" + s.Name() + "\x00" + id), "source": s.Name(), "parser_version": "1", "source_schema_version": nil, "host": s.P.Host, "profile": s.P.Alias, "harness": Harness, "provider": Provider, "observed_at": observed, "collected_at": captureTime(now), "locator": locator, "quality": map[string]any{"status": "partial", "reasons": []string{}, "missing_fields": []string{}}, "data": data}
+}
+
+func captureDigest(identity string) string {
+	h := sha256.Sum256([]byte(identity))
+	return "v2:" + hex.EncodeToString(h[:])
 }
 func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptCursor, start, end int64, now time.Time) (json.RawMessage, string, error) {
 	var l struct {
@@ -62,12 +82,7 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 	if l.Type != "assistant" || l.Message == nil || l.Message.Usage == nil || l.Message.ID == "" || l.Message.Model == "<synthetic>" {
 		return nil, "", nil
 	}
-	text := func(v string) any {
-		if v == "" {
-			return nil
-		}
-		return v
-	}
+	text := captureText
 	u := l.Message.Usage
 	var hour *int64
 	if u.Cache != nil {
@@ -79,10 +94,33 @@ func (s *TranscriptsSource) transcriptEvent(b []byte, rel string, c *transcriptC
 	if l.Cwd != "" && !events.SafePath(l.Cwd) {
 		data["cwd"] = nil
 	}
+	data["message_id"] = text(l.Message.ID)
+	negative := false
+	for key, count := range map[string]*int64{"input": u.In, "output": u.Out, "cache_read": u.Read, "cache_write": u.Write, "tok_cw_1h": hour} {
+		if count != nil && *count < 0 {
+			tokens[key] = nil
+			negative = true
+		}
+	}
+	subset := hour != nil && u.Write != nil && *hour > *u.Write
+	uncertain := hour != nil && u.Write == nil
+	if subset || uncertain {
+		tokens["tok_cw_1h"] = nil
+	}
+	if negative || subset || uncertain {
+		data["accounting_quality"] = map[string]any{"normalization_basis": "claude_disjoint", "invalid_arithmetic": negative || subset, "negative_arithmetic": negative, "subset_violations": subset}
+	}
 	// The store rejects secret-bearing structural strings; retain no arbitrary objects.
 	locator := map[string]any{"type": "file", "relative_path": rel, "file_id": hashKey(fmt.Sprintf("%s:%d:%d", rel, c.Device, c.Inode)), "generation": c.Generation, "byte_start": start, "byte_end": end}
 	id := fmt.Sprintf("%s:%d:%d:%d:%d:%d", rel, c.Device, c.Inode, c.Generation, start, end)
 	env := s.captureEnvelope("usage", id, locator, sourceTime(l.Timestamp), now, data)
+	missing := []string{}
+	for _, key := range []string{"account", "project", "message_id", "request_id", "session_id", "model", "cwd", "branch"} {
+		if data[key] == nil {
+			missing = append(missing, key)
+		}
+	}
+	env["quality"] = map[string]any{"status": "partial", "reasons": []string{"missing_attribution"}, "missing_fields": missing}
 	encoded, err := json.Marshal(env)
 	return encoded, env["event_id"].(string), err
 }

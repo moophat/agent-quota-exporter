@@ -36,13 +36,14 @@ const (
 //   - lines past a stored offset are always counted, however old (an exporter outage loses nothing);
 //   - a message id seen again adds only the positive difference per field (streamed duplicates).
 type TranscriptsSource struct {
-	P          *Profile
-	Interval   time.Duration
-	StateDir   string
-	ByteBudget int64
-	Deadline   time.Duration
-	capture    *transcriptCapture
-	readBytes  int64
+	P                 *Profile
+	Interval          time.Duration
+	StateDir          string
+	ByteBudget        int64
+	Deadline          time.Duration
+	capture           *transcriptCapture
+	readBytes         int64
+	captureOpenSubdir func(*os.File, string) (*os.File, error)
 
 	mu sync.Mutex
 	st *tState // in-memory state, loaded from the persisted blob on the first collect
@@ -84,7 +85,8 @@ type tState struct {
 	Named map[string]map[string]int64 `json:"named"`
 	// LastCollect is the end of the previous collect. A file first seen after it (or replaced since) is new
 	// unless its lines predate it: lines written during an exporter outage still count.
-	LastCollect int64 `json:"last_collect,omitempty"`
+	LastCollect int64  `json:"last_collect,omitempty"`
+	NextFile    string `json:"next_file,omitempty"`
 }
 
 func (s *TranscriptsSource) Name() string               { return "claude-transcripts" }
@@ -167,6 +169,7 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		mod  time.Time
 	}
 	var files []found
+	walkComplete := true
 	root := filepath.Join(s.P.Dir, "projects")
 	// Walk by directory handle: no link is followed at any level (safefs.go). Depth is bounded; Claude Code
 	// keeps projects/<project>/<session>.jsonl and <session>/subagents/*.jsonl.
@@ -174,10 +177,12 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 	walk = func(d *os.File, rel string, depth int) {
 		ents, err := d.ReadDir(-1)
 		if err != nil {
+			walkComplete = false
 			return
 		}
 		for _, e := range ents {
 			if ctx.Err() != nil {
+				walkComplete = false
 				return
 			}
 			name := e.Name()
@@ -187,13 +192,19 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 				if sd, err := openSubdir(d, name); err == nil {
 					walk(sd, r, depth+1)
 					sd.Close()
+				} else {
+					walkComplete = false
 				}
 			case e.Type().IsRegular() && strings.HasSuffix(name, ".jsonl"):
 				if size, ino, ok := statAt(d, name); ok {
 					info, err := e.Info()
 					if err == nil {
 						files = append(files, found{r, filepath.Join(root, r), size, ino, info.ModTime()})
+					} else {
+						walkComplete = false
 					}
+				} else {
+					walkComplete = false
 				}
 			}
 		}
@@ -216,6 +227,14 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		}
 		return files[i].mod.After(files[j].mod)
 	})
+	if st.NextFile != "" {
+		for i, f := range files {
+			if f.rel == st.NextFile {
+				files = append(files[i:], files[:i]...)
+				break
+			}
+		}
+	}
 
 	// since: files that are new or replaced since the last collect count lines from that moment on.
 	since := st.LastCollect
@@ -223,8 +242,11 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		since = now.Unix()
 	}
 	live := map[string]bool{}
-	account, _ := s.P.Account()
 	for _, f := range files {
+		live[hashKey(f.rel)] = true
+	}
+	account, _ := s.P.Account()
+	for i, f := range files {
 		k := hashKey(f.rel)
 		live[k] = true
 		fst := st.Files[k]
@@ -249,9 +271,19 @@ func (s *TranscriptsSource) Collect(ctx context.Context, now time.Time, raw json
 		n, perr := s.readFile(ctx, f.path, fst, account, now)
 		parseErr += perr
 		fst.Off += n
+		if len(files) > 0 {
+			st.NextFile = files[(i+1)%len(files)].rel
+		}
+		budget := s.ByteBudget
+		if budget <= 0 {
+			budget = 256 << 20
+		}
+		if s.readBytes >= budget {
+			break
+		}
 	}
 	for k := range st.Files {
-		if !live[k] && st.Init {
+		if !live[k] && st.Init && walkComplete {
 			delete(st.Files, k)
 		}
 	}

@@ -1,9 +1,19 @@
 # WORK_TRACKER
+
 ## Paused
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Transcript review fixes -->
+### Transcript review fixes | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** feat/claude-transcripts | t9r/cx/gpt-6.1-sol | PR #35
+**Outcome:** Eight review fixes implemented; regression tests observed failing first; requested checks pass.
+**Key:** independent bounded capture budget, rotating metric turns, incomplete discovery retains offsets, safe structural projection, full digest with legacy lookup
+**Pending:** None; no commit or push requested.
+<!-- END STUB: 2026-11-07 | Transcript review fixes -->
 
 <!-- BEGIN STUB: 2026-11-07 | B05 transcript recovery -->
 ### B05 transcript recovery | 2026-11-07
