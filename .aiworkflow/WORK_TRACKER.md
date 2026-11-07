@@ -6,6 +6,15 @@ None
 
 ## Log
 
+<!-- BEGIN STUB: 2026-11-07 | Usage metric account -->
+### Usage metric account | 2026-11-07
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/usage-metric-account | t9r/cx/gpt-6.1-sol | user usage metric account brief
+**Outcome:** Five real-store regression cases failed before implementation; build, vet, requested package tests, gofmt and diff checks pass.
+**Key:** Reuse messageOwner metric label; null without evidence; schema-1 additive field.
+**Pending:** None; no commit or push.
+<!-- END STUB: 2026-11-07 | Usage metric account -->
+
 <!-- BEGIN STUB: 2026-11-07 | Retry and preserve identity evidence -->
 ### Retry and preserve identity evidence | 2026-11-07
 **Model:** t9r/cx/gpt-6.1-sol
