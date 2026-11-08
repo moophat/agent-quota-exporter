@@ -1,7 +1,11 @@
 package codex
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -22,6 +26,43 @@ func TestScopeObservationPreservesPrecision(t *testing.T) {
 	}
 	if got := s.SampleObservedAt(core.Sample{Name: "agent_requests_total"}); !got.IsZero() {
 		t.Fatal("counter acquired quota age")
+	}
+}
+
+func TestObservedTimestampExpiresWithServedScope(t *testing.T) {
+	h := newHarness(t)
+	h.collect()
+	old := tNow.Add(-4 * time.Minute).Add(900 * time.Millisecond)
+	recent := tNow.Add(-time.Minute)
+	h.src.StaleAfter = time.Minute
+	h.src.Interval = 120 * time.Second
+	h.src.st.Quotas = map[string]*reading{
+		"all":  {AtMs: old.UnixMilli(), Scope: "all", Windows: []qWindow{{Window: "5h", Used: 20, Reset: tNow.Add(time.Hour).Unix()}}},
+		"mini": {AtMs: recent.UnixMilli(), Scope: "mini", Windows: []qWindow{{Window: "5h", Used: 30, Reset: tNow.Add(-time.Second).Unix()}}},
+	}
+	clk := &fastClock{t: tNow}
+	state, err := core.OpenState(t.TempDir(), tNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	sched := core.NewScheduler([]core.Source{h.src}, state, clk, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Minute)
+	sched.Tick(context.Background(), nil, false, true)
+	render := func() string {
+		var out bytes.Buffer
+		(&core.Exposition{Host: "node-a", Sched: sched, Clock: clk, ProcessStart: tNow}).Render(&out)
+		return out.String()
+	}
+	if !strings.Contains(render(), "\nagent_quota_utilization_ratio{") {
+		t.Fatal("served scope missing")
+	}
+	clk.add(26 * time.Second)
+	out := render()
+	if strings.Contains(out, "\nagent_quota_utilization_ratio{") {
+		t.Fatal("old scope did not expire")
+	}
+	if strings.Contains(out, "\nagent_quota_observed_timestamp_seconds{") {
+		t.Fatal("observed timestamp outlived its served scope")
 	}
 }
 

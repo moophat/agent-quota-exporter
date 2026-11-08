@@ -97,8 +97,10 @@ func (s *OAuthUsageSource) PreferLocal(now time.Time) bool {
 	if s.Statusline == nil {
 		return false
 	}
-	_, _, err := s.Statusline.reading(now)
-	return err == nil
+	_, at, err := s.Statusline.reading(now)
+	// Local preference controls attempts, not metric eligibility. A stopped
+	// writer must not defer an opted-in live poll for the exposition floor.
+	return err == nil && now.Sub(at) <= 5*time.Minute
 }
 
 func (s *OAuthUsageSource) PreferredSource() string {

@@ -310,6 +310,41 @@ func TestStatuslineCachePollCadence(t *testing.T) {
 	}
 }
 
+func TestStoppedStatuslineAllowsLiveQuota(t *testing.T) {
+	p := newCacheProfile(t)
+	body := fixture(t, "oauth-usage-response.json")
+	vendor := newStub(t, body)
+	path := filepath.Join(t.TempDir(), "cache.json")
+	cacheFile(t, path, "available", t0, body)
+	local := &StatuslineCacheSource{P: p, Path: path, Interval: time.Minute, StaleAfter: 45 * time.Minute}
+	oauth := vendor.source(p)
+	oauth.Statusline = local
+	clk := &stepClock{t: t0}
+	state, err := core.OpenState(t.TempDir(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	sched := core.NewScheduler([]core.Source{local, oauth}, state, clk, slog.New(slog.NewTextHandler(io.Discard, nil)), 45*time.Minute)
+	sched.Tick(context.Background(), nil, false, true)
+	if vendor.calls != 0 {
+		t.Fatal("recent statusline did not defer OAuth")
+	}
+	clk.add(5*time.Minute + time.Second)
+	sched.Tick(context.Background(), nil, false, true)
+	if vendor.calls != 1 {
+		t.Errorf("stopped statusline blocked OAuth: calls=%d", vendor.calls)
+	}
+	var out bytes.Buffer
+	(&core.Exposition{Host: "node-a", Sched: sched, Clock: clk, ProcessStart: t0}).Render(&out)
+	want := fmt.Sprintf("} %d", clk.Now().Unix())
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "agent_quota_observed_timestamp_seconds{") && !strings.HasSuffix(line, want) {
+			t.Errorf("older local reading hid live quota: %s", line)
+		}
+	}
+}
+
 func TestStatuslineCacheTrust(t *testing.T) {
 	for _, kind := range []string{"owner", "group-writable", "world-writable"} {
 		t.Run(kind, func(t *testing.T) {

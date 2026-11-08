@@ -1,17 +1,5 @@
 # WORK_TRACKER
 
-## Active — One freshness rule | 2026-11-08
-<!-- BEGIN STUB: 2026-11-08 | One freshness rule -->
-### One freshness rule | 2026-11-08
-**Model:** t9r/cx/gpt-6.1-sol
-**Meta:** fix/one-freshness-rule | t9r/cx/gpt-6.1-sol | user freshness brief
-**Outcome:** Requested regressions failed before implementation; unified rule implemented; final build, vet, full tests and diff checks pass.
-**Key:** age > max(configured floor, 2P + read timeout + 15s); polling unchanged
-**Pending:** None; no commit or push.
-<!-- END STUB: 2026-11-08 | One freshness rule -->
-- [x] Demonstrate failing boundary and config regressions.
-- [x] Unify implementation and documentation.
-- [x] Build, vet, full tests and review.
 ## Active — PR41 four attribution findings | 2026-11-08
 <!-- BEGIN STUB: 2026-11-08 | PR41 four attribution findings -->
 ### PR41 four attribution findings | 2026-11-08
@@ -30,6 +18,24 @@
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-08 | Freshness review findings -->
+### Freshness review findings | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/one-freshness-rule | t9r/cx/gpt-6.1-sol | PR 42 Qodo findings
+**Outcome:** Both regressions failed before fixes; final build, vet, full tests and diff check pass.
+**Key:** Five-minute local preference independent of freshness, newer eligible quota wins, precise newest served Codex scope
+**Pending:** None; no commit or push.
+<!-- END STUB: 2026-11-08 | Freshness review findings -->
+
+<!-- BEGIN STUB: 2026-11-08 | One freshness rule -->
+### One freshness rule | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/one-freshness-rule | t9r/cx/gpt-6.1-sol | user freshness brief
+**Outcome:** Requested regressions failed before implementation; unified rule implemented; final build, vet, full tests and diff checks pass.
+**Key:** age > max(configured floor, 2P + read timeout + 15s); polling unchanged
+**Pending:** None; no commit or push.
+<!-- END STUB: 2026-11-08 | One freshness rule -->
 
 <!-- BEGIN STUB: 2026-11-08 | Plain account labels contract -->
 ### Plain account labels contract | 2026-11-08

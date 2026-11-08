@@ -409,7 +409,11 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 		if f, ok := in.src.(LocalFallback); ok && f.PreferredSource() != "" {
 			for j := range out {
 				if out[j].harness == out[i].harness && out[j].profile == out[i].profile && out[j].name == f.PreferredSource() && out[j].fresh && len(out[j].cache) > 0 {
-					out[i].cache = nil
+					if !out[i].fresh || !out[i].observedAt.After(out[j].observedAt) {
+						out[i].cache = nil
+					} else {
+						out[j].cache = nil
+					}
 					break
 				}
 			}

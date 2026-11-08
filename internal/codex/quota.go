@@ -217,7 +217,24 @@ func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
 			}
 		}
 	}
-	return serveQuotas(ident{s.Host, s.Alias, s.Account}, quotas, core.FreshnessLimit(s, s.StaleAfter), now)
+	limit := core.FreshnessLimit(s, s.StaleAfter)
+	samples := serveQuotas(ident{s.Host, s.Alias, s.Account}, quotas, limit, now)
+	// Record only scopes represented in this result, not reset/expired scopes
+	// still retained as historical evidence in the persisted state.
+	s.quotaObservedAt = time.Time{}
+	for _, sample := range samples {
+		for _, label := range sample.Labels {
+			if label.Name == "scope" {
+				if q := quotas[label.Value]; q != nil {
+					at := time.UnixMilli(q.AtMs)
+					if at.After(s.quotaObservedAt) {
+						s.quotaObservedAt = at
+					}
+				}
+			}
+		}
+	}
+	return samples
 }
 
 // SampleObservedAt preserves each scope's millisecond observation precision for
@@ -228,7 +245,6 @@ func (s *RolloutsSource) SampleObservedAt(sample core.Sample) time.Time {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var newest int64
 	for _, label := range sample.Labels {
 		if label.Name == "scope" {
 			if q := s.st.Quotas[label.Value]; q != nil {
@@ -236,10 +252,7 @@ func (s *RolloutsSource) SampleObservedAt(sample core.Sample) time.Time {
 			}
 		}
 	}
-	for _, q := range s.st.Quotas {
-		newest = max(newest, q.AtMs)
-	}
-	return time.UnixMilli(newest)
+	return s.quotaObservedAt
 }
 
 // ident is the profile identity every series carries. The rollouts and usage sources share the quota mapping

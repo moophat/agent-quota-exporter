@@ -108,8 +108,10 @@ agent-quota-exporter --version
   `.credentials.json` modification time (checked without reading credentials); older readings report `auth_expired`.
    Freshness uses the rule below; the legacy `defaults.statusline_stale_after` setting is accepted but ignored. Missing, unreadable, invalid or unavailable files give no
   reading and mark the source down, without advancing its last-success timestamp. With `claude_oauth_usage: true`
-  on the same profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
-  persisted gates and backoff. There is no vendor call without that opt-in, and no vendor call while the file is fresh.
+   on the same profile, a valid local reading defers OAuth only while its age is at most five minutes.
+   This local-preference policy controls attempts, not freshness: exposition still uses the shared rule below.
+   After writes stop, OAuth may poll subject to its existing 15-minute floor, persisted gates and backoff.
+   Exposition selects the newer eligible reading (local wins ties). There is no vendor call without that opt-in.
 - systemd: [examples/agent-quota-exporter.service](examples/agent-quota-exporter.service). The shipped unit has
   **`PrivateTmp=true`, which hides the host `/tmp` cache**. To use the default cache, override it with
   **`PrivateTmp=false`**, or provide a **read-only bind** of the host cache at a path visible to the service and
