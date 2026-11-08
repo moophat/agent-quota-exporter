@@ -161,7 +161,7 @@ func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil &&
 func (p *Profile) SampleIdentity(now time.Time) error {
 	facts, mtime, readErr := readIdentityFacts(p)
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
-	if err := p.ResolveAccount(); err == nil {
+	if err := p.ResolveAccount(); readErr == nil && err == nil {
 		if label, uuid := p.Account(); p.AccountAlias != "" || uuid != "" || (p.EmailLabel && label != "unknown") {
 			d.Account, d.MetricAccount = &label, &label
 		}

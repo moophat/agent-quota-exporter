@@ -46,8 +46,12 @@ func TestUsageMetricAccountStored(t *testing.T) {
 			if got, exists := row.Data["metric_account"]; !exists || got != tc.want {
 				t.Errorf("metric_account = %v (present %v), want %v", got, exists, tc.want)
 			}
-			if got := row.Data["account"]; got != tc.want {
-				t.Errorf("account = %v, want %v", got, tc.want)
+			wantAccount := tc.want
+			if tc.binding != "" {
+				wantAccount = "private-keyed-account"
+			}
+			if got := row.Data["account"]; got != wantAccount {
+				t.Errorf("account = %v, want %v", got, wantAccount)
 			}
 			if err := store.Append(events.Batch{Envelopes: []json.RawMessage{raw}}); err != nil {
 				t.Fatalf("store rejected usage: %v", err)
@@ -62,8 +66,8 @@ func TestUsageMetricAccountStored(t *testing.T) {
 				if got, exists := stored.Data["metric_account"]; !exists || got != tc.want {
 					t.Errorf("stored metric_account = %v (present %v), want %v", got, exists, tc.want)
 				}
-				if got := stored.Data["account"]; got != tc.want {
-					t.Errorf("stored account = %v, want %v", got, tc.want)
+				if got := stored.Data["account"]; got != wantAccount {
+					t.Errorf("stored account = %v, want %v", got, wantAccount)
 				}
 				return nil
 			}); err != nil {

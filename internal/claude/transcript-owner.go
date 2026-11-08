@@ -143,10 +143,7 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 			if binding.MetricAccount != nil {
 				metric = *binding.MetricAccount
 			}
-			if metric != "unknown" {
-				return metric, metric, binding.IntervalID, "identity_binding", "sampled"
-			}
-			return metric, nil, binding.IntervalID, "identity_binding", "sampled"
+			return metric, *binding.Account, binding.IntervalID, "identity_binding", "sampled"
 		}
 	}
 	return "unknown", nil, nil, "none", "unattributed"

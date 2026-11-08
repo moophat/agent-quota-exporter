@@ -97,7 +97,7 @@ func TestSessionOwnerC(t *testing.T) {
 	}
 	var row struct{ Data map[string]any }
 	json.Unmarshal(raw, &row)
-	if row.Data["account"] != "metric-a" || row.Data["attribution_quality"] != "sampled" {
+	if row.Data["account"] != "private-a" || row.Data["attribution_quality"] != "sampled" {
 		t.Fatalf("sampled event: %s", raw)
 	}
 }

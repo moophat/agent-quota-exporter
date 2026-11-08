@@ -399,7 +399,7 @@ func TestIdentityOptionalFallbackKeepsAliasAndMetadata(t *testing.T) {
 	}
 	p = identityProfile(t, "profile-b")
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(`{"claudeAiOauth":{"expiresAt":1767232800000},"oauthAccount":{"emailAddress":"credential@example.com"}}`))
-	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"fallback@example.com","organizationName":"Kept"}}`))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"credential@example.com","organizationName":"Kept"}}`))
 	if err := p.SampleIdentity(t0); err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestIdentityHistoryRebuildsFromStoreAndStaysBounded(t *testing.T) {
 	}
 	plain := identityProfile(t, "plain")
 	for i := 0; i < maxIdentityHistory+1; i++ {
-		write(t, filepath.Join(plain.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", string(rune('b'+i))+"@example.com")))
+		write(t, filepath.Join(plain.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", fmt.Sprintf("acct-%d@example.com", i))))
 		write(t, filepath.Join(plain.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", fmt.Sprintf("acct-%d@example.com", i))))
 		plain.jsonMod = time.Time{}
 		if err := plain.SampleIdentity(t0.Add(time.Duration(i) * time.Minute)); err != nil {
