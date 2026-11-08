@@ -114,5 +114,24 @@ type LocalFallback interface {
 	PreferredSource() string
 }
 
-// MaxAger overrides the interval-derived staleness for timestamped local files.
+// MaxAger marks timestamped local files whose rejected readings invalidate cache.
 type MaxAger interface{ MaxAge() time.Duration }
+
+// SampleAger supplies original observation times when a result mixes readings
+// from different scopes with current cumulative counters. Zero means result time.
+type SampleAger interface{ SampleObservedAt(Sample) time.Time }
+
+// SourceReadTimeout is the configured collection budget, or ReadTimeout by default.
+func SourceReadTimeout(s Source) time.Duration {
+	if t, ok := s.(Timeouter); ok && t.ReadTimeout() > 0 {
+		return t.ReadTimeout()
+	}
+	return ReadTimeout
+}
+
+// FreshnessLimit is the single reading-age limit: max(staleAfter, 2*P + D + 15s).
+// P is MinInterval and D is the same timeout budget used by the scheduler.
+// A reading is stale only when its age exceeds this limit.
+func FreshnessLimit(s Source, staleAfter time.Duration) time.Duration {
+	return max(staleAfter, 2*s.MinInterval()+SourceReadTimeout(s)+15*time.Second)
+}

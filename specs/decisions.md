@@ -124,6 +124,14 @@ explicit).
 
 ## Usage parity contract revision (B01)
 
+### Single freshness rule — 2026-11-08
+
+Owner delegated the choice to the orchestrator; the authorized brief selects one rule for every source:
+stale iff age > max(configured stale_after, 2*effective poll interval + collection timeout + 15s).
+Any positive stale_after is valid. The legacy statusline-specific setting is accepted but ignored.
+This supersedes earlier freshness exceptions; reset eligibility may end earlier. Vendor polling is unchanged.
+Recorded by t9r/cx/gpt-6.1-sol.
+
 **AI-Model:** t9r/cx/gpt-6.1-sol
 
 The authorized usage-parity brief replaces the agent-imposed metrics-only history boundary with

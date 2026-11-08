@@ -1,4 +1,6 @@
 # MANIFEST: agent-quota-exporter
+**Last-Updated:** 2026-11-08T01:36:00Z
+**Last-Updated:** 2026-11-07T01:30:00Z
 **Last-Updated:** 2026-11-08T00:00:00Z
 **Last-Updated:** 2026-11-07T00:00:00Z
 
@@ -17,7 +19,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 | Optional event sink configuration and startup wiring | done in working tree (B03) | `internal/config/events.go`, `internal/app/events.go`; feat/event-sink-config; source adapters pending B04+ |
 | Claude identity history | done in working tree; final verification pending | `internal/claude/identity-history.go`, `identity-facts.go`; public metric account labels in events and profile-scoped sampled lookup; owner ruling D11; model t9r/cx/gpt-6.1-sol |
 | Core: profile discovery | done (Claude) | `internal/config/discover.go` |
-| Core: scheduler, cache, rate gates, state store | done | `internal/core` |
+| Core: scheduler, cache, rate gates, state store | done | `internal/core`; fix/one-freshness-rule unifies age > max(stale_after, 2P+D+15s), polling unchanged; model t9r/cx/gpt-6.1-sol |
 | Core: `/metrics`, `/healthz`, health metrics | done | `internal/core/render.go`, `http.go` |
 | Plugin: claude-transcripts, claude-sessions, claude-account | done, verified on-prem (v0.1.0-rc.2) | `internal/claude` |
 | Plugin: opencode-db | done, verified on-prem (rc.2) | `internal/opencode`; opencode-http not built |

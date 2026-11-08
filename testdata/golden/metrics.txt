@@ -52,7 +52,7 @@ agent_sessions{host="node-a",harness="claude-code",profile="acct-b",account="acc
 agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="active",env="lab"} 0
 agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="idle",env="lab"} 1
 agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="other",env="lab"} 0
-# HELP agent_source_up 1 if the last read of the source succeeded or a fresh cache entry exists.
+# HELP agent_source_up 1 if the last read of the source succeeded or a fresh cache entry exists; fresh age <= max(stale_after, 2*poll_interval + read_timeout + 15s).
 # TYPE agent_source_up gauge
 agent_source_up{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 1
 agent_source_up{host="node-a",harness="claude-code",profile="acct-b",source="claude-sessions",env="lab"} 1

@@ -42,7 +42,7 @@ Plugins return the full current value set (counters as cumulative totals they ke
 10 % jitter) and it is not in backoff. One in-flight read per instance, global cap 4 concurrent reads, per-read
 timeout 10 s. `/metrics` renders the cache only, never blocks on a read.
 
-3.2 Staleness: every cached plugin sample older than `stale_after` (default 45 m; quota = 3 x 15 m) is dropped from
+3.2 Staleness: every cached plugin sample with age exceeding `max(stale_after, 2*P + D + 15s)` is dropped from
 output: absent, never zero. Health metrics are always emitted.
 
 3.3 State: `state_dir/state.json` = per instance {last_attempt, last_success, backoff_until, plugin blob} plus

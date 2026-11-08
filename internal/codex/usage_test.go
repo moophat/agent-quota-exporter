@@ -420,12 +420,12 @@ func TestUsageHandoffBesideRollouts(t *testing.T) {
 		_, roll, usage, v := build(t)
 		v.usage = []int{500} // first-run failure of the live read
 		rs := rollout(t, roll, tNow)
-		equal(t, "rollouts quota", quota(keyed(t, rs)), quotaD)
+		equal(t, "stale rollouts quota", quota(keyed(t, rs)), map[string]float64{})
 		ures, _, err := usage.Collect(context.Background(), tNow, nil)
 		if err == nil || len(ures.Samples) != 0 {
 			t.Fatalf("err %v samples %d", err, len(ures.Samples))
 		}
-		equal(t, "rollouts quota after the failure", quota(keyed(t, rollout(t, roll, tNow.Add(time.Minute)))), quotaD)
+		equal(t, "stale rollouts quota after the failure", quota(keyed(t, rollout(t, roll, tNow.Add(time.Minute)))), map[string]float64{})
 	})
 	t.Run("live wins once it has a reading", func(t *testing.T) {
 		_, roll, usage, _ := build(t)
@@ -454,7 +454,7 @@ func TestUsageHandoffBesideRollouts(t *testing.T) {
 			t.Errorf("stale live reading still served: %v", q)
 		}
 		rs := rollout(t, roll, tNow)
-		equal(t, "rollouts quota", quota(keyed(t, rs)), quotaD)
+		equal(t, "stale rollouts quota", quota(keyed(t, rs)), map[string]float64{})
 		noDup(t, rs, live.Samples)
 		_ = ures
 	})
@@ -779,7 +779,7 @@ func TestUsageLiveBeatsCachedRolloutsAfterRolloutsFailure(t *testing.T) {
 
 	sched.Tick(context.Background(), only(roll), false, true) // first collect: files' ends
 	h.copyTree()
-	clk.add(tNow.Sub(tStart))
+	clk.add(time.Unix(observedD, 0).Add(time.Minute).Sub(tStart))
 	sched.Tick(context.Background(), only(roll), false, true) // rollouts caches its quota (0.40)
 	if l := render(); !strings.HasSuffix(l, " 0.4") {
 		t.Fatalf("rollouts reading not cached first: %s", l)

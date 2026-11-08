@@ -194,9 +194,8 @@ func minReset(a, b int64) int64 {
 	}
 }
 
-// quotaSamples serves the persisted readings at collect time (contract, "Passive sources are the one
-// exception"): per scope, a window until its own reset passes, a window without a reset time for StaleAfter from
-// its reading, credits until their Until. Windows that map to the same label set are merged (max utilization, min
+// quotaSamples serves persisted readings within the shared freshness limit;
+// windows and credits may expire earlier at reset. Windows with the same labels are merged (max utilization, min
 // reset). The observed timestamp has no scope label, so it is the newest reading among the scopes still served.
 func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
 	quotas := s.st.Quotas
@@ -204,7 +203,11 @@ func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
 		// codex-usage owns the series while its reading is fresh. Once it is stale (or has never read) rollouts
 		// serves, but only readings newer than the live one, so an old rollout never replaces a newer reading.
 		at := s.Live.last()
-		if !at.IsZero() && now.Sub(at) <= s.StaleAfter {
+		limit := s.Live.limit
+		if limit == 0 {
+			limit = core.FreshnessLimit(s, s.StaleAfter)
+		}
+		if !at.IsZero() && now.Sub(at) <= limit {
 			return nil
 		}
 		quotas = map[string]*reading{}
@@ -214,7 +217,42 @@ func (s *RolloutsSource) quotaSamples(now time.Time) []core.Sample {
 			}
 		}
 	}
-	return serveQuotas(ident{s.Host, s.Alias, s.Account}, quotas, s.StaleAfter, now)
+	limit := core.FreshnessLimit(s, s.StaleAfter)
+	samples := serveQuotas(ident{s.Host, s.Alias, s.Account}, quotas, limit, now)
+	// Record only scopes represented in this result, not reset/expired scopes
+	// still retained as historical evidence in the persisted state.
+	s.quotaObservedAt = time.Time{}
+	for _, sample := range samples {
+		for _, label := range sample.Labels {
+			if label.Name == "scope" {
+				if q := quotas[label.Value]; q != nil {
+					at := time.UnixMilli(q.AtMs)
+					if at.After(s.quotaObservedAt) {
+						s.quotaObservedAt = at
+					}
+				}
+			}
+		}
+	}
+	return samples
+}
+
+// SampleObservedAt preserves each scope's millisecond observation precision for
+// scheduler expiry between polls, independently of the newest-scope metric.
+func (s *RolloutsSource) SampleObservedAt(sample core.Sample) time.Time {
+	if !strings.HasPrefix(sample.Name, "agent_quota_") {
+		return time.Time{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, label := range sample.Labels {
+		if label.Name == "scope" {
+			if q := s.st.Quotas[label.Value]; q != nil {
+				return time.UnixMilli(q.AtMs)
+			}
+		}
+	}
+	return s.quotaObservedAt
 }
 
 // ident is the profile identity every series carries. The rollouts and usage sources share the quota mapping
@@ -251,6 +289,9 @@ func serveQuotas(id ident, quotas map[string]*reading, staleAfter time.Duration,
 
 func scopeSamples(id ident, q *reading, staleAfter time.Duration, now time.Time) []core.Sample {
 	at := time.UnixMilli(q.AtMs)
+	if now.Sub(at) > staleAfter {
+		return nil
+	}
 	merged := map[string]qWindow{}
 	for _, w := range q.Windows {
 		if w.Reset > 0 && w.Reset <= now.Unix() {

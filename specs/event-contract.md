@@ -278,16 +278,16 @@ must distinguish old account semantics from newly captured public labels when re
 
 ### Claude freshness policy
 
-Freshness never rewrites historical evidence. For active direct Claude quota, define `P` as the
-effective configured account-wide poll interval (at least the source's floor), and `D` as the
-bounded maximum normal scheduling/global-gate delay beyond that interval. Stale age is
-`max(stale_after, 2*P + D + 15 seconds)`; stale means age greater than or equal to this bound.
-The 15 seconds covers request completion. Gate coordination
-must supply a finite delay bound, not an unbounded queue of holders. Failure/429 cooldowns do not
-extend this age or renew observation time. Passive statusline readings retain their separate
-short-cache freshness policy. Reset passed
+Freshness never rewrites historical evidence. Every source uses `P` = its effective poll interval
+(`MinInterval()`, including configured source floors), and `D` = its collection timeout budget
+(`ReadTimeout()` override, otherwise `core.ReadTimeout`, 10s). The single stale-age bound is
+`max(stale_after, 2*P + D + 15 seconds)`; stale means age strictly greater than this bound.
+Exactly at the bound a reading remains fresh. The 15 seconds is scheduling/completion slack.
+`stale_after` accepts any positive duration; the legacy statusline-specific setting is ignored.
+Failure/429 cooldowns do not extend this age or renew observation time.
+Passive readings use their original event time under the same rule. Reset passed
 without post-reset evidence means current unknown, prior reading retained. Identity target/local capture
-is 60 s; health/collect ages remain separate. Passive Codex stays as-of its last real turn. Direct Claude
+is 60 s; health/collect ages remain separate. Direct Claude
 keeps >=900 s/account globally, 15 s request/no inline retry, account-wide >=3600 s after 429.
 Generic external permits carry coordination; no fleet logic enters this repository.
 Ordinary local/agy timeout/network/5xx/parse failures retry next interval, repeated failures 2x/4x

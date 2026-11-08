@@ -34,7 +34,7 @@ func TestEventTotalQuotaFailureRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &RolloutsSource{Host: "node-a", Alias: "profile-a", Dir: dir, Events: store}
-	res, state, err := s.Collect(context.Background(), time.Now(), nil)
+	res, state, err := s.Collect(context.Background(), time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC), nil)
 	if err != nil || len(res.Samples) == 0 {
 		t.Fatalf("event failure stopped metrics: samples=%d err=%v", len(res.Samples), err)
 	}

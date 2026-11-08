@@ -148,7 +148,7 @@ and `context` against static-label collisions.
 
 Standard `agent_source_*` health uses `harness="strata"`, `profile=<lane>`, `source="strata"`.
 Failed polls never renew observation time or substitute zero. Last-good lane series remain eligible for
-`max(defaults.stale_after, 3 × interval)`, then go absent, including the counter and info family.
+`max(defaults.stale_after, 2*P + D + 15s)`, then go absent, including the counter and info family.
 
 ## Exporter health metrics
 
@@ -188,20 +188,16 @@ These additions are non-breaking (contract remains 0); no existing family gains 
 
 ## Staleness and absence
 
-- Active Claude quota follows the single [Claude freshness policy](event-contract.md#claude-freshness-policy),
-  or is absent after reset without a post-reset reading.
-  Current quota then is unknown, never synthesized zero. Last-good values/reset remain history;
-  a failed read or fresh scrape cannot renew observed time. Other sources retain their documented
-  staleness policies. Metric eligibility must not conceal readable historical evidence.
-- **Passive sources are the one exception** (v0.2: `codex-rollouts`). They read a quota the vendor's own client wrote
-  to disk at its last turn, so an idle profile's reading is old but still true. Such a window is served until its own
-  `resets_at` passes, then goes absent; a window with no reset time falls back to `stale_after` from the reading. Credits
-  are served until a newer reading replaces them, at most until the longest window of the same reading resets (7 days
-  when the reading has none). `agent_quota_observed_timestamp_seconds` is the reading's own time, so the age alert above
-  fires on any idle passive profile: for these, show the age ("as of") instead of alerting on it. While the files can
-  be read, `agent_source_cache_age_seconds` stays near 0, because it measures the read, not the reading.
-- A live source with a short interval (`codex-usage`, `agy-usage` when configured so) is stale after `stale_after` like
-  any other; its `agent_quota_observed_timestamp_seconds` is the time of the last successful read, so
+- Every reading follows `age > max(defaults.stale_after, 2*P + D + 15s)`:
+  `P` is effective `MinInterval()` and `D` is `ReadTimeout()` or the default 10s collection budget.
+  Exactly at the bound is fresh. Any positive `stale_after` is accepted; the legacy statusline-specific
+  setting is ignored. The implementation is `core.FreshnessLimit`.
+  Resets may make quota ineligible earlier. Current quota is then unknown, never zero.
+  Failed reads, backoff and scrapes cannot renew observed time; historical evidence remains readable.
+- Passive readings (`codex-rollouts`, statusline) use their original event/file time under the same rule.
+  Reading the file again does not renew quota observation time. Source cache age measures the source read,
+  so consumers should use quota observed time for quota age.
+- A live source's `agent_quota_observed_timestamp_seconds` is the time of the last successful read, so
   `time() - agent_quota_observed_timestamp_seconds` is the real age of the quota. When the login's access token is
   expired (`codex-usage` never refreshes it) the last reading keeps being served with its true observed time while
   `agent_source_errors_total{reason="auth_expired"}` rises.

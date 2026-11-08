@@ -49,14 +49,15 @@ const (
 // all files. The first collect searches the tails of the newest files for them, so an idle profile has readings
 // at once.
 type RolloutsSource struct {
-	Events     *events.Store
-	Host       string
-	Alias      string
-	Account    string
-	Dir        string // real CODEX_HOME path (symlinks resolved at start)
-	MaxModels  int
-	StaleAfter time.Duration // a quota window without a reset time is served this long after its reading
-	Interval   time.Duration
+	quotaObservedAt time.Time // precise newest served scope from the latest result; guarded by mu
+	Events          *events.Store
+	Host            string
+	Alias           string
+	Account         string
+	Dir             string // real CODEX_HOME path (symlinks resolved at start)
+	MaxModels       int
+	StaleAfter      time.Duration // a quota window without a reset time is served this long after its reading
+	Interval        time.Duration
 	// Live, when set, leaves the quota and credit series to codex-usage while it has a fresh reading.
 	Live *liveGate
 
