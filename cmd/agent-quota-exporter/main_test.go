@@ -22,7 +22,6 @@ func TestEnabledEventStoreFailsStartup(t *testing.T) {
 	for _, tc := range []struct{ name, root, budget, key, want string }{
 		{"unwritable", "/proc/aqe-event-store-test", "1024", "", "events:"},
 		{"budget", "/tmp/unused-events", "-1", "", "events.byte_budget"},
-		{"key", "/tmp/unused-events", "1024", "  identity_key_file: /missing/aqe-key\n", "events.identity_key_file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

@@ -1,10 +1,41 @@
 # WORK_TRACKER
 
+## Active — PR41 four attribution findings | 2026-11-08
+<!-- BEGIN STUB: 2026-11-08 | PR41 four attribution findings -->
+### PR41 four attribution findings | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/plain-account-names | t9r/cx/gpt-6.1-sol | user four-findings brief
+**Outcome:** All four regressions failed before fixes; focused tests, build, vet, uncached full suite and race suite pass.
+**Key:** preserve historical joins; account-only secret validation; fail closed on unreadable or conflicting identity
+**Pending:** None; no commit or push. Full race run passed after initial 120-second harness timeout.
+<!-- END STUB: 2026-11-08 | PR41 four attribution findings -->
+- [x] Demonstrate all four findings with failing tests (secret-bearing account; historical public/null replacement; three unreadable cases attributed; email/UUID conflicts attributed).
+- [x] Implement surgical fixes and verify focused regressions; retain actual-secret rejection and historical usage joins.
+- [x] Run build, vet, uncached full suite, race suite and diff checks; no exclusions.
+
 ## Paused
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-08 | Plain account labels contract -->
+### Plain account labels contract | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/plain-account-names | t9r/cx/gpt-6.1-sol | owner-authorized plain account labels brief
+**Outcome:** Implemented and reviewed plain Claude account labels; build, vet and full go test ./... pass (cached packages included); failing-before regressions recorded.
+**Key:** D11 owner ruling, shared public labels, schema-1 semantic correction, additive metric_account, ignored identity_key_file compatibility
+**Pending:** None. No commit or push. Existing stored rows retain their original semantics.
+<!-- END STUB: 2026-11-08 | Plain account labels contract -->
+
+<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
+### Q29 full regression repair | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
+**Key:** separate metric and capture cursors; retain original replay envelopes
+**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
+<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
 
 <!-- BEGIN STUB: 2026-11-07 | Usage metric account -->
 ### Usage metric account | 2026-11-07
@@ -180,21 +211,6 @@ None
 <!-- END STUB: 2026-11-07 | Q28 Codex capture repairs -->
 
 ## Paused
-## Active — Q29 full regression repair | 2026-11-07
-<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
-### Q29 full regression repair | 2026-11-07
-**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
-**Model:** t9r/cx/gpt-6.1-sol
-**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
-**Key:** separate metric and capture cursors; retain original replay envelopes
-**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
-<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
-- [x] Inspect baseline and contracts
-- [x] Reproduce and disposition twelve findings
-- [x] Acceptance and review
-
-None
-
 ## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Q30 opencode event repairs -->

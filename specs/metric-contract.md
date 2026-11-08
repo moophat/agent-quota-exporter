@@ -34,13 +34,12 @@ Labels are generic and defined once. A metric lists which of them it carries.
 
 `account_label: alias` is the default. `account_label: email` is an explicit compatibility
 opt-in, off by default: it publishes raw email addresses in the `account` label to every
-metrics consumer. It is forbidden when the parity event/metric privacy profile is enabled;
-native events never retain raw emails, regardless of this option.
+metrics consumer and in account-bearing events. It is also allowed with the parity profile.
 
-The identity key is private-event-store-only. Enabling events, setting or rotating
-`events.identity_key_file` must not change any metric's `account` label, including
-account info, quota and token series. Identity events carry `metric_account` to join
-private keyed identities to the existing metric label. This restores compatibility;
+Events use the same public account labels as metrics; identity and usage events carry
+equal `account` and `metric_account` values when attribution is available. Enabling events
+must not change any metric's `account` label, including account info, quota and token series.
+The owner-authorized event semantic correction is recorded in `decisions.md`;
 metric contract version remains 0 (no new metric names, labels or units).
 
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are

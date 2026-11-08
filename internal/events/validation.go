@@ -251,7 +251,9 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 				err = json.Unmarshal(val, &text)
 				if err == nil {
 					err = leaf(val)
-					if k == "model" {
+					if k == "account" || k == "metric_account" {
+						err = accountLeaf(val)
+					} else if k == "model" || k == "organizationName" {
 						err = modelLeaf(val)
 					}
 				}
@@ -272,6 +274,16 @@ func modelLeaf(v json.RawMessage) error {
 	// @ is a model version separator only in this field. All other secret checks remain.
 	b, _ := json.Marshal(strings.ReplaceAll(text, "@", ""))
 	return leaf(b)
+}
+
+// Account labels may contain email addresses and incidental marker substrings.
+// Explicit credential assignments and recognizable keys remain forbidden.
+func accountLeaf(v json.RawMessage) error {
+	var text string
+	if json.Unmarshal(v, &text) != nil || pathSecret.MatchString(text) {
+		return errors.New("secret-bearing account string")
+	}
+	return nil
 }
 
 var pathSecret = regexp.MustCompile(`(?i)(bearer\s|sk-[a-z0-9_-]{20,}|api_key=|access_token[=:]|refresh_token[=:]|-----begin|cookie:|password=)`)

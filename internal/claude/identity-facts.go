@@ -54,6 +54,7 @@ type identityFacts struct {
 
 type identityAccount struct {
 	Email *string `json:"emailAddress"`
+	UUID  *string `json:"accountUuid"`
 	IdentityMetadata
 }
 
@@ -85,8 +86,8 @@ func readIdentityFacts(p *Profile) (identityFacts, IdentityTimestamp, error) {
 		return identityFacts{}, mtime, core.Fail(core.ReasonParse)
 	}
 	// Claude normally keeps oauthAccount in .claude.json, not credentials.
-	// Fill only missing leaves, so credential metadata is never discarded.
-	if identityAccountIncomplete(facts.Account) {
+	// Always compare identities, even with complete credentials, before filling missing leaves.
+	{
 		b, err = readSmall(ClaudeJSONPath(p.Dir, p.ConfigDir), 64<<20)
 		if err == nil {
 			defer wipe(b)
@@ -94,6 +95,9 @@ func readIdentityFacts(p *Profile) (identityFacts, IdentityTimestamp, error) {
 				Account identityAccount `json:"oauthAccount"`
 			}
 			if json.Unmarshal(b, &account) != nil {
+				return identityFacts{}, mtime, core.Fail(core.ReasonParse)
+			}
+			if identityAccountsConflict(facts.Account, account.Account) {
 				return identityFacts{}, mtime, core.Fail(core.ReasonParse)
 			}
 			mergeIdentityAccount(&facts.Account, account.Account)
@@ -104,8 +108,9 @@ func readIdentityFacts(p *Profile) (identityFacts, IdentityTimestamp, error) {
 	return facts, mtime, nil
 }
 
-func identityAccountIncomplete(account identityAccount) bool {
-	return account.Email == nil || account.OrganizationName == nil || account.OrganizationType == nil || account.BillingType == nil || account.SeatTier == nil || account.HasExtraUsageEnabled == nil || account.OrganizationRateLimitTier == nil || account.UserRateLimitTier == nil
+func identityAccountsConflict(a, b identityAccount) bool {
+	return a.Email != nil && b.Email != nil && *a.Email != "" && *b.Email != "" && *a.Email != *b.Email ||
+		a.UUID != nil && b.UUID != nil && *a.UUID != "" && *b.UUID != "" && *a.UUID != *b.UUID
 }
 
 func isNotFound(err error) bool {

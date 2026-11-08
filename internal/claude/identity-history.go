@@ -1,20 +1,16 @@
 package claude
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/events"
 )
 
-// IdentityData is the native identity event payload. Raw emails never leave the reader.
+// IdentityData is the native identity event payload using the resolved account label.
 type IdentityData struct {
 	Account          *string            `json:"account"`
 	MetricAccount    *string            `json:"metric_account"`
@@ -38,15 +34,6 @@ type identitySample struct {
 }
 
 const maxIdentityHistory = 128
-
-// Match email-shaped tokens without consuming possessive suffixes in display names.
-var organizationEmail = regexp.MustCompile(`[A-Za-z0-9.!#$%&*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+`)
-
-func (p *Profile) opaqueEmail(email string) string {
-	mac := hmac.New(sha256.New, p.IdentityKey)
-	mac.Write([]byte("account-v1\x00" + Provider + "\x00" + strings.TrimSpace(email)))
-	return "acct_" + hex.EncodeToString(mac.Sum(nil))
-}
 
 // IdentityBinding reports sampled evidence, not an exact historical login time.
 type IdentityBinding struct {
@@ -173,34 +160,10 @@ func sameAccount(a, b *string) bool { return a == nil && b == nil || a != nil &&
 // a single pending envelope is retried verbatim before another observation is accepted.
 func (p *Profile) SampleIdentity(now time.Time) error {
 	facts, mtime, readErr := readIdentityFacts(p)
-	if facts.Account.OrganizationName != nil {
-		redacted := organizationEmail.ReplaceAllStringFunc(*facts.Account.OrganizationName, func(email string) string {
-			if len(p.IdentityKey) < 32 {
-				return "<email>"
-			}
-			return p.opaqueEmail(email)
-		})
-		facts.Account.OrganizationName = &redacted
-	}
 	d := IdentityData{CredentialMtime: mtime, AccessExpiresAt: expiryTime(facts.OAuth.ExpiresAt), LoginExpiresAt: expiryTime(facts.OAuth.RefreshTokenExpiresAt), SubscriptionType: facts.OAuth.SubscriptionType, RateTier: facts.OAuth.RateLimitTier, Metadata: facts.Account.IdentityMetadata}
-	// Resolve independently of private history so key provisioning/rotation cannot
-	// rename metric series. Email compatibility labels are never retained in events.
-	// Only a real label joins: an operator alias, or the hash of a known account UUID.
-	if err := p.ResolveAccount(); err == nil && !p.EmailLabel {
-		if label, uuid := p.Account(); p.AccountAlias != "" || uuid != "" {
-			d.MetricAccount = &label
-		}
-	}
-	if readErr == nil {
-		account := p.AccountAlias
-		if account == "" && facts.Account.Email != nil && strings.TrimSpace(*facts.Account.Email) != "" && (p.Events != nil || len(p.IdentityKey) >= 32) {
-			if len(p.IdentityKey) < 32 {
-				return errors.New("identity: missing installation key")
-			}
-			account = p.opaqueEmail(*facts.Account.Email)
-		}
-		if account != "" {
-			d.Account = &account
+	if err := p.ResolveAccount(); readErr == nil && err == nil {
+		if label, uuid := p.Account(); p.AccountAlias != "" || uuid != "" || (p.EmailLabel && label != "unknown") {
+			d.Account, d.MetricAccount = &label, &label
 		}
 	}
 	encoded, _ := json.Marshal(struct {

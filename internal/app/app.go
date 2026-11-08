@@ -28,19 +28,18 @@ const (
 
 // Built is everything main needs after wiring.
 type Built struct {
-	host        string
-	Sources     []core.Source
-	Profiles    map[[2]string]int // {harness, origin} → count
-	Static      []core.Label
-	Events      *events.Store
-	IdentityKey []byte // private installation key; never exposed as a metric or event
+	host     string
+	Sources  []core.Source
+	Profiles map[[2]string]int // {harness, origin} → count
+	Static   []core.Label
+	Events   *events.Store
 }
 
 // Build creates the plugin instances for the resolved profiles.
 func Build(cfg *config.Config, profiles []config.Resolved, host, version string) (Built, error) {
 	b := Built{Profiles: map[[2]string]int{}, host: host}
 	var err error
-	b.Events, b.IdentityKey, err = buildEvents(cfg, profiles)
+	b.Events, err = buildEvents(cfg)
 	if err != nil {
 		return b, err
 	}
@@ -78,7 +77,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		b.Profiles[[2]string{r.Harness, r.Origin}]++
 		p := &claude.Profile{Host: host, Alias: r.Alias, Dir: r.Dir, ConfigDir: r.ConfigDir, AccountAlias: r.Account,
 			EmailLabel: cfg.Metrics.AccountLabel == "email", MaxModels: cfg.Metrics.MaxModelsPerProfile,
-			Events: b.Events, IdentityKey: b.IdentityKey}
+			Events: b.Events}
 		b.Sources = append(b.Sources,
 			&claude.AccountSource{P: p, Interval: cfg.SourceInterval("claude-account", accountInterval)},
 			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval)},
