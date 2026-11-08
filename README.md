@@ -106,7 +106,7 @@ agent-quota-exporter --version
   time is the file's millisecond epoch `timestamp`. The opened file must be owned by uid 0 and must not be
   group- or other-writable; rejected files report `untrusted_owner`. The timestamp must be at least the profile's
   `.credentials.json` modification time (checked without reading credentials); older readings report `auth_expired`.
-  A reading older than `defaults.statusline_stale_after` (default 5m, never under two polls) is absent: the file is rewritten every minute while a session is active, so it doesn't share `stale_after`'s 45 minutes. Missing, unreadable, invalid or unavailable files give no
+   Freshness uses the rule below; the legacy `defaults.statusline_stale_after` setting is accepted but ignored. Missing, unreadable, invalid or unavailable files give no
   reading and mark the source down, without advancing its last-success timestamp. With `claude_oauth_usage: true`
   on the same profile, OAuth is the fallback only when the file gives no fresh reading, with its existing 15-minute floor,
   persisted gates and backoff. There is no vendor call without that opt-in, and no vendor call while the file is fresh.
@@ -125,6 +125,16 @@ agent-quota-exporter --version
   `main`. Verify with `sha256sum -c SHA256SUMS`.
 - Develop: `go vet ./... && go test -race ./...`. The golden output is `testdata/golden/metrics.txt`; after an
   intended change, review the diff and run `go test ./internal/app -update`.
+
+### Reading freshness
+
+Every source's reading is stale when its age **exceeds** `max(defaults.stale_after, 2*P + D + 15s)`.
+`P` is its effective poll interval (`MinInterval()`); `D` is its collection timeout (`ReadTimeout()`,
+or the core default of 10s). Exactly at the limit it is fresh. `stale_after` defaults to 45m and accepts
+any positive duration, including 5m. The legacy statusline-specific setting is ignored.
+Failed polls, backoff and scrapes never renew observation time. Stale values are absent, never zero;
+quota resets can make a value ineligible earlier. Passive readings use their original event time.
+Historical evidence remains readable. Polling intervals and vendor rate gates are independent of freshness.
 
 ## Layout
 

@@ -109,11 +109,11 @@ func (c *Config) Validate() error {
 	if c.OTLP.Endpoint != "" {
 		add("otlp.endpoint: not supported in this version")
 	}
-	if v := c.Defaults.StatuslineStaleAfter.D(); v != 0 && v < 2*c.Defaults.UsageInterval.D() {
-		add("defaults.statusline_stale_after: must be at least twice defaults.usage_interval")
+	if v := c.Defaults.StatuslineStaleAfter.D(); v < 0 {
+		add("defaults.statusline_stale_after: must be positive when set")
 	}
-	if c.Defaults.StaleAfter.D() < 30*time.Minute {
-		add("defaults.stale_after: must be >= 30m (contract staleness rule)")
+	if c.Defaults.StaleAfter.D() <= 0 {
+		add("defaults.stale_after: must be positive")
 	}
 	if c.Defaults.UsageInterval.D() < Floors["claude-transcripts"].MinInterval {
 		add("defaults.usage_interval: must be >= %s", Floors["claude-transcripts"].MinInterval)

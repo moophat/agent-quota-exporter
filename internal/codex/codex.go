@@ -47,6 +47,7 @@ func Build(cfg *config.Config, r config.Resolved, host, version string) []core.S
 			Version:    version,
 			Gate:       gate,
 		})
+		gate.limit = core.FreshnessLimit(srcs[len(srcs)-1], cfg.Defaults.StaleAfter.D())
 	}
 	return srcs
 }

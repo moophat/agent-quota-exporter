@@ -35,7 +35,7 @@ Allowlist: slot `is_processing` and list length; `live.queued`, `totals.requests
 `engine.{model,images,max_context}`. Ignore per-request histories, prompts and conversation cache data.
 Map to the five `agent_lane_*` families in metric-contract.md; missing/null numeric values are absent,
 never synthesized zero. A failed endpoint fails the poll atomically; last-good samples age out at
-`max(defaults.stale_after, 3 × interval)` without a failed poll refreshing them. No persisted lane samples
+`max(defaults.stale_after, 2*P + D + 15s)` without a failed poll refreshing them. No persisted lane samples
 are restored after restart. Evidence: supplied captured response fixtures in `internal/strata/testdata/`;
 runtime tested with a local HTTP server, no live server verification.
 
@@ -131,8 +131,8 @@ Rules specific to `codex-rollouts`:
   `agent_quota_reset_timestamp_seconds`; `window` from `window_minutes` (300 → `5h`, 10080 → `7d`, else `<n>d`, `<n>h`
   or `<n>m` by the largest whole unit, missing → `other`). Two windows of a scope with the same labels merge (max
   utilization, earliest reset).
-- **Passive staleness** (contract, "Passive sources are the one exception"), per scope: a window is served until its
-  `resets_at` passes; one without `resets_at` for `stale_after` from its reading. `agent_quota_observed_timestamp_seconds`
+- **Reading freshness**, per scope: age must not exceed `max(defaults.stale_after, 2*P + D + 15s)`
+  (`P` effective poll interval, `D` collection timeout, default 10s); reset can expire a window earlier. `agent_quota_observed_timestamp_seconds`
   has no `scope` label: it is one series per profile, the newest reading time among the scopes still served, and is
   absent when none is.
 - **Credits**, per scope: `agent_quota_credits_available` = `has_credits || unlimited`; `agent_quota_credits_balance` =
@@ -150,7 +150,7 @@ Rules specific to `codex-rollouts`:
 Rules specific to `codex-usage`:
 
 - **Opt-in per profile** (`quota.codex_usage: true`), off by default. Rollouts keeps its token and request counters always. Its quota
-  and credit series are served until `codex-usage` has a reading, and again if that reading is older than `stale_after` and
+  and credit series are served until `codex-usage` has a reading, and again if that reading exceeds the shared freshness bound and
   the rollouts reading is newer; while `codex-usage` has a fresh reading only it emits them, so no series is emitted twice
   and a failing first read leaves no gap; `codex-usage` emits
   the same `agent_quota_*` series with the same labels, window mapping (`limit_window_seconds` / 60 → the `window_minutes`
@@ -164,7 +164,7 @@ Rules specific to `codex-usage`:
   log line, error, metric or argv. A source error carries only its contract reason. A direct connection is used (no
   environment proxy).
 - **Expired token.** If the JWT `exp` of the access token has passed, no call is made; the last reading keeps being served
-  with its true observed time (until `stale_after`) and `agent_source_errors_total{reason="auth_expired"}` is counted on
+  with its true observed time (until the shared freshness bound) and `agent_source_errors_total{reason="auth_expired"}` is counted on
   each attempt. Two consecutive 401s stop calls until `auth.json` changes; the reset-slot read has its own such breaker, so its 401s never stop the usage read. A token without a readable `exp` is tried.
 - **429** gives `rate_limited` with `sources.codex-usage.backoff_429` (default 10 min, floor 5 min) in the source's own gate
   group (`chatgpt`), so it never pauses Claude or agy and the reverse. Other failures follow the source interval. Spacing
@@ -301,7 +301,7 @@ Rules specific to `agy-usage`:
 - **Unknown bucket ids** are served under `scope="other"` and each one counts in
   `agent_source_errors_total{reason="parse"}` while the read still succeeds: the output no longer matches the known
   vocabulary, and the contract's existing bounded counter shows it without a new metric or label value.
-- **Staleness:** a live source, so the contract's `stale_after` applies. The last good reading is persisted and served
+- **Staleness:** the contract's shared freshness bound applies. The last good reading is persisted and served
   after a restart until stale.
 - **`--once`** never spawns the client unless `--once-with-quota` is given, and then only if its gate allows.
 - Never-read: every file in the agy home; in the output, `response`, every `name` and `description`, and every field not
@@ -393,7 +393,7 @@ Missing local files retry normally. Direct Claude remains >=900 s/account global
 retry, >=3600 s account-wide cooldown on 429; repeated non-rate failures may extend to one hour.
 Persist gates across restart; credential changes never clear rate limits. A generic external permit
 supports coordination without fleet code. Corrupt network gate state keeps one-hour quarantine.
-Active Claude stale threshold is 900 s or reset-passed; retained history remains readable.
+Active Claude uses the shared freshness bound (effective poll interval at least 900 s), or reset-passed; retained history remains readable.
 
 The agy table and refresh paragraphs document existing behavior, which is **not** proof of compliance:
 its unconditional ordinary-failure one-hour suppression is superseded by the policy above. Its CLI

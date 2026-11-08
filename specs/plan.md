@@ -154,7 +154,10 @@ policy rather than a threshold equal to its poll floor.
   account.
 - Floors: Claude quota 15 min per account (60 min after a 429); Codex rate limits 15 min per account; local
   files and SQLite 1 to 5 min incremental; opencode HTTP cached 30 s.
-- Cache entries carry `observed_at`. A value older than `stale_after` is dropped from output (absent, not zero).
+- Cache entries carry `observed_at`. A value with age exceeding `max(stale_after, 2*P + D + 15s)` is dropped
+  (absent, not zero). P is effective poll interval; D is collection timeout (`ReadTimeout()`, default 10s).
+  Exactly at the bound is fresh; `stale_after` accepts any positive duration. The legacy statusline
+  setting is ignored. This applies to passive readings at their original event time as well.
 - Concurrency: one in-flight read per source, a global cap on concurrent reads, a per-read timeout (default 10 s), and
   a file lock on the state dir so two exporter processes cannot run on the same profiles.
 - Rate gates persist in `state_dir` (last attempt, backoff-until, consecutive 401 count), so a restart loop cannot
@@ -165,7 +168,7 @@ policy rather than a threshold equal to its poll floor.
 - Per source and profile: errors are classified into the bounded `reason` set (see contract), counted in
   `agent_source_errors_total`, shown by `agent_source_up == 0`, and logged once per state change (not per attempt).
 - A failing source never fails the scrape or other sources. Partial output is normal.
-- `401` on a quota source: mark `auth_expired`, keep serving nothing for that quota after `stale_after`, do **not**
+- `401` on a quota source: mark `auth_expired`, keep serving nothing for that quota after the shared freshness bound, do **not**
   retry sooner than the floor, and stop after two consecutive 401s until the credential file's mtime or expiry changes.
 - `429`: backoff (default 60 min), exposed in `agent_source_backoff_until_timestamp_seconds`.
 - Parse errors: skip the record, count it, never print the offending line (it may hold content).

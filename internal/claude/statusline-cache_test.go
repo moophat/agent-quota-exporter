@@ -247,8 +247,7 @@ func TestStatuslineCacheFallbackThroughScheduler(t *testing.T) {
 	}
 }
 
-// A long poll interval must not extend a timestamped file's freshness to the
-// scheduler's ordinary three-interval floor, even between polls.
+// Timestamped files use the same interval-derived freshness limit between polls.
 func TestStatuslineCacheExpiresBetweenPolls(t *testing.T) {
 	p := newCacheProfile(t)
 	path := filepath.Join(t.TempDir(), "cache.json")
@@ -271,8 +270,14 @@ func TestStatuslineCacheExpiresBetweenPolls(t *testing.T) {
 	clk.add(2 * time.Minute)
 	out.Reset()
 	exp.Render(&out)
+	if !strings.Contains(out.String(), "\nagent_quota_observed_timestamp_seconds{") {
+		t.Fatal("reading expired before the unified interval-derived limit")
+	}
+	clk.add(75*time.Minute + 26*time.Second)
+	out.Reset()
+	exp.Render(&out)
 	if strings.Contains(out.String(), "\nagent_quota_observed_timestamp_seconds{") {
-		t.Fatal("staleness extended by source interval")
+		t.Fatal("reading served beyond unified limit")
 	}
 }
 

@@ -42,6 +42,7 @@ type instance struct {
 	inflight     bool
 	attempted    bool
 	cache        []Sample
+	sampleTimes  []time.Time
 	observedAt   time.Time
 	hasCache     bool
 	lastAttempt  time.Time
@@ -72,7 +73,7 @@ type Scheduler struct {
 }
 
 // NewScheduler builds a scheduler. staleFloor is defaults.stale_after; the effective staleness per source is
-// max(staleFloor, 3 × its interval) (contract, "Cardinality rules" 5).
+// max(staleFloor, 2*P + D + 15s); see FreshnessLimit.
 func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, staleFloor time.Duration) *Scheduler {
 	s := &Scheduler{state: st, clock: clock, log: log, sem: make(chan struct{}, MaxConcurrentReads),
 		netBlock: map[string]time.Time{}, netLast: map[string]time.Time{}}
@@ -82,13 +83,7 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		key := src.Harness() + "/" + src.Profile() + "/" + src.Name()
 		h := fnv.New32a()
 		h.Write([]byte(key))
-		stale := 3 * src.MinInterval()
-		if staleFloor > stale {
-			stale = staleFloor
-		}
-		if a, ok := src.(MaxAger); ok {
-			stale = a.MaxAge()
-		}
+		stale := FreshnessLimit(src, staleFloor)
 		in := &instance{src: src, key: key, jitter: float64(h.Sum32()%1000) / 10000, staleAfter: stale,
 			errors: map[string]float64{}}
 		ps := st.Get(key)
@@ -115,6 +110,7 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		if r, ok := src.(Restorer); ok && len(ps.Plugin) > 0 {
 			if res := r.Restore(ps.Plugin); !res.ObservedAt.IsZero() && len(res.Samples) > 0 {
 				in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
+				in.sampleTimes = sampleTimes(src, res.Samples)
 			}
 		}
 		if g := netGroup(src); src.Network() && !in.localBackoff && in.backoffUntil.After(s.netBlock[g]) {
@@ -245,10 +241,7 @@ func (s *Scheduler) Loop(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
-	timeout := ReadTimeout
-	if t, ok := in.src.(Timeouter); ok && t.ReadTimeout() > 0 {
-		timeout = t.ReadTimeout()
-	}
+	timeout := SourceReadTimeout(in.src)
 	rctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ps := s.state.Get(in.key)
@@ -269,6 +262,7 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		err = Fail(ReasonTimeout)
 	}
 	end := s.clock.Now()
+	times := sampleTimes(in.src, res.Samples)
 
 	s.mu.Lock()
 	in.inflight = false
@@ -283,6 +277,7 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		in.lastOK = true
 		in.lastSuccess = start
 		in.cache = res.Samples
+		in.sampleTimes = times
 		in.hasCache = true
 		in.observedAt = start
 		if !res.ObservedAt.IsZero() {
@@ -314,6 +309,7 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		// A plugin may serve persisted values (e.g. last good quota) alongside an error.
 		if len(res.Samples) > 0 && !res.ObservedAt.IsZero() {
 			in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
+			in.sampleTimes = times
 		}
 		in.errors[reason]++
 		if in.loggedReason != reason {
@@ -391,6 +387,16 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 		sn.fresh = in.hasCache && now.Sub(in.observedAt) <= in.staleAfter
 		if sn.fresh {
 			sn.cache = append([]Sample(nil), in.cache...)
+			if len(in.sampleTimes) == len(sn.cache) {
+				kept := sn.cache[:0]
+				for i, sample := range sn.cache {
+					at := in.sampleTimes[i]
+					if at.IsZero() || now.Sub(at) <= in.staleAfter {
+						kept = append(kept, sample)
+					}
+				}
+				sn.cache = kept
+			}
 		}
 		for k, v := range in.errors {
 			sn.errors[k] = v
@@ -411,4 +417,16 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out
+}
+
+func sampleTimes(src Source, samples []Sample) []time.Time {
+	a, ok := src.(SampleAger)
+	if !ok {
+		return nil
+	}
+	times := make([]time.Time, len(samples))
+	for i, sample := range samples {
+		times[i] = a.SampleObservedAt(sample)
+	}
+	return times
 }

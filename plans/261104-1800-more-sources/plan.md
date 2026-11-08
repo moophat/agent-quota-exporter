@@ -78,11 +78,9 @@ Each is shippable alone. Stop and release at any point.
 
 ## Decisions
 
-- **Staleness of passive quota.** The contract drops a quota value past `stale_after`. For a passive reading that would hide
-  a true number on any idle profile. Decision: a passive quota series stays until its own `resets_at` passes, then goes
-  absent; `agent_quota_observed_timestamp_seconds` carries its true age so the consumer can say "as of". This is a deliberate
-  exception to the contract's staleness rules, so the same PR changes them to name it: passive sources only, per source, in
-  `specs/metric-contract.md`. Live sources keep `stale_after`. Series and types don't change, so contract stays 0.
+- **Staleness of passive quota.** The shared rule applies: stale iff reading age exceeds
+  `max(stale_after, 2*P + D + 15s)`, with effective poll interval P and collection timeout D.
+  Reset eligibility can end earlier. Observed time is the original event time, never the file-read time.
 - **Contract stays 0** if everything is additive. If it isn't, bump it and say why.
 - **Fixed vocabulary, bounded cardinality:** same rules. No per-session labels.
 - **No fleet data in this repo:** names, addresses and mappings stay on the on-prem side.

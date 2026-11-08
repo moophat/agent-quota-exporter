@@ -199,6 +199,84 @@ func TestCorruptStateQuarantined(t *testing.T) {
 	}
 }
 
+type timedFreshnessSource struct {
+	*fakeSource
+	timeout time.Duration
+}
+
+type passiveFreshnessSource struct {
+	*fakeSource
+	at time.Time
+}
+
+func (s *passiveFreshnessSource) SampleObservedAt(sample Sample) time.Time {
+	if strings.HasPrefix(sample.Name, "agent_quota_") {
+		return s.at
+	}
+	return time.Time{}
+}
+
+func (s *timedFreshnessSource) ReadTimeout() time.Duration { return s.timeout }
+
+func TestFreshnessTimeoutAndConfiguredFloor(t *testing.T) {
+	src := &timedFreshnessSource{&fakeSource{interval: 120 * time.Second}, 40 * time.Second}
+	if got := FreshnessLimit(src, time.Minute); got != 295*time.Second {
+		t.Fatalf("timeout budget ignored: %s", got)
+	}
+	if got := FreshnessLimit(src, 10*time.Minute); got != 10*time.Minute {
+		t.Fatalf("configured floor ignored: %s", got)
+	}
+}
+
+func TestFreshnessBoundary(t *testing.T) {
+	for _, interval := range []time.Duration{900 * time.Second, 120 * time.Second} {
+		t.Run(interval.String(), func(t *testing.T) {
+			c := newClock()
+			src := &fakeSource{name: "claude-oauth-usage", interval: interval, fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+				return Result{Samples: []Sample{{"agent_sessions", []Label{{"state", "idle"}}, 1}}}, nil, nil
+			}}
+			s := NewScheduler([]Source{src}, openState(t, t.TempDir(), c), c, quietLog(), time.Minute)
+			s.Tick(context.Background(), nil, false, true)
+			boundary := 2*interval + 10*time.Second + 15*time.Second
+			c.Add(boundary - time.Nanosecond)
+			for _, step := range []struct {
+				advance time.Duration
+				fresh   bool
+			}{{0, true}, {time.Nanosecond, true}, {time.Nanosecond, false}} {
+				c.Add(step.advance)
+				if got := strings.Contains(render(t, s, c), `agent_sessions{state="idle",env="t"} 1`); got != step.fresh {
+					t.Errorf("age %s: fresh=%v, want %v", c.Now().Sub(time.Unix(1767225600, 0)), got, step.fresh)
+				}
+			}
+		})
+	}
+}
+
+func TestCachedPassiveQuotaUsesReadingAge(t *testing.T) {
+	c := newClock()
+	observed := c.Now().Add(-4 * time.Minute)
+	src := &fakeSource{name: "passive", interval: 120 * time.Second, fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+		return Result{Samples: []Sample{
+			{Name: "agent_quota_observed_timestamp_seconds", Value: float64(observed.Unix())},
+			{Name: "agent_quota_utilization_ratio", Value: 0.5},
+			{Name: "agent_requests_total", Value: 1},
+		}}, nil, nil
+	}}
+	s := NewScheduler([]Source{&passiveFreshnessSource{src, observed}}, openState(t, t.TempDir(), c), c, quietLog(), time.Minute)
+	s.Tick(context.Background(), nil, false, true)
+	if !strings.Contains(render(t, s, c), "agent_quota_utilization_ratio") {
+		t.Fatal("fresh passive quota missing")
+	}
+	c.Add(26 * time.Second)
+	out := render(t, s, c)
+	if strings.Contains(out, "\nagent_quota_utilization_ratio") || strings.Contains(out, "\nagent_quota_observed_timestamp_seconds") {
+		t.Fatal("old quota renewed by recent file read")
+	}
+	if !strings.Contains(out, "agent_requests_total") {
+		t.Fatal("quota expiry dropped fresh source counters")
+	}
+}
+
 // Values older than stale_after are dropped: absent, never zero.
 func TestStaleDropped(t *testing.T) {
 	c := newClock()

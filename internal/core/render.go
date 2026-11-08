@@ -47,7 +47,7 @@ var families = []family{
 	{"agent_router_connection_enabled", "gauge", "1 if the operator enabled the router connection, 0 if disabled."},
 	{"agent_router_connection_up", "gauge", "1 if the router connection is active, its last test passed and it is not rate-limited."},
 	{"agent_router_rate_limited_until_timestamp_seconds", "gauge", "When the router's own rate limit on the connection ends, Unix seconds."},
-	{"agent_source_up", "gauge", "1 if the last read of the source succeeded or a fresh cache entry exists."},
+	{"agent_source_up", "gauge", "1 if the last read of the source succeeded or a fresh cache entry exists; fresh age <= max(stale_after, 2*poll_interval + read_timeout + 15s)."},
 	{"agent_source_last_success_timestamp_seconds", "gauge", "Last successful read of the source, Unix seconds."},
 	{"agent_source_cache_age_seconds", "gauge", "Age of the value being served, seconds."},
 	{"agent_source_backoff_until_timestamp_seconds", "gauge", "Non-zero while a vendor 429 or error backoff is active, Unix seconds."},

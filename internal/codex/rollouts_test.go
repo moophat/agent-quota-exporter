@@ -44,13 +44,13 @@ func TestGoldenFixtureTree(t *testing.T) {
 	}
 	h.copyTree()
 	h.now = tNow
-	equal(t, "golden", h.collect(), merge(goldenCounters, quotaD))
+	equal(t, "golden", h.collect(), goldenCounters)
 	if h.parse != 0 {
 		t.Fatalf("parse errors: %d", h.parse)
 	}
 	// Nothing new: counters stay, nothing is counted twice.
 	h.now = tNow.Add(time.Minute)
-	equal(t, "second collect", h.collect(), merge(goldenCounters, quotaD))
+	equal(t, "second collect", h.collect(), goldenCounters)
 }
 
 // History present at first start is never counted, but its quota is served at once (idle profile); a repeat of
@@ -63,7 +63,7 @@ func TestNoReplayIdleQuotaThenNewLines(t *testing.T) {
 	if len(counters(got)) != 0 {
 		t.Fatalf("history replayed: %v", counters(got))
 	}
-	equal(t, "quota from history", quota(got), quotaD)
+	equal(t, "stale quota from history", quota(got), map[string]float64{})
 
 	eventE := tokenLine(time.Date(2026, 11, 4, 9, 10, 0, 0, time.UTC), tu{10, 0, 0, 5, 0}, tu{2060, 1500, 200, 315, 120}, "null")
 	appendFile(t, h.path(fixtureDay4), eventE)

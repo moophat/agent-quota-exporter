@@ -1,10 +1,32 @@
 # WORK_TRACKER
 
+## Active — One freshness rule | 2026-11-08
+<!-- BEGIN STUB: 2026-11-08 | One freshness rule -->
+### One freshness rule | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/one-freshness-rule | t9r/cx/gpt-6.1-sol | user freshness brief
+**Outcome:** Requested regressions failed before implementation; unified rule implemented; final build, vet, full tests and diff checks pass.
+**Key:** age > max(configured floor, 2P + read timeout + 15s); polling unchanged
+**Pending:** None; no commit or push.
+<!-- END STUB: 2026-11-08 | One freshness rule -->
+- [x] Demonstrate failing boundary and config regressions.
+- [x] Unify implementation and documentation.
+- [x] Build, vet, full tests and review.
+
 ## Paused
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
+### Q29 full regression repair | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
+**Key:** separate metric and capture cursors; retain original replay envelopes
+**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
+<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
 
 <!-- BEGIN STUB: 2026-11-07 | Usage metric account -->
 ### Usage metric account | 2026-11-07
@@ -180,21 +202,6 @@ None
 <!-- END STUB: 2026-11-07 | Q28 Codex capture repairs -->
 
 ## Paused
-## Active — Q29 full regression repair | 2026-11-07
-<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
-### Q29 full regression repair | 2026-11-07
-**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
-**Model:** t9r/cx/gpt-6.1-sol
-**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
-**Key:** separate metric and capture cursors; retain original replay envelopes
-**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
-<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
-- [x] Inspect baseline and contracts
-- [x] Reproduce and disposition twelve findings
-- [x] Acceptance and review
-
-None
-
 ## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Q30 opencode event repairs -->

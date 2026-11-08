@@ -34,8 +34,9 @@ metrics:
   account_label: alias          # alias | email
 defaults:
   usage_interval: 60s
-  stale_after: 45m
-  statusline_stale_after: 5m     # status line cache readings only; >= 2 x usage_interval
+  stale_after: 45m              # any positive duration; stale when age > max(this, 2*P + D + 15s)
+  # statusline_stale_after: 5m   # legacy compatibility key; ignored (uses stale_after)
+  # P = effective source poll interval; D = collection timeout (10s unless source overrides it).
 profiles:
   - harness: claude-code
     alias: root

@@ -57,7 +57,7 @@ func TestValidationFailures(t *testing.T) {
 		"per session":           {"version: 1\nmetrics: {per_session: true}\n", "per_session"},
 		"discovery mode":        {"version: 1\ndiscovery: {mode: all}\n", "discovery.mode"},
 		"account label":         {"version: 1\nmetrics: {account_label: uuid}\n", "account_label"},
-		"stale too short":       {"version: 1\ndefaults: {stale_after: 5m}\n", "stale_after"},
+		"stale nonpositive":     {"version: 1\ndefaults: {stale_after: 0s}\n", "stale_after"},
 		"bad duration":          {"version: 1\ndefaults: {stale_after: soon}\n", "duration"},
 		"claude needs dir":      {"version: 1\nprofiles:\n- {harness: claude-code, alias: a}\n", "dir: required"},
 		"unknown quota":         {"version: 1\nprofiles:\n- {harness: claude-code, alias: a, dir: /x, quota: {foo: true}}\n", "unknown quota"},
@@ -277,8 +277,7 @@ func TestStatuslineCacheConfig(t *testing.T) {
 	}
 }
 
-// The status line cache is rewritten every minute while a session is active, so a reading older than a few minutes
-// means nobody refreshed it: it gets its own short window, independent of stale_after for the slow sources.
+// The statusline setting is a configured floor; core applies the shared freshness formula.
 func TestStatuslineStaleAfterDefaultsShortAndSeparate(t *testing.T) {
 	c, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, stale_after: 45m}\n"))
 	if err != nil {
@@ -290,15 +289,24 @@ func TestStatuslineStaleAfterDefaultsShortAndSeparate(t *testing.T) {
 	if got := c.Defaults.StaleAfter.D(); got != 45*time.Minute {
 		t.Fatalf("stale_after = %s, want 45m unchanged", got)
 	}
-	if _, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, statusline_stale_after: 90s}\n")); err == nil {
-		t.Fatal("statusline_stale_after below two polls accepted")
+	if _, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 60s, statusline_stale_after: 90s}\n")); err != nil {
+		t.Fatal(err)
 	}
-	// An existing slow-poll config without the new key must still load, with a window of two polls.
+	// An existing slow-poll config keeps the same configured floor.
 	slow, err := Load(writeCfg(t, "version: 1\ndefaults: {usage_interval: 10m, stale_after: 45m}\n"))
 	if err != nil {
 		t.Fatalf("slow-poll config rejected: %v", err)
 	}
-	if got := slow.Defaults.StatuslineStale(); got != 20*time.Minute {
-		t.Fatalf("slow-poll window = %s, want 20m", got)
+	if got := slow.Defaults.StatuslineStale(); got != 5*time.Minute {
+		t.Fatalf("configured floor = %s, want 5m", got)
+	}
+}
+func TestFiveMinuteStaleAfterAccepted(t *testing.T) {
+	c, err := Load(writeCfg(t, "version: 1\ndefaults: {stale_after: 5m}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Defaults.StaleAfter.D() != 5*time.Minute {
+		t.Fatal("stale_after not preserved")
 	}
 }

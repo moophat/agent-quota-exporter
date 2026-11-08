@@ -4,19 +4,10 @@ Companion to `plan.md`. Written by the cloud lane (claude-opus-5-5), 2026-11-04,
 
 ## 1. Passive quota staleness
 
-The plan's decision: a passive quota series stays until its own `resets_at` passes. `agent_quota_observed_timestamp_seconds`
-carries its true age.
-
-Mechanism, chosen so the core needs no change:
-
-- A passive plugin re-reads local state every interval. A successful read returns `ObservedAt` = now, so the core's
-  read-based staleness (`max(stale_after, 3 × interval)`) only drops values when the *read* keeps failing. That is right:
-  if the files vanish, the values must go.
-- The plugin itself omits every window whose `resets_at` is in the past at read time. A window with no `resets_at` falls
-  back to `stale_after` measured from its event time.
-- The plugin emits `agent_quota_observed_timestamp_seconds` = the event's own time, not the read time. The consumer shows
-  "as of".
-- Contract text changes to name this exception: passive sources only, per source. Series and types are unchanged.
+Passive quota uses the same freshness bound as every source: age must not exceed
+`max(stale_after, 2*P + D + 15s)`, with effective poll interval P and collection timeout D.
+Quota age is measured from the event time; reset eligibility may end earlier.
+`agent_quota_observed_timestamp_seconds` carries that original time. Series and types are unchanged.
 
 ## 2. New metrics (additive, contract stays 0)
 

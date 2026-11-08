@@ -6,7 +6,24 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/moophat/agent-quota-exporter/internal/core"
 )
+
+func TestScopeObservationPreservesPrecision(t *testing.T) {
+	s := newSource(t.TempDir())
+	s.load(nil)
+	old := tNow.Add(-4 * time.Minute).Add(900 * time.Millisecond)
+	recent := tNow.Add(-time.Minute)
+	s.st.Quotas = map[string]*reading{"all": {AtMs: old.UnixMilli()}, "mini": {AtMs: recent.UnixMilli()}}
+	got := s.SampleObservedAt(core.Sample{Name: "agent_quota_utilization_ratio", Labels: []core.Label{{Name: "scope", Value: "all"}}})
+	if !got.Equal(old) {
+		t.Fatalf("scope time = %s, want %s", got, old)
+	}
+	if got := s.SampleObservedAt(core.Sample{Name: "agent_requests_total"}); !got.IsZero() {
+		t.Fatal("counter acquired quota age")
+	}
+}
 
 // The first-start scan takes the newest reading by its event time, not by the order files are read in (mtime).
 func TestQuotaNewestByEventTimeNotMtime(t *testing.T) {
@@ -16,7 +33,7 @@ func TestQuotaNewestByEventTimeNotMtime(t *testing.T) {
 		h.setMtime(fixtureDay3, tNow.Add(-2*time.Hour))
 		h.setMtime(fixtureDay4, tNow.Add(-2*time.Hour))
 		h.setMtime(newer, tNow.Add(-time.Hour))
-		equal(t, "quota, newest mtime "+newer, quota(h.collect()), quotaD)
+		equal(t, "old readings are stale regardless of mtime "+newer, quota(h.collect()), map[string]float64{})
 	}
 }
 
@@ -38,6 +55,7 @@ func TestQuotaScanBounded(t *testing.T) {
 // The reading found at first start is persisted and served after a restart, even with the files gone.
 func TestQuotaServedAfterRestartFromState(t *testing.T) {
 	h := newHarness(t)
+	h.now = time.Unix(observedD, 0).Add(time.Minute)
 	h.copyTree()
 	equal(t, "first start", quota(h.collect()), quotaD)
 	for _, rel := range []string{fixtureDay3, fixtureDay4} {
@@ -46,14 +64,15 @@ func TestQuotaServedAfterRestartFromState(t *testing.T) {
 		}
 	}
 	h.restart()
-	h.now = tNow.Add(time.Hour)
-	equal(t, "after restart", quota(h.collect()), quotaD)
+	h.now = time.Unix(observedD, 0).Add(46 * time.Minute)
+	equal(t, "stale after restart", quota(h.collect()), map[string]float64{})
 }
 
 // A window goes absent once its own reset passes; credits go with the longest window of their reading, and the
 // observed timestamp goes with the last served value.
 func TestQuotaWindowsExpireAtReset(t *testing.T) {
 	h := newHarness(t)
+	h.src.StaleAfter = 8 * 24 * time.Hour // isolate reset eligibility within a configured freshness floor
 	h.copyTree()
 	h.collect()
 	h.now = time.Unix(reset5hD, 0)
@@ -88,6 +107,7 @@ func TestQuotaWindowWithoutResetUsesStaleAfter(t *testing.T) {
 // resets; a reading with no window keeps them 7 days.
 func TestCreditsRetentionAndExpiry(t *testing.T) {
 	h := newHarness(t)
+	h.src.StaleAfter = 8 * 24 * time.Hour
 	h.collect()
 	p := h.path("2026/11/04/rollout-cr.jsonl")
 	r1 := tNow.Add(time.Minute)
@@ -269,6 +289,7 @@ func TestQuotaScopeCapEvictsOldest(t *testing.T) {
 // whose windows have all reset no longer counts.
 func TestQuotaObservedIsNewestServedScope(t *testing.T) {
 	h := newHarness(t)
+	h.src.StaleAfter = 6 * time.Hour
 	h.collect()
 	old, recent := tNow.Add(time.Minute), tNow.Add(2*time.Minute)
 	longReset, shortReset := tNow.Add(5*time.Hour).Unix(), tNow.Add(time.Hour).Unix()

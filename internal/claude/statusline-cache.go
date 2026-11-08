@@ -32,7 +32,7 @@ func (s *StatuslineCacheSource) Harness() string            { return Harness }
 func (s *StatuslineCacheSource) Profile() string            { return s.P.Alias }
 func (s *StatuslineCacheSource) MinInterval() time.Duration { return s.Interval }
 func (s *StatuslineCacheSource) Network() bool              { return false }
-func (s *StatuslineCacheSource) MaxAge() time.Duration      { return s.StaleAfter }
+func (s *StatuslineCacheSource) MaxAge() time.Duration      { return core.FreshnessLimit(s, s.StaleAfter) }
 
 func (s *StatuslineCacheSource) reading(now time.Time) (parsedQuota, time.Time, error) {
 	s.mu.Lock()
@@ -44,7 +44,7 @@ func (s *StatuslineCacheSource) reading(now time.Time) (parsedQuota, time.Time, 
 	if s.readErr != nil {
 		return parsedQuota{}, time.Time{}, s.readErr
 	}
-	if s.observedAt.After(now) || now.Sub(s.observedAt) > s.StaleAfter {
+	if s.observedAt.After(now) || now.Sub(s.observedAt) > s.MaxAge() {
 		return parsedQuota{}, time.Time{}, core.Fail(core.ReasonOther)
 	}
 	// OpenRegular stats the safely opened descriptor; never read credentials.

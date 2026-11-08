@@ -72,12 +72,13 @@ func (s *UsageSource) NetGroup() string { return "chatgpt" }
 func (s *UsageSource) NetSpacing() time.Duration { return netSpacing }
 
 // liveGate is shared by a profile's codex-usage and codex-rollouts sources. Until codex-usage has a reading
-// (and again once that reading is older than stale_after) rollouts serves the quota; while it has one, only
+// (and again once that reading exceeds FreshnessLimit) rollouts serves the quota; while it has one, only
 // codex-usage does. So a first-run failure of the live read never leaves a profile without quota, and no series
 // is ever emitted by both.
 type liveGate struct {
-	mu sync.Mutex
-	at time.Time
+	mu    sync.Mutex
+	at    time.Time
+	limit time.Duration
 }
 
 func (g *liveGate) set(t time.Time) {
@@ -116,14 +117,15 @@ type resetCredits struct {
 
 func (s *UsageSource) ident() ident { return ident{s.Host, s.Alias, s.Account} }
 
-// serve builds the samples of the persisted readings as of now. Quota values older than stale_after are not
+// serve builds the samples of the persisted readings as of now. Quota values beyond FreshnessLimit are not
 // served (rollouts takes over, see liveGate); reset slots past their expiry are dropped from the count.
 func (s *UsageSource) serve(st *usageState, now time.Time) []core.Sample {
 	var out []core.Sample
-	if st.LastAt > 0 && now.Sub(time.UnixMilli(st.LastAt)) <= s.StaleAfter {
-		out = serveQuotas(s.ident(), st.Quotas, s.StaleAfter, now)
+	limit := core.FreshnessLimit(s, s.StaleAfter)
+	if st.LastAt > 0 && now.Sub(time.UnixMilli(st.LastAt)) <= limit {
+		out = serveQuotas(s.ident(), st.Quotas, limit, now)
 	}
-	if rc := st.Resets; rc != nil && now.Sub(time.Unix(rc.At, 0)) <= s.StaleAfter {
+	if rc := st.Resets; rc != nil && now.Sub(time.Unix(rc.At, 0)) <= limit {
 		avail, next := rc.Available, int64(0)
 		for _, e := range rc.Exp {
 			if e <= now.Unix() {
