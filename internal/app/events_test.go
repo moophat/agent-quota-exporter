@@ -31,7 +31,7 @@ func TestEventsDisabledDefaultUnchanged(t *testing.T) {
 	c.Events.Enabled = false
 	c.Events.IdentityKeyFile = "/missing/key"
 	b, err := Build(c, nil, "node-a", "test")
-	if err != nil || b.Events != nil || b.IdentityKey != nil || len(b.EventSamples()) != 0 {
+	if err != nil || b.Events != nil || len(b.EventSamples()) != 0 {
 		t.Fatalf("disabled store: %+v %v", b, err)
 	}
 	if _, err := os.Stat(c.Events.RootDir); !os.IsNotExist(err) {
@@ -95,8 +95,8 @@ func TestEventsBuildAndMetrics(t *testing.T) {
 	}
 }
 
-func TestEventsStartupFailuresAndIdentityKey(t *testing.T) {
-	for _, scenario := range []string{"budget", "unwritable", "missing-key", "required-key", "short-key", "public-key", "valid-key", "alias", "key-in-store"} {
+func TestEventsStartupAndIgnoredLegacyIdentityKey(t *testing.T) {
+	for _, scenario := range []string{"budget", "unwritable", "relative-key", "missing-key", "required-key", "short-key", "public-key", "valid-key", "alias", "key-in-store"} {
 		t.Run(scenario, func(t *testing.T) {
 			c := eventConfig(t)
 			profiles := []config.Resolved{{Account: "acct-a1"}}
@@ -105,6 +105,9 @@ func TestEventsStartupFailuresAndIdentityKey(t *testing.T) {
 				c.Events.ByteBudget = -1
 			case "unwritable":
 				c.Events.RootDir = "/proc/aqe-event-store-test"
+			case "relative-key":
+				profiles[0].Account = ""
+				c.Events.IdentityKeyFile = "relative-nonexistent-key"
 			case "missing-key":
 				profiles[0].Account = ""
 				c.Events.IdentityKeyFile = filepath.Join(t.TempDir(), "missing")
@@ -129,12 +132,12 @@ func TestEventsStartupFailuresAndIdentityKey(t *testing.T) {
 				}
 			}
 			b, err := Build(c, profiles, "node-a", "test")
-			valid := scenario == "valid-key" || scenario == "alias"
+			valid := scenario != "budget" && scenario != "unwritable"
 			if valid != (err == nil) {
 				t.Fatalf("build: %v", err)
 			}
-			if scenario == "valid-key" && len(b.IdentityKey) != 32 {
-				t.Fatal("key not available to future adapters")
+			if b.Events != nil {
+				b.Events.Close()
 			}
 		})
 	}

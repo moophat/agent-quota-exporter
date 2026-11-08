@@ -2,82 +2,28 @@ package app
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"syscall"
 
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
 	"github.com/moophat/agent-quota-exporter/internal/events"
 )
 
-func buildEvents(cfg *config.Config, profiles []config.Resolved) (*events.Store, []byte, error) {
+func buildEvents(cfg *config.Config) (*events.Store, error) {
 	if err := cfg.ValidateEvents(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if !cfg.Events.Enabled {
-		return nil, nil, nil
-	}
-	required := false
-	for _, p := range profiles {
-		required = required || p.Account == ""
-	}
-	var key []byte
-	if cfg.Events.IdentityKeyFile != "" {
-		// Resolve the existing key and the nearest existing root ancestor so
-		// a not-yet-created store cannot hide containment through a symlink.
-		keyPath, err := filepath.EvalSymlinks(cfg.Events.IdentityKeyFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("events.identity_key_file: cannot resolve key file")
-		}
-		root := filepath.Clean(cfg.Events.RootDir)
-		var suffix []string
-		for {
-			resolved, resolveErr := filepath.EvalSymlinks(root)
-			if resolveErr == nil {
-				root = filepath.Join(append([]string{resolved}, suffix...)...)
-				break
-			}
-			if filepath.Dir(root) == root {
-				return nil, nil, fmt.Errorf("events.root_dir: cannot resolve store root")
-			}
-			suffix = append([]string{filepath.Base(root)}, suffix...)
-			root = filepath.Dir(root)
-		}
-		rel, err := filepath.Rel(root, keyPath)
-		if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			return nil, nil, fmt.Errorf("events.identity_key_file: must be outside event store and its backups")
-		}
-		f, err := os.OpenFile(cfg.Events.IdentityKeyFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-		if err != nil {
-			return nil, nil, fmt.Errorf("events.identity_key_file: cannot open restricted key file")
-		}
-		defer f.Close()
-		info, err := f.Stat()
-		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
-			return nil, nil, fmt.Errorf("events.identity_key_file: requires a regular mode 0600 file")
-		}
-		if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Uid != uint32(os.Geteuid()) {
-			return nil, nil, fmt.Errorf("events.identity_key_file: must be owned by exporter user")
-		}
-		key, err = io.ReadAll(io.LimitReader(f, 4097))
-		if err != nil || len(key) < 32 || len(key) > 4096 {
-			return nil, nil, fmt.Errorf("events.identity_key_file: requires 32 to 4096 raw key bytes")
-		}
-	} else if required {
-		return nil, nil, fmt.Errorf("events.identity_key_file: required for profiles without an account alias")
+		return nil, nil
 	}
 	s, err := events.Open(events.Options{Root: cfg.Events.RootDir, Budget: cfg.Events.ByteBudget, Reserve: cfg.Events.FreeSpaceReserve})
 	if err != nil {
-		return nil, nil, fmt.Errorf("events: %w", err)
+		return nil, fmt.Errorf("events: %w", err)
 	}
 	if err := s.CheckWritable(); err != nil {
 		s.Close()
-		return nil, nil, fmt.Errorf("events: startup write check: %w", err)
+		return nil, fmt.Errorf("events: startup write check: %w", err)
 	}
-	return s, key, nil
+	return s, nil
 }
 
 // EventSamples measures the sink independently of source cache freshness. Unknown

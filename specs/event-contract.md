@@ -106,8 +106,8 @@ archive deduplication and historical corrections never inflate or decrement curr
 
 ## Identity payload and attribution
 
-`identity.data`: `account` (stable opaque account ID or null), `metric_account`
-(metric account label at observation, or null when unavailable/email compatibility mode), `identity_interval_id`,
+`identity.data`: `account` (public metric account label at observation or null), `metric_account`
+(the same label, or null when unavailable), `identity_interval_id`,
 `effective_from`, `effective_until` (nullable timestamp objects), optional `last_confirmed_at`, `credential_mtime`,
 `access_expires_at`, `login_expires_at` (timestamp objects), `subscription_type`, `rate_tier`,
 and restricted `metadata`. The next sample closes the preceding sampled binding; closure is a
@@ -129,14 +129,14 @@ Claude's exact metadata allowlist is:
 | `claudeAiOauth.refreshTokenExpiresAt` | `login_expires_at` |
 | `claudeAiOauth.subscriptionType` | `subscription_type` |
 | `claudeAiOauth.rateLimitTier` | `rate_tier` |
-| `oauthAccount.emailAddress` | derive keyed opaque `account` under the account identity policy below; raw email remains only in the existing restricted legacy import store |
+| `oauthAccount.emailAddress` | account label when `account_label: email` is configured; otherwise use the account identity policy below |
 | `oauthAccount.organizationName`, `organizationType`, `billingType`, `seatTier` | corresponding exact keys in `metadata` |
 | `oauthAccount.hasExtraUsageEnabled`, `organizationRateLimitTier`, `userRateLimitTier` | corresponding exact keys in `metadata` |
 | credential filesystem mtime | `credential_mtime` |
 
 No whole-object copy or guessed alias (`billingTier`, for example). Missing values stay null.
 Billing/seat flags are metadata, not money presentation. Secrets and token claim blobs are excluded.
-`account_evidence` retains only opaque embedded account claim, sampled account and identity event
+`account_evidence` retains only structural embedded account claim, sampled account and identity event
 references, plus comparison (`match`, `conflict`, `sampled`, `none`). A reliable embedded claim is
 compared, never silently overwritten. `attribution_quality` is `embedded`, `sampled`,
 `sampled_legacy`, `ambiguous`, `conflict` or `unattributed`.
@@ -144,13 +144,14 @@ Claude transcript capture uses `account_evidence.comparison` values `session_own
 `identity_binding`, or `none`, with attribution quality `embedded`, `sampled`, or
 `unattributed` respectively. A session-owner claim applies forward within its file;
 without one, only a non-ambiguous IdentityAt binding at message time is eligible.
-Non-breaking schema-1 extension (2026-11-07): every Claude usage event carries
-`metric_account`, the public account label used by metric attribution, separately
-from private keyed `account`. For `session_owner`, it is `acct-` plus the first
+Schema-1 additive compatibility field: every new Claude usage event carries
+`metric_account`, the same public account label as `account`. For `session_owner`,
+it is `acct-` plus the first
 eight lowercase hex digits of SHA-256 of `accountUuid`, or the profile's alias/email
 label when the owner is the verified current login, exactly as `messageOwner`
 resolves it. For `identity_binding`, it is the binding's metric account label;
-for `none`, an `unknown` label, or an email-shaped label (email-label mode), it is null. Older usage events may omit the field.
+for `none` or an `unknown` label, both fields are null. Configured email labels are
+retained in both fields. Older usage events may omit `metric_account`.
 Resolve by host **and profile** at message time, not the login when collected. Before first identity
 is unattributed; events in an unobserved A-to-B gap are ambiguous, with separate totals. A late A
 message is never assigned to current B by default. Legacy host-ASOF import is `sampled_legacy`,
@@ -259,28 +260,21 @@ No prompt/completion, tool arguments/results, environment dump, token, API key, 
 JSON object enters events, derived storage, logs or UI. Paths/branch/IDs and restricted identity metadata
 are private structural facts, never public metric dimensions. Reject secret-bearing structural strings
 with a bounded reason rather than retaining them. Community examples/fixtures use invented neutral
-values only. Existing restricted legacy emails stay in their original store; native account IDs are opaque.
+values only. Configured account labels and identity `organizationName` may contain email
+addresses; email shape alone is not a reason to redact or reject those fields.
 
 ### Account identity policy
 
-Use an operator-configured opaque account alias where supplied. Otherwise derive the native
-event account ID as `acct_` plus full lowercase hex HMAC-SHA-256 of
-the UTF-8 source account identifier (email fallback trimmed, with original case preserved),
-domain-separated by `account-v1` and provider. Do not use an unkeyed or shortened email hash.
-The per-installation random key is at least 32 bytes, supplied by a restricted file reference in
-operator configuration, never inline or committed to this repository. Key files are mode 0600,
-readable only by the exporter owner; exclude the key from event exports, mirrors and data backups.
-Provision it separately for recovery: loss/rotation changes derived identities and requires explicit
-identity linkage, never silent reassignment. Missing key and missing alias blocks identity-dependent
-capture with a visible configuration error; it must not fall back to email or an unkeyed hash.
-Apply the same derivation to email-bearing account evidence before retention. The metric contract
-owns the explicit email compatibility opt-in and its parity-profile prohibition.
-The key applies only to private events, never metric labels. Metrics retain their
-operator alias or existing short stable hash with or without the key. Identity
-events record `metric_account` alongside private `account` so history can join to
-metrics by host/profile and identity interval. Older schema-1 events may omit this
-additive field; readers must tolerate its absence. Key rotation changes private
-identities only, not the metric join label. Schema version remains 1.
+Claude identity and usage events use the same public account label as metrics: the configured operator alias,
+the source's existing `acct-xxxxxxxx` short stable hash, or email when `account_label: email`
+is configured. For these events, `account` and `metric_account` are equal
+when attribution is available; unavailable attribution remains null. Claude events do not introduce a separate account namespace.
+
+Owner-authorized contract correction (Tu, 2026-11-08; see decisions.md): schema version
+remains 1 despite the semantic change from private keyed account IDs to public metric labels.
+`metric_account` remains additive compatibility data; readers tolerate its absence in older
+schema-1 events. Existing retained rows are not rewritten or silently relinked; consumers
+must distinguish old account semantics from newly captured public labels when reading mixed history.
 
 ### Claude freshness policy
 
@@ -315,7 +309,7 @@ All original collected-fact IDs are accounted for; none is proposed for removal.
 | L1-005 | usage model/harness_version/entrypoint/skill |
 | L1-006 | usage tier/speed |
 | L1-007 | raw_tokens and normalized tokens including tok_cw_1h subset |
-| L1-008 | identity host/account/access_expires_at/login_expires_at/credential_mtime; raw email stays restricted legacy per privacy boundary |
+| L1-008 | identity host/account/access_expires_at/login_expires_at/credential_mtime; account uses the configured public metric label, including email when configured |
 | L1-009 | exact identity subscription/rate/organization/billing/seat/extra-usage allowlist |
 | L1-010 | quota account/reader/observation and 5h/7d utilization/reset |
 | L1-011 | complete raw windows and reduced limits, including unknown/inactive |
@@ -329,3 +323,5 @@ All original collected-fact IDs are accounted for; none is proposed for removal.
 Schema changes are additive only within version 1 when readers can safely ignore them. Changes to
 meaning, required fields, deduplication or null semantics require a new schema version and compatible
 consumer before activation. Unknown versions are unsupported coverage, never silently interpreted as v1.
+The 2026-11-08 owner-authorized account-label correction above is an explicit exception
+to the semantic-version rule, not a general permission for future semantic changes within v1.

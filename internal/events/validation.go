@@ -251,7 +251,7 @@ func object(v json.RawMessage, allowed shape, required bool) error {
 				err = json.Unmarshal(val, &text)
 				if err == nil {
 					err = leaf(val)
-					if k == "model" {
+					if k == "model" || k == "account" || k == "metric_account" || k == "organizationName" {
 						err = modelLeaf(val)
 					}
 				}

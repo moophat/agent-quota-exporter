@@ -100,21 +100,17 @@ func recoverTranscriptOwner(ctx context.Context, f *os.File, offset int64) (stri
 	return "", nil
 }
 
-// Refresh once before both transcript passes; never retain a raw email in history.
+// Refresh once before both transcript passes.
 func (p *Profile) refreshOwnerSnapshot() {
 	samples := p.identityHistory()
 	err := p.ResolveAccount()
 	label, uuid := p.Account()
-	private := ""
 	if err != nil {
 		uuid = ""
 	}
-	if p.EmailLabel && p.AccountAlias == "" && label != "unknown" && len(p.IdentityKey) >= 32 {
-		private = p.opaqueEmail(label)
-	}
 	p.mu.Lock()
 	p.ownerHistory, p.ownerSnapshotReady = samples, true
-	p.ownerLabel, p.ownerUUID, p.ownerPrivate = label, uuid, private
+	p.ownerLabel, p.ownerUUID = label, uuid
 	p.mu.Unlock()
 }
 
@@ -127,7 +123,7 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 	}
 	s.P.mu.Lock()
 	samples := s.P.ownerHistory
-	currentLabel, currentUUID, currentPrivate := s.P.ownerLabel, s.P.ownerUUID, s.P.ownerPrivate
+	currentLabel, currentUUID := s.P.ownerLabel, s.P.ownerUUID
 	s.P.mu.Unlock()
 	if owner != "" {
 		label := fmt.Sprintf("acct-%x", sha256.Sum256([]byte(owner)))[:13]
@@ -136,11 +132,7 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 		if (s.P.AccountAlias != "" || s.P.EmailLabel) && currentUUID != "" && owner == currentUUID {
 			label = currentLabel
 		}
-		private := label
-		if len(s.P.IdentityKey) >= 32 {
-			private = s.P.opaqueEmail(owner)
-		}
-		return label, private, nil, "session_owner", "embedded"
+		return label, label, nil, "session_owner", "embedded"
 	}
 	at, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err == nil {
@@ -151,10 +143,10 @@ func (s *TranscriptsSource) messageOwner(timestamp, owner string) (metric string
 			if binding.MetricAccount != nil {
 				metric = *binding.MetricAccount
 			}
-			if s.P.EmailLabel && currentPrivate != "" && *binding.Account == currentPrivate {
-				metric = currentLabel
+			if metric != "unknown" {
+				return metric, metric, binding.IntervalID, "identity_binding", "sampled"
 			}
-			return metric, *binding.Account, binding.IntervalID, "identity_binding", "sampled"
+			return metric, nil, binding.IntervalID, "identity_binding", "sampled"
 		}
 	}
 	return "unknown", nil, nil, "none", "unattributed"

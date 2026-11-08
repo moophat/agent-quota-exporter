@@ -102,7 +102,7 @@ discovery:
 metrics:
   per_session: false              # cardinality hazard if true
   max_models_per_profile: 20
-  account_label: alias            # default; email publishes addresses, forbidden in parity privacy profile
+  account_label: alias            # default; email publishes addresses in metrics and events
 defaults:
   usage_interval: 60s
   stale_after: 45m
@@ -140,11 +140,13 @@ Config validation fails loudly at start (unknown keys, duplicate aliases, an inl
 `min_interval` below the source's floor). Floors are compiled in and cannot be lowered below the vendor-safe value
 without `i_know_this_can_lock_my_account: true`.
 
-The parity design requires alias-or-keyed account identities and an explicit local event-store
+The parity design uses the same public account labels as metrics and requires an explicit local event-store
 byte/reserve/age budget; their authoritative requirements are in
 [event-contract.md](event-contract.md#persistence-privacy-and-freshness). These requirements are
 not implemented config options yet. Active direct Claude freshness uses that contract's margin
 policy rather than a threshold equal to its poll floor.
+Compatibility: `events.identity_key_file` is accepted but ignored, with one log message
+at startup when configured; no key is read or required.
 
 ### Scrape-time collection, intervals, cache
 

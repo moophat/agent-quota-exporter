@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 func TestOwnerlessCollectionSnapshot(t *testing.T) {
 	x, _ := recoverySource(t)
 	write(t, filepath.Join(x.p.Dir, ".credentials.json"), []byte(identityFixture))
-	x.p.IdentityKey = []byte(strings.Repeat("k", 32))
 	ownerBinding(x, "private-a", "metric-a", x.now.Add(-time.Minute))
 	x.collect()
 	// New samples must not change the shared counter/capture view mid-collection.
@@ -111,11 +109,9 @@ func TestEmbeddedOwnerVerifiedAlias(t *testing.T) {
 func TestSampledOwnerEmailVerification(t *testing.T) {
 	x := newTT(t)
 	x.p.EmailLabel = true
-	x.p.IdentityKey = []byte(strings.Repeat("k", 32))
 	path := filepath.Join(x.p.Dir, ".claude.json")
 	write(t, path, []byte(`{"oauthAccount":{"accountUuid":"owner-a","emailAddress":"acct-a@example.com"}}`))
-	ownerBinding(x, x.p.opaqueEmail("acct-a@example.com"), "", x.now.Add(-time.Minute))
-	x.p.history[0].data.MetricAccount = nil
+	ownerBinding(x, "acct-a@example.com", "acct-a@example.com", x.now.Add(-time.Minute))
 	x.collect()
 	got, _, _, _, _ := x.src.messageOwner(x.now.Format(time.RFC3339Nano), "")
 	if got != "acct-a@example.com" {
@@ -127,7 +123,7 @@ func TestSampledOwnerEmailVerification(t *testing.T) {
 	}
 	x.collect()
 	got, _, _, _, _ = x.src.messageOwner(x.now.Format(time.RFC3339Nano), "")
-	if got != "unknown" {
+	if got != "acct-a@example.com" {
 		t.Errorf("historical sample received current email: %s", got)
 	}
 }

@@ -1,10 +1,33 @@
 # WORK_TRACKER
 
+## Active — Plain account labels contract | 2026-11-08
+<!-- BEGIN STUB: 2026-11-08 | Plain account labels contract -->
+### Plain account labels contract | 2026-11-08
+**Model:** t9r/cx/gpt-6.1-sol
+**Meta:** fix/plain-account-names | t9r/cx/gpt-6.1-sol | owner-authorized plain account labels brief
+**Outcome:** Implemented and reviewed plain Claude account labels; build, vet and full go test ./... pass (cached packages included); failing-before regressions recorded.
+**Key:** D11 owner ruling, shared public labels, schema-1 semantic correction, additive metric_account, ignored identity_key_file compatibility
+**Pending:** None. No commit or push. Existing stored rows retain their original semantics.
+<!-- END STUB: 2026-11-08 | Plain account labels contract -->
+- [x] Read affected contracts, config example and workflow state.
+- [x] Record owner ruling and reconcile docs/specs/examples and manifest.
+- [x] Record parent-supplied implementation evidence and verification gap.
+- [x] Complete obsolete CLI test correction, final build/vet/full-suite verification and review; scope contract to Claude.
+
 ## Paused
 ## Paused
 None
 
 ## Log
+
+<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
+### Q29 full regression repair | 2026-11-07
+**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
+**Model:** t9r/cx/gpt-6.1-sol
+**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
+**Key:** separate metric and capture cursors; retain original replay envelopes
+**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
+<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
 
 <!-- BEGIN STUB: 2026-11-07 | Usage metric account -->
 ### Usage metric account | 2026-11-07
@@ -180,21 +203,6 @@ None
 <!-- END STUB: 2026-11-07 | Q28 Codex capture repairs -->
 
 ## Paused
-## Active — Q29 full regression repair | 2026-11-07
-<!-- BEGIN STUB: 2026-11-07 | Q29 full regression repair -->
-### Q29 full regression repair | 2026-11-07
-**Meta:** feat/router-events | t9r/cx/gpt-6.1-sol | `/root/orchestrator/plans/261106-2205-usage-parity/q29-brief.md`
-**Model:** t9r/cx/gpt-6.1-sol
-**Outcome:** eleven findings repaired; sparse-gap finding rejected by passing baseline regression; acceptance passes
-**Key:** separate metric and capture cursors; retain original replay envelopes
-**Pending:** none; evidence in `.aiworkflow/Q29-evidence.md`; no commit or push
-<!-- END STUB: 2026-11-07 | Q29 full regression repair -->
-- [x] Inspect baseline and contracts
-- [x] Reproduce and disposition twelve findings
-- [x] Acceptance and review
-
-None
-
 ## Log
 
 <!-- BEGIN STUB: 2026-11-07 | Q30 opencode event repairs -->
