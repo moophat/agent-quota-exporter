@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +54,10 @@ const identityFixture = `{"claudeAiOauth":{"expiresAt":1767232800000,"refreshTok
 
 func identityProfile(t *testing.T, alias string) *Profile {
 	t.Helper()
-	p := &Profile{Host: "node-a", Alias: alias, Dir: t.TempDir(), IdentityKey: bytes.Repeat([]byte{1}, 32)}
+	p := &Profile{Host: "node-a", Alias: alias, Dir: t.TempDir(), EmailLabel: true}
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(identityFixture))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(identityFixture))
+	p.jsonMod = time.Time{}
 	return p
 }
 
@@ -106,6 +109,8 @@ func TestIdentityConfirmationSurvivesRestart(t *testing.T) {
 		}
 	}
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	p.jsonMod = time.Time{}
 	if err := p.SampleIdentity(t0.Add(3 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -160,6 +165,8 @@ func TestIdentityHistoryLoadsOnce(t *testing.T) {
 		t.Fatalf("first load: %d replays", calls)
 	}
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	p.jsonMod = time.Time{}
 	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -180,13 +187,15 @@ func TestIdentityAccountSwitchHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := p.IdentityAt(t0)
-	if a.Account == nil || !strings.HasPrefix(*a.Account, "acct_") || len(*a.Account) != 69 {
+	if a.Account == nil || *a.Account != "acct-a@example.com" {
 		t.Fatalf("binding %+v", a)
 	}
 	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	p.jsonMod = time.Time{}
 	if err := p.SampleIdentity(t0.Add(3 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +224,8 @@ func TestIdentityUnknownUnreadable(t *testing.T) {
 	p := identityProfile(t, "profile-a")
 	for i, body := range []string{identityFixture, `{}`, `{invalid`} {
 		write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(body))
+		write(t, filepath.Join(p.Dir, ".claude.json"), []byte(body))
+		p.jsonMod = time.Time{}
 		if err := p.SampleIdentity(t0.Add(time.Duration(i) * time.Minute)); err != nil {
 			t.Fatal(err)
 		}
@@ -223,6 +234,7 @@ func TestIdentityUnknownUnreadable(t *testing.T) {
 		}
 	}
 	os.Remove(filepath.Join(p.Dir, ".credentials.json"))
+	os.Remove(filepath.Join(p.Dir, ".claude.json"))
 	if err := p.SampleIdentity(t0.Add(4 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +272,7 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Count(b, []byte{'\n'}) != 2 || bytes.Contains(b, []byte("example.com")) {
+	if bytes.Count(b, []byte{'\n'}) != 2 || !bytes.Contains(b, []byte("acct-a@example.com")) {
 		t.Fatalf("unsafe or repeated event %s", b)
 	}
 	var row struct {
@@ -279,12 +291,12 @@ func TestIdentityAllowlistAndDurableCollection(t *testing.T) {
 	}
 }
 
-func TestMetricAccountStableWithIdentityKey(t *testing.T) {
+func TestMetricAccountStableWithEventStore(t *testing.T) {
 	for _, alias := range []string{"", "operator-alias"} {
 		t.Run("alias="+alias, func(t *testing.T) {
 			p := identityProfile(t, "profile-a")
 			p.AccountAlias = alias
-			p.IdentityKey = nil
+			p.EmailLabel = false
 			write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"accountUuid":"synthetic-account-a"}}`))
 			before, _, err := collect(t, &AccountSource{P: p}, t0, nil)
 			if err != nil {
@@ -299,7 +311,7 @@ func TestMetricAccountStableWithIdentityKey(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.Close()
-			p.Events, p.IdentityKey = s, bytes.Repeat([]byte{1}, 32)
+			p.Events = s
 			after, _, err := collect(t, &AccountSource{P: p}, t0.Add(time.Minute), nil)
 			if err != nil {
 				t.Fatal(err)
@@ -319,7 +331,7 @@ func TestMetricAccountStableWithIdentityKey(t *testing.T) {
 				if row.Data.MetricAccount == nil || *row.Data.MetricAccount != label {
 					t.Fatalf("missing metric join: %+v", row.Data)
 				}
-				if row.Data.Account == nil || (alias == "" && !strings.HasPrefix(*row.Data.Account, "acct_")) {
+				if row.Data.Account == nil || *row.Data.Account != label {
 					t.Fatalf("private identity lost: %+v", row.Data)
 				}
 				return nil
@@ -336,6 +348,7 @@ func TestMetricAccountNullWithoutAliasOrAccount(t *testing.T) {
 		t.Run("alias="+alias, func(t *testing.T) {
 			p := identityProfile(t, "profile-a")
 			p.AccountAlias = alias
+			os.Remove(filepath.Join(p.Dir, ".claude.json"))
 			s, err := events.Open(events.Options{Root: t.TempDir(), Budget: 1 << 20, Reserve: 1, Free: func(string) (int64, error) { return 1 << 30, nil }})
 			if err != nil {
 				t.Fatal(err)
@@ -386,7 +399,7 @@ func TestIdentityOptionalFallbackKeepsAliasAndMetadata(t *testing.T) {
 	}
 	p = identityProfile(t, "profile-b")
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(`{"claudeAiOauth":{"expiresAt":1767232800000},"oauthAccount":{"emailAddress":"credential@example.com"}}`))
-	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"fallback@example.com","organizationName":"Kept"}}`))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"credential@example.com","organizationName":"Kept"}}`))
 	if err := p.SampleIdentity(t0); err != nil {
 		t.Fatal(err)
 	}
@@ -408,6 +421,7 @@ func TestIdentityHistoryRebuildsFromStoreAndStaysBounded(t *testing.T) {
 	}
 	first := p.IdentityAt(t0)
 	write(t, filepath.Join(p.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
+	write(t, filepath.Join(p.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", "acct-b@example.com")))
 	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +435,9 @@ func TestIdentityHistoryRebuildsFromStoreAndStaysBounded(t *testing.T) {
 	}
 	plain := identityProfile(t, "plain")
 	for i := 0; i < maxIdentityHistory+1; i++ {
-		write(t, filepath.Join(plain.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", string(rune('b'+i))+"@example.com")))
+		write(t, filepath.Join(plain.Dir, ".credentials.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", fmt.Sprintf("acct-%d@example.com", i))))
+		write(t, filepath.Join(plain.Dir, ".claude.json"), []byte(strings.ReplaceAll(identityFixture, "acct-a@example.com", fmt.Sprintf("acct-%d@example.com", i))))
+		plain.jsonMod = time.Time{}
 		if err := plain.SampleIdentity(t0.Add(time.Duration(i) * time.Minute)); err != nil {
 			t.Fatal(err)
 		}

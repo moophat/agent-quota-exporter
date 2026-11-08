@@ -47,7 +47,7 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 |---|---|---|---|---|
 | `claude-transcripts` | structural per-message usage and tags | tail `<config>/projects/**/*.jsonl` including subagents by byte offset; preserve event-contract usage IDs/timestamps/session/parent/agent/sidechain/cwd/branch/model/version/entrypoint/skill/tier/speed and token buckets where present, never content. Retain revisions; named views define deduplication; skip synthetic models | target <=60 s capture, bounded recovery with explicit backlog | existing token shape verified; new event capture requires implementation verification |
 | `claude-sessions` | live session count and state | read `<config>/sessions/<pid>.json`: `status`, `updatedAt`, `startedAt`, `pid` (check the pid is alive). Count by `status`. Do not read `cwd`/`name` | each scrape (cheap, local) | verified |
-| `claude-account` | account identity, plan and historical binding | existing UUID/opaque alias derivation and bounded plan label; event metadata uses the exact identity allowlist below, never other file keys or token values | local metadata target 60 s, on change | existing file shape verified; history requires implementation verification |
+| `claude-account` | account identity, plan and historical binding | shared public metric account label (alias, existing UUID short hash, or configured email) and bounded plan label; event metadata uses the exact identity allowlist below, never other file keys or token values | local metadata target 60 s, on change | existing file shape verified; history requires implementation verification |
 | `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (model-family limits, and windows of unstated length), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account globally**; >=60 min after a 429; two-401 holder exclusion as below | verified (field names), **undocumented endpoint** |
 
 Rules specific to `claude-oauth-usage`:
@@ -83,8 +83,9 @@ Rules specific to `claude-oauth-usage`:
 - Identity history additionally allowlists exactly `claudeAiOauth.{expiresAt,refreshTokenExpiresAt,
   subscriptionType,rateLimitTier}` and `oauthAccount.{emailAddress,organizationName,organizationType,
   billingType,seatTier,hasExtraUsageEnabled,organizationRateLimitTier,userRateLimitTier}`, plus credential
-  mtime. See event-contract for destinations/nulls and its keyed account identity policy; no whole-object copy. Email derives keyed opaque identity,
-  never a native public metric/event email. Access token remains request-local only. Everything else
+  mtime. See event-contract for destinations/nulls and the shared public account label policy; no whole-object copy.
+  Configured email labels and email-bearing allowlisted identity metadata are retained without identity-only email redaction.
+  Access token remains request-local only. Everything else
   in those files, `history.jsonl`, `message.content`, `toolUseResult` and prompts remains excluded.
 - All numeric quota windows and all reduced limits survive privately in events, even when inactive,
   unknown, or over metric caps. Passive cache time is payload observation time, not file scan time.

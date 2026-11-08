@@ -344,7 +344,6 @@ func TestOAuthUsageRestoredLabelStableWithIdentityKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Events = s
-	p.IdentityKey = bytes.Repeat([]byte{1}, 32)
 	if err := p.SampleIdentity(t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}

@@ -18,11 +18,9 @@ events:
   byte_budget: 10737418240       # example 10 GiB; REQUIRED positive operator allocation when enabled; no default
   free_space_reserve: 8388608    # default/minimum 8 MiB: bounded batch plus checkpoints
   hot_age: 2160h                # default/minimum 90 days; no automatic deletion
-  privacy_profile: community    # community | parity; parity requires enabled and forbids account_label: email
-  # identity_key_file: /etc/agent-quota-exporter/identity.key
-  # Required when any resolved profile lacks an explicit account alias. Provision
-  # 32..4096 raw random bytes separately, regular file mode 0600 owned by exporter.
-  # Never inline, export or back up the key with events; rotation changes IDs.
+  privacy_profile: community    # community | parity; parity requires enabled; configured email labels allowed
+  # Compatibility: identity_key_file is accepted but ignored, logging once at startup
+  # when configured. No key is read or required; events use the public metric account label.
   # Enabled invalid/unwritable stores fail startup. Capacity pressure is exposed
   # via agent_event_store_{size_bytes,available_bytes,pressure}. Source write and
   # backlog gauges are absent until adapters have observed outcomes/backlog.

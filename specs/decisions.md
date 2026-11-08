@@ -98,6 +98,25 @@ The v0.2 plan's "under 15 MB" is replaced by about 16 MB, with a ceiling of 17 M
 300k-row router DB): above 17 MB is a regression to investigate. Measured: 15.7 to 16.9 MB plateau; the extra over v0.1 is the pure-Go SQLite driver's fixed cost. A cgo driver (smaller, but no
 static release build) is not wanted.
 
+## D11. Plain account labels in events: LOCKED (Tu, 2026-11-08)
+
+**AI-Model:** t9r/cx/gpt-6.1-sol
+
+Owner-authorized ruling: events use the same public account label as metrics: configured
+alias, existing `acct-xxxxxxxx` short stable hash, or email when configured. Identity and
+usage `account` and `metric_account` are the same label when attribution is available.
+Remove the separate keyed-ID policy and identity-only email redaction restrictions;
+allowlisted identity metadata may contain emails. Secret, credential and prompt/content
+bans remain in force. Parity permits configured email labels.
+
+`events.identity_key_file` is accepted only for compatibility, ignored with one startup
+log message when configured; no key is read or required.
+
+Schema stays 1 by explicit owner request: this is a contract correction with changed
+account semantics, and `metric_account` is additive compatibility data that older rows
+may omit. Retained old rows are not rewritten or silently relinked. Consumers of mixed
+history must account for the old versus new account semantics. Metric contract stays 0.
+
 ## Also recorded in `plan.md`, not yet ruled
 
 Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always

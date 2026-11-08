@@ -1,6 +1,7 @@
 # MANIFEST: agent-quota-exporter
 **Last-Updated:** 2026-11-08T01:36:00Z
 **Last-Updated:** 2026-11-07T01:30:00Z
+**Last-Updated:** 2026-11-08T00:00:00Z
 **Last-Updated:** 2026-11-07T00:00:00Z
 
 Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5. Licence Apache-2.0 (locked). Language Go (locked). v0.1 (Claude only) merged to `main` (PR #1, 2026-11-03); release **v0.1.0** published 2026-11-04 (tag at c6f4dc8, cut on-prem after the real-node test of rc.2); fixes ship as v0.1.x. Release by tag push, main-only dispatch, or a `release/<tag>` branch push. Tests: all passing (`go test -race ./...`). Contract 0, validated by the golden and contract-parser tests.
@@ -16,7 +17,7 @@ Status values: planned, in-progress, done. Updated 2026-11-04 by claude-opus-5-5
 | Fixtures | done (synthetic) | see `fixtures/README.md` |
 | Core: config loader and validation | done | `internal/config`, feat/phase1-core |
 | Optional event sink configuration and startup wiring | done in working tree (B03) | `internal/config/events.go`, `internal/app/events.go`; feat/event-sink-config; source adapters pending B04+ |
-| Claude identity history | done in working tree (B04) | `internal/claude/identity-history.go`, `identity-facts.go`; keyed identity events and profile-scoped sampled lookup; feat/identity-history |
+| Claude identity history | done in working tree; final verification pending | `internal/claude/identity-history.go`, `identity-facts.go`; public metric account labels in events and profile-scoped sampled lookup; owner ruling D11; model t9r/cx/gpt-6.1-sol |
 | Core: profile discovery | done (Claude) | `internal/config/discover.go` |
 | Core: scheduler, cache, rate gates, state store | done | `internal/core`; fix/one-freshness-rule unifies age > max(stale_after, 2P+D+15s), polling unchanged; model t9r/cx/gpt-6.1-sol |
 | Core: `/metrics`, `/healthz`, health metrics | done | `internal/core/render.go`, `http.go` |

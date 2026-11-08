@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -18,14 +20,19 @@ type Events struct {
 	PrivacyProfile   string   `yaml:"privacy_profile"`
 }
 
+var legacyIdentityKeyWarning sync.Once
+
 // ValidateEvents also supports callers that construct config directly.
 func (c *Config) ValidateEvents() error {
 	e := c.Events
+	if e.IdentityKeyFile != "" {
+		legacyIdentityKeyWarning.Do(func() { slog.Warn("events.identity_key_file is deprecated and ignored") })
+	}
 	if e.PrivacyProfile != "community" && e.PrivacyProfile != "parity" {
 		return fmt.Errorf("events.privacy_profile: must be community or parity")
 	}
-	if e.PrivacyProfile == "parity" && (!e.Enabled || c.Metrics.AccountLabel == "email") {
-		return fmt.Errorf("events.privacy_profile: parity requires enabled capture and forbids metrics.account_label email")
+	if e.PrivacyProfile == "parity" && !e.Enabled {
+		return fmt.Errorf("events.privacy_profile: parity requires enabled capture")
 	}
 	if !e.Enabled {
 		return nil
@@ -42,9 +49,6 @@ func (c *Config) ValidateEvents() error {
 	}
 	if e.HotAge.D() < 90*24*time.Hour {
 		return fmt.Errorf("events.hot_age: must be at least 2160h (90 days)")
-	}
-	if e.IdentityKeyFile != "" && !filepath.IsAbs(e.IdentityKeyFile) {
-		return fmt.Errorf("events.identity_key_file: must be an absolute file path")
 	}
 	return nil
 }
