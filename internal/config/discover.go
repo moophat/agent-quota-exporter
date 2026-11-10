@@ -16,6 +16,7 @@ type Resolved struct {
 	Dir        string // real path (symlinks resolved)
 	ConfigDir  string // the path as configured or discovered
 	Account    string // operator alias, "" = derive
+	KeySource  string // zai only: openclaw | opencode | zai-helper
 	QuotaOptIn bool   // claude_oauth_usage
 	Quota      Quota
 	Origin     string // config | discovered
@@ -45,7 +46,7 @@ func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {
 			real := realPath(p.Dir)
 			taken[p.Harness+"\x00"+real] = true
 			aliases[p.Harness+"\x00"+p.Alias] = true
-			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, ConfigDir: p.Dir, Account: p.Account,
+			out = append(out, Resolved{Harness: p.Harness, Alias: p.Alias, Dir: real, ConfigDir: p.Dir, Account: p.Account, KeySource: p.KeySource,
 				QuotaOptIn: p.Quota.Enabled("claude_oauth_usage"), Quota: p.Quota, Origin: "config"})
 		}
 	}

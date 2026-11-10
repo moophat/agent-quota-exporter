@@ -86,8 +86,10 @@ type Profile struct {
 	Dir     string `yaml:"dir"`
 	URL     string `yaml:"url"`
 	Account string `yaml:"account"`
-	Quota   Quota  `yaml:"quota"`
-	Disable bool   `yaml:"disable"`
+	// KeySource names the local harness login a zai profile reads its key from; zai only.
+	KeySource string `yaml:"key_source"`
+	Quota     Quota  `yaml:"quota"`
+	Disable   bool   `yaml:"disable"`
 }
 
 // Quota holds boolean opt-ins and the optional statusline cache path.
