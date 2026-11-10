@@ -14,11 +14,14 @@ import (
 // opencodeIDs are the integration ids the z.ai helper and opencode use for the Coding Plan, in preference order.
 var opencodeIDs = []string{"zai-coding-plan", "zhipuai-coding-plan", "zai", "zhipuai"}
 
+// keyExpr reads the key scalar uncut, plus one character so a value over the 512-byte limit is seen as such.
+var keyExpr = sqlro.JSONMax{Col: "value", Path: "$.key", Max: 513}
+
 // credentialAllow is the one deliberate exception to "never read credentials" in opencode's database: the
 // credential table, five scalar expressions, never the whole value column.
 var credentialAllow = sqlro.Allow{"credential": {
 	sqlro.Col("integration_id"), sqlro.Col("active"), sqlro.Col("time_updated"),
-	sqlro.JSON{Col: "value", Path: "$.type"}, sqlro.JSON{Col: "value", Path: "$.key"},
+	sqlro.JSON{Col: "value", Path: "$.type"}, keyExpr,
 }}
 
 // readOpencode looks in the legacy auth.json first, then in the credential table of opencode.db.
@@ -92,7 +95,7 @@ func readOpencodeDB(dir string) (key, error) {
 	defer db.Close()
 	rows, err := db.ByKeys("credential", "integration_id", opencodeIDs, []sqlro.Expr{
 		sqlro.Col("integration_id"), sqlro.Col("active"), sqlro.Col("time_updated"),
-		sqlro.JSON{Col: "value", Path: "$.type"}, sqlro.JSON{Col: "value", Path: "$.key"},
+		sqlro.JSON{Col: "value", Path: "$.type"}, keyExpr,
 	})
 	if err != nil {
 		if reasonOf(err) == core.ReasonOther {
@@ -127,9 +130,6 @@ func readOpencodeDB(dir string) (key, error) {
 	}
 	if !best.ok {
 		return key{}, core.Fail(core.ReasonNotFound)
-	}
-	if len(best.value) >= 128 { // sqlro cuts text at 128 characters; a longer key would be silently wrong
-		return key{}, core.Fail(core.ReasonParse)
 	}
 	return finishKey(best.value, fmt.Sprintf("db:%d:%s", best.updated, best.id))
 }

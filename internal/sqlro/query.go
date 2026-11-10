@@ -29,8 +29,19 @@ type Col string
 // JSON is one scalar at Path (e.g. "$.tokens.input") inside the JSON text column Col.
 type JSON struct{ Col, Path string }
 
-func (Col) isExpr()  {}
-func (JSON) isExpr() {}
+// JSONMax is JSON for one scalar that must not be cut at 128 characters: text comes back cut at Max characters
+// instead, so a caller that lists Max one above its own limit can tell an over-long value. Max is part of the
+// listed expression and is at most maxJSONMax. The JSON column itself is still never selectable whole.
+type JSONMax struct {
+	Col, Path string
+	Max       int
+}
+
+const maxJSONMax = 1024
+
+func (Col) isExpr()     {}
+func (JSON) isExpr()    {}
+func (JSONMax) isExpr() {}
 
 // Allow maps a table name to the expressions a plugin may select from it.
 type Allow map[string][]Expr
@@ -116,6 +127,10 @@ func (d *DB) check(table string, e Expr) error {
 		if !identRe.MatchString(v.Col) || !pathRe.MatchString(v.Path) {
 			return denied()
 		}
+	case JSONMax:
+		if !identRe.MatchString(v.Col) || !pathRe.MatchString(v.Path) || v.Max < 1 || v.Max > maxJSONMax {
+			return denied()
+		}
 	default:
 		return denied()
 	}
@@ -146,6 +161,10 @@ func (d *DB) selectList(table string, cols []Expr) (string, error) {
 // or NULL (object, array, absent path or malformed JSON).
 func render(e Expr) string {
 	n := strconv.Itoa(maxText)
+	if m, ok := e.(JSONMax); ok {
+		n = strconv.Itoa(m.Max)
+		e = JSON{m.Col, m.Path}
+	}
 	switch v := e.(type) {
 	case Col:
 		c := quote(string(v))

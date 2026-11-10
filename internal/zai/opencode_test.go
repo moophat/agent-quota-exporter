@@ -285,7 +285,7 @@ func TestOpencodeOrder(t *testing.T) {
 func TestOpencodeAllowList(t *testing.T) {
 	want := sqlro.Allow{"credential": {
 		sqlro.Col("integration_id"), sqlro.Col("active"), sqlro.Col("time_updated"),
-		sqlro.JSON{Col: "value", Path: "$.type"}, sqlro.JSON{Col: "value", Path: "$.key"},
+		sqlro.JSON{Col: "value", Path: "$.type"}, sqlro.JSONMax{Col: "value", Path: "$.key", Max: 513},
 	}}
 	if !reflect.DeepEqual(credentialAllow, want) {
 		t.Fatalf("allow-list changed: %v", credentialAllow)
@@ -316,5 +316,32 @@ func TestOpencodeErrorsLeakNothing(t *testing.T) {
 	}
 	if s := err.Error(); strings.Contains(s, "has space") || strings.Contains(s, d) {
 		t.Fatalf("leak: %s", s)
+	}
+}
+
+// sqlro cuts text at 128 characters; the key scalar is read in full up to the 512-byte limit.
+func TestOpencodeDBKeyLengths(t *testing.T) {
+	for name, tc := range map[string]struct {
+		n      int
+		reason string
+	}{"127": {127, ""}, "128": {128, ""}, "300": {300, ""}, "512": {512, ""}, "513": {513, core.ReasonParse}} {
+		t.Run(name, func(t *testing.T) {
+			d := t.TempDir()
+			w := credDB(t, d, false)
+			want := strings.Repeat("K", tc.n)
+			addCred(t, w, "zai-coding-plan", keyJSON(want), 1, 100)
+			k, err := readOpencode(d)
+			if tc.reason != "" {
+				wantReason(t, err, tc.reason)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer k.Zero()
+			if string(k.value) != want {
+				t.Fatalf("key cut to %d bytes", len(k.value))
+			}
+		})
 	}
 }
