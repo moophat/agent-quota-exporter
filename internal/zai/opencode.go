@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -62,11 +63,23 @@ func readOpencodeAuth(dir string) (key, error) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		return key{}, core.Fail(core.ReasonParse)
 	}
+	// "id" and "id/" are one integration: the exact id wins, else the smallest raw id, never map order.
+	raw := make([]string, 0, len(doc))
+	for id := range doc {
+		raw = append(raw, id)
+	}
+	sort.Strings(raw)
 	byID := map[string]json.RawMessage{}
-	for id, e := range doc {
-		if e.Type == "api" {
-			byID[strings.TrimRight(id, "/")] = e.Key
+	exact := map[string]bool{}
+	for _, id := range raw {
+		e, norm := doc[id], strings.TrimRight(id, "/")
+		if e.Type != "api" || exact[norm] {
+			continue
 		}
+		if _, taken := byID[norm]; taken && id != norm {
+			continue
+		}
+		byID[norm], exact[norm] = e.Key, id == norm
 	}
 	for _, id := range opencodeIDs {
 		raw, ok := byID[id]

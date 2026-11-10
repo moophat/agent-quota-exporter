@@ -345,3 +345,33 @@ func TestOpencodeDBKeyLengths(t *testing.T) {
 		})
 	}
 }
+
+// "id" and "id/" are one integration; when both are present the exact id wins, on every read.
+func TestOpencodeAuthJSONSlashFormsAreDeterministic(t *testing.T) {
+	body := `{"zai-coding-plan/":{"type":"api","key":"` + keyB + `"},"zai-coding-plan":{"type":"api","key":"` + keyA + `"},"zai-coding-plan//":{"type":"api","key":"` + keyC + `"}}`
+	d := holderDir(t, "auth.json", body)
+	for i := 0; i < 100; i++ {
+		k, err := readOpencode(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(k.value)
+		k.Zero()
+		if got != keyA {
+			t.Fatalf("read %d chose another entry", i)
+		}
+	}
+	// without the exact form, the smallest raw id decides
+	d = holderDir(t, "auth.json", `{"zai-coding-plan//":{"type":"api","key":"`+keyC+`"},"zai-coding-plan/":{"type":"api","key":"`+keyB+`"}}`)
+	for i := 0; i < 100; i++ {
+		k, err := readOpencode(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(k.value)
+		k.Zero()
+		if got != keyB {
+			t.Fatalf("read %d chose another entry", i)
+		}
+	}
+}
