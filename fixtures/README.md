@@ -24,6 +24,8 @@ Collected read-only on 2026-10-28 from a development node by `claude-sonnet-5-5`
 | `router/rows.sql` | invented (2026-11-04, claude-opus-5-5) | rows matching the schema: 8 connections (healthy, rate-limited ISO and epoch ms, failed test, inactive, duplicate name, non-JSON `data`, unknown `testStatus` word) and 10 usage rows (mixed case, NULL and HTTP status, no or deleted connection, zero and non-zero cost) | n/a, fully synthetic; `status`/`testStatus` words and the `rateLimitedUntil` format follow 9router's source; every secret field holds a `CANARY-ROUTER-*` value |
 | `agy/layout.md` | none on this node | n/a | described, not listed |
 | `agy/usage-command.json` | shape of `agy -p /usage --output-format json` (agy CLI 1.5.0), read on-prem 2026-11-04 | key names and nesting, bucket ids `gemini-*`/`3p-*`, windows `5h`/`weekly`, the zero-cost fields (`num_turns`, `usage.*`, `command.name`) | every value invented; extended 2026-11-04 (claude-opus-5-5) with synthetic buckets: an unsafe window (`gemini-perminute`), two unknown ids that merge (`newtier-*`, `othertier-*`), and `CANARY-AGY-*` text in content fields |
+| `zai/openclaw.json5` | invented (2026-11-10, claude-sonnet-5-5), structure of the OpenClaw state file read by key names on a development node: `models.providers.<id>.{baseUrl,apiKey}`, `env.vars.ZAI_API_KEY`; the real file is JSON5 with `//` comment lines | key names and nesting, comments, trailing commas | every value; keys are `CANARYZAI…` strings that pass the exporter's key shape check but match no vendor prefix |
+| `zai/chelper-config.yaml` | invented (2026-11-10), shape of `~/.chelper/config.yaml` of `@z_ai/coding-helper` 0.1.1 (package source) | `plan`, `api_key` names | all values (canary key) |
 
 ## Rules for fixtures
 
