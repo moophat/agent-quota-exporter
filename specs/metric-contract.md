@@ -20,13 +20,13 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | Label | Meaning | Value rules |
 |---|---|---|
 | `host` | machine the exporter runs on | config `host` or the OS hostname; never an IP unless configured so |
-| `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, ... | lowercase, fixed vocabulary per plugin |
+| `harness` | the agent program: `claude-code`, `codex`, `opencode`, `agy`, `zai`, ... | lowercase, fixed vocabulary per plugin |
 | `profile` | one workspace: config dir / `CODEX_HOME` / opencode instance / agy `HOME` | operator alias from config; for auto-discovered profiles a stable slug of the directory name (not the path) |
 | `account` | the login a profile holds | configured operator alias, otherwise the source's existing short stable hash (Claude: `acct-` plus the first 8 lowercase hex SHA-256 digits of the account UUID); `unknown` if unavailable |
-| `provider` | who serves the model: `anthropic`, `openai`, `google`, `opencode-go`, ... | as reported by the source; lowercased |
+| `provider` | who serves the model: `anthropic`, `openai`, `google`, `zai`, `opencode-go`, ... | as reported by the source; lowercased |
 | `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
-| `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet` | `all` when the window covers everything |
+| `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet`, `tool_calls` | `all` when the window covers everything |
 
 `window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`);
 `other` when the vendor reports a window without its length (the vendor's word is then the `scope`).
@@ -126,7 +126,7 @@ agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="
 | Metric | Type | Unit | Labels | Meaning |
 |---|---|---|---|---|
 | `agent_account_logged_in` | gauge | 0/1 | `host harness profile account provider` | 1 if the profile holds a usable login (credential present and not known-expired), 0 otherwise |
-| `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported, bounded to `pro`, `max`, `team`; any other or missing value is `unknown` |
+| `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported, bounded to `lite`, `pro`, `max`, `team`; any other or missing value is `unknown` |
 | `agent_credential_expiry_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | access-token expiry time (a timestamp only, never the token); absent if unknown |
 | `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state: `active`, `idle`, `other`. A count: no session ids |
 | `agent_router_connection_enabled` | gauge | 0/1 | `host harness profile account provider` | 1 if `isActive=1`, else 0; distinguishes operator-disabled connections from failures; absent from legacy cached health until a successful database read |
@@ -186,7 +186,7 @@ New diagnostic `class` values: `timeout`, `network`, `unauthorized`, `forbidden`
 labels retain their vocabulary. Exact per-run counts and numeric HTTP outcomes live in events.
 These additions are non-breaking (contract remains 0); no existing family gains labels.
 
-`source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `codex-usage`, `opencode-db`, ...), a fixed vocabulary.
+`source` is the plugin name (`claude-oauth-usage`, `claude-transcripts`, `codex-usage`, `zai-usage`, `opencode-db`, ...), a fixed vocabulary.
 
 ## Staleness and absence
 

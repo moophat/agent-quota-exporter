@@ -70,7 +70,14 @@ profiles:
     dir: /home/acct-c            # the HOME agy runs under
     account: agy-a1             # required: read each agy login from one host only
     quota: { agy_usage: true }  # opt-in: runs agy's own /usage; each poll can trigger its normal token refresh
+  - harness: zai
+    alias: zai-openclaw
+    account: zai-main             # required: the `account` label, never derived from the key
+    key_source: openclaw          # openclaw | opencode | zai-helper: the harness login that already holds the key
+    dir: /home/acct-a/.openclaw   # that holder's directory (opencode: its data dir; zai-helper: ~/.chelper)
+    quota: { zai_usage: true }    # opt-in: z.ai Coding Plan quota; the exporter never asks for a key
 sources:
   claude-oauth-usage: { min_interval: 15m, backoff_429: 60m }   # floors; may only be raised
   codex-usage: { min_interval: 3m, backoff_429: 10m }           # default 3m / 10m; floors 1m / 5m
   agy-usage: { min_interval: 3m }                               # default 30m; floor 2m
+  zai-usage: { min_interval: 10m, backoff_429: 30m }             # default 10m / 30m; floors 5m / 10m

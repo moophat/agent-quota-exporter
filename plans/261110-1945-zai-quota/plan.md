@@ -1,7 +1,7 @@
 ---
 title: z.ai (Zhipu GLM Coding Plan) quota source
 description: Opt-in `zai-usage` source that reads a z.ai key a local harness already holds and reports the Coding Plan quota windows. z.ai only.
-status: draft
+status: completed
 priority: P1
 branch: feat/zai-quota
 tags: [backend, go, prometheus, exporter, quota]
