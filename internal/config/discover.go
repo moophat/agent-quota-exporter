@@ -22,6 +22,23 @@ type Resolved struct {
 	Origin     string // config | discovered
 }
 
+// AnyQuota reports whether any quota source is switched on for the profile.
+func (r Resolved) AnyQuota() bool {
+	for _, v := range r.Quota {
+		switch x := v.(type) {
+		case bool:
+			if x {
+				return true
+			}
+		case string:
+			if x != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Resolve merges config profiles with discovery per discovery.mode. It returns the profiles to collect,
 // and warnings for the caller to log once (skipped harnesses, unreadable dirs).
 func (c *Config) Resolve(env func(string) string) ([]Resolved, []string) {

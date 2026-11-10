@@ -92,3 +92,22 @@ func TestZAIFloors(t *testing.T) {
 		t.Fatal("overrides not honoured")
 	}
 }
+
+// The startup "quota" field reports whether any quota source is on for the profile, not only Claude's OAuth one.
+func TestResolvedAnyQuota(t *testing.T) {
+	for name, tc := range map[string]struct {
+		q    Quota
+		want bool
+	}{
+		"none":       {nil, false},
+		"zai":        {Quota{"zai_usage": true}, true},
+		"codex":      {Quota{"codex_usage": true}, true},
+		"claude":     {Quota{"claude_oauth_usage": true}, true},
+		"off":        {Quota{"zai_usage": false}, false},
+		"statusline": {Quota{"claude_statusline_cache": "/tmp/x"}, true},
+	} {
+		if got := (Resolved{Quota: tc.q}).AnyQuota(); got != tc.want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
