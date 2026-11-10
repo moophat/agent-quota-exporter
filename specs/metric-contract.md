@@ -72,6 +72,8 @@ constant per exporter, so they add no cardinality. Total label count per series 
 | `agent_quota_observed_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | when the vendor was last successfully asked (not when Prometheus scraped); basis for staleness alerts. For a passive source (below) it is the time of the reading in local state |
 | `agent_quota_credits_available` | gauge | 0/1 | `host harness profile account provider scope` | 1 if the vendor reports credits left or unlimited, else 0. **0 is also what a plan with no credits in use reports**, so alert on a fall from 1 to 0, not on the value |
 | `agent_quota_credits_balance` | gauge | the vendor's credit unit | same | balance as reported; absent if unlimited or not reported |
+| `agent_quota_used_calls` | gauge | calls | `host harness profile account provider window scope` | calls used in a call-counted window, as reported (`zai-usage`, `window=monthly scope=tool_calls`); absent for token windows and when not reported |
+| `agent_quota_limit_calls` | gauge | calls | same | the call cap of that window as reported; absent when not reported |
 | `agent_quota_reset_credits_available` | gauge | slots | `host harness profile account provider` | reset slots (a vendor grant that clears a rate-limit window on request) the vendor says are usable now. Read only; the exporter never spends one. Emitted by `codex-usage` only |
 | `agent_quota_reset_credits_next_expiry_timestamp_seconds` | gauge | Unix seconds | same | when the soonest-expiring unused reset slot expires. **Absent** when the vendor gives no expiry or no slot is open, never 0 |
 

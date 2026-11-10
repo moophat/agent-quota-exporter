@@ -1,0 +1,15 @@
+{
+  "code": 200,
+  "msg": "operation successful",
+  "success": true,
+  "data": {
+    "level": "enterprise-x",
+    "limits": [
+      { "type": "NEW_KIND_LIMIT", "unit": 3, "number": 5, "percentage": 10 },
+      { "type": "TOKENS_LIMIT", "unit": 9, "number": 1, "percentage": 10 },
+      { "type": "TOKENS_LIMIT", "unit": 3, "number": 0, "percentage": 10 },
+      { "type": "TOKENS_LIMIT", "unit": 3, "number": 12, "percentage": "25" },
+      { "type": "TIME_LIMIT", "unit": 5, "number": 2, "usage": 10, "currentValue": 1 }
+    ]
+  }
+}

@@ -28,6 +28,7 @@ Collected read-only on 2026-10-28 from a development node by `claude-sonnet-5-5`
 | `zai/chelper-config.yaml` | invented (2026-11-10), shape of `~/.chelper/config.yaml` of `@z_ai/coding-helper` 0.1.1 (package source) | `plan`, `api_key` names | all values (canary key) |
 | `zai/opencode-auth.json` | invented (2026-11-10), shape of the legacy opencode `auth.json` (`<integrationID>: {type, key}`), from opencode's credential import migration source | integration ids, `type`, `key` names | all values (canary keys) |
 | `zai/opencode-credential.sql` | DDL of table `credential` from the `.schema` of a real `opencode.db` (opencode 1.18.33, local node, no rows read) plus one invented row | DDL only | the row is invented, with canary values |
+| `zai/quota-limit-*.json` | shape of the z.ai `GET /api/monitor/usage/quota/limit` response (envelope `code/msg/success/data`, `data.level`, `data.limits[]` with `type`, `unit`, `number`, `usage`, `currentValue`, `remaining`, `percentage`, `nextResetTime`, `usageDetails`), read on-prem 2026-11-10; the failure envelope `{code, msg, success:false}` with code 1000/1001 seen with a fake key | field names, nesting, which limit has no reset (the not-started 5h window) | every number and time invented; `msg` texts invented; `level` values beyond `lite` invented; `quota-limit-unknown.json` is synthetic (new type, unit 9, number 0, `12h`, numeric string percentage) |
 
 ## Rules for fixtures
 
