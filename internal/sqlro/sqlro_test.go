@@ -361,3 +361,45 @@ func TestOpenRefusesLinksAndNonFiles(t *testing.T) {
 	}
 	mustOpen(t, path, opencodeAllow) // the real path still opens
 }
+
+// JSONMax reads one scalar uncut up to Max characters (and one more, so the caller can tell it was cut); the
+// listed Max is part of the expression.
+func TestJSONMaxReadsPastTheDefaultCut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.db")
+	w := writer(t, path, false)
+	defer w.Close()
+	if _, err := w.Exec(`CREATE TABLE cred (id text PRIMARY KEY, value text)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Exec(`INSERT INTO cred VALUES ('a', ?)`, `{"key":"`+strings.Repeat("k", 300)+`","n":5}`); err != nil {
+		t.Fatal(err)
+	}
+	allow := Allow{"cred": {Col("id"), JSONMax{Col: "value", Path: "$.key", Max: 301}, JSON{"value", "$.n"}}}
+	db, err := Open(path, allow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.ByKeys("cred", "id", []string{"a"}, []Expr{JSONMax{Col: "value", Path: "$.key", Max: 301}})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("%v %v", rows, err)
+	}
+	if got, _ := rows[0][0].(string); len(got) != 300 {
+		t.Fatalf("cut to %d", len(got))
+	}
+	if _, err := db.ByKeys("cred", "id", []string{"a"}, []Expr{JSONMax{Col: "value", Path: "$.key", Max: 400}}); err == nil {
+		t.Fatal("unlisted Max accepted")
+	}
+	if _, err := db.ByKeys("cred", "id", []string{"a"}, []Expr{Col("value")}); err == nil {
+		t.Fatal("whole value column accepted")
+	}
+	bad := Allow{"cred": {JSONMax{Col: "value", Path: "$.key", Max: 100000}}}
+	db2, err := Open(path, bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	if _, err := db2.ByKeys("cred", "id", []string{"a"}, []Expr{JSONMax{Col: "value", Path: "$.key", Max: 100000}}); err == nil {
+		t.Fatal("oversized Max accepted")
+	}
+}

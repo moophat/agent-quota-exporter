@@ -67,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		log.Warn(w)
 	}
 	for _, p := range profiles {
-		log.Info("profile", "harness", p.Harness, "alias", p.Alias, "origin", p.Origin, "quota", p.QuotaOptIn)
+		log.Info("profile", "harness", p.Harness, "alias", p.Alias, "origin", p.Origin, "quota", p.AnyQuota())
 	}
 	built, err := app.Build(cfg, profiles, host, version)
 	if err != nil {

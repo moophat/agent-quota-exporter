@@ -1,0 +1,26 @@
+{
+  "code": 200,
+  "msg": "operation successful",
+  "success": true,
+  "data": {
+    "level": "lite",
+    "limits": [
+      {
+        "type": "TIME_LIMIT",
+        "unit": 5,
+        "number": 1,
+        "usage": 100,
+        "currentValue": 0,
+        "remaining": 100,
+        "percentage": 0,
+        "nextResetTime": 1769904000000,
+        "usageDetails": [
+          { "modelCode": "tool-a", "usage": 0 },
+          { "modelCode": "tool-b", "usage": 0 }
+        ]
+      },
+      { "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 0 },
+      { "type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 0, "nextResetTime": 1767830400000 }
+    ]
+  }
+}

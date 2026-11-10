@@ -1,0 +1,22 @@
+// Synthetic OpenClaw state file: key names and nesting only, invented values.
+{
+  "meta": { "lastTouchedVersion": "0.0.0" },
+  /* block comment, kept out of the way */
+  "env": {
+    "vars": { "ZAI_API_KEY": "CANARYZAI0000000000000000.CANARYENV00000000", },
+  },
+  "models": {
+    "providers": {
+      "zai": {
+        // a double slash inside a string must survive: baseUrl below
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "apiKey": "CANARYZAI0000000000000000.CANARYZAI00000000",
+        "models": [ "glm-0", ],
+      },
+      "zai-anthropic": {
+        "baseUrl": "https://api.z.ai/api/anthropic",
+        "apiKey": "CANARYZAI0000000000000000.CANARYZAI00000000",
+      },
+    },
+  },
+}

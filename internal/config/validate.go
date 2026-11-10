@@ -18,15 +18,19 @@ const (
 	HarnessOpencode = "opencode"
 	HarnessRouter   = "9router"
 	HarnessAgy      = "agy"
+	HarnessZAI      = "zai"
 )
 
+// ZAIKeySources are the harness logins a zai profile may read the key from. zcode is deliberately absent.
+var ZAIKeySources = []string{"openclaw", "opencode", "zai-helper"}
+
 // Harnesses lists every harness with a plugin, so a typo in config fails loudly.
-var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRouter, HarnessAgy}
+var Harnesses = []string{HarnessClaude, HarnessCodex, HarnessOpencode, HarnessRouter, HarnessAgy, HarnessZAI}
 
 // quotaKeys are the opt-in quota sources a profile may enable, by harness. codex_rate_limits is reserved: v0.1
 // accepted it, no plugin reads it yet, and Resolve warns that it is ignored.
 var quotaKeys = map[string]string{"claude_oauth_usage": HarnessClaude, "claude_statusline_cache": HarnessClaude, "agy_usage": HarnessAgy,
-	"codex_rate_limits": HarnessCodex, "codex_usage": HarnessCodex}
+	"codex_rate_limits": HarnessCodex, "codex_usage": HarnessCodex, "zai_usage": HarnessZAI}
 
 // Floors are the vendor-safe minimums (specs/plan.md, "Scrape-time collection").
 var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
@@ -42,6 +46,8 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 	"agy-usage": {2 * time.Minute, 60 * time.Minute},
 	// codex-usage calls the ChatGPT backend with the CLI's own access token, never refreshing it.
 	"codex-usage": {time.Minute, 5 * time.Minute},
+	// zai-usage calls an undocumented, community-used z.ai endpoint with a key a local harness already holds.
+	"zai-usage": {5 * time.Minute, 10 * time.Minute},
 }
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
@@ -204,6 +210,7 @@ func (c *Config) Validate() error {
 				add("profiles[%d].quota.%s: only for harness %s", i, q, h)
 			}
 		}
+		c.validateZAI(i, p, add)
 		if p.Harness == HarnessAgy && p.Quota.Enabled("agy_usage") && p.Account == "" {
 			// one agy login sits on many machines; the operator names the account to read it from one host only
 			add("profiles[%d].account: required for agy with quota.agy_usage", i)
@@ -263,4 +270,29 @@ func findSecretLike(n *yaml.Node) string {
 		}
 	}
 	return ""
+}
+
+// validateZAI checks the zai-only profile fields; key_source is rejected on every other harness.
+func (c *Config) validateZAI(i int, p Profile, add func(string, ...any)) {
+	if p.Harness != HarnessZAI {
+		if p.KeySource != "" {
+			add("profiles[%d].key_source: only for harness %s", i, HarnessZAI)
+		}
+		return
+	}
+	switch {
+	case p.KeySource == "":
+		add("profiles[%d].key_source: required (one of %s)", i, strings.Join(ZAIKeySources, ", "))
+	case p.KeySource == "zcode":
+		add("profiles[%d].key_source: zcode is unsupported (its login is not a plain key)", i)
+	case !contains(ZAIKeySources, p.KeySource):
+		add("profiles[%d].key_source: %q is not one of %s", i, p.KeySource, strings.Join(ZAIKeySources, ", "))
+	}
+	if p.Account == "" {
+		add("profiles[%d].account: required for zai", i)
+	}
+	raw, present := p.Quota["zai_usage"]
+	if v, isBool := raw.(bool); (!present || isBool) && !v {
+		add("profiles[%d].quota.zai_usage: must be true (the opt-in)", i)
+	}
 }

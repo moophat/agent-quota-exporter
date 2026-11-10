@@ -242,7 +242,8 @@ Known data-quality traps (from observed instances):
 - Provider ids stored in historical rows can differ from the live config after a rename; labels follow the stored value.
 
 Never-read (hard blocklist, enforced by the query allow-list): tables `account`, `control_account`, `credential`
-(`access_token`, `refresh_token`, `value`), `permission`, `part` (message text), and `/provider` response keys
+(`access_token`, `refresh_token`, `value`; the one narrow exception is the `zai` harness's key reader below, which reads
+five scalar expressions of `credential` and never the whole `value` column), `permission`, `part` (message text), and `/provider` response keys
 `key` and `options`.
 - Known limit: `message` has a text primary key, so its rowid is implicit. If the newest rows are deleted (a
   session removed) and new ones arrive before the next collect, SQLite can reuse rowids at or below the cursor and
@@ -373,13 +374,70 @@ above (it holds `accessToken`, `refreshToken`, `idToken`, `apiKey`), `providerCo
   monotonic; the attribution moves). A connection name that looks like a credential (a common key prefix, or a run
   of 20 or more letters and digits) is never used as a label; the hash of its id is used instead.
 
+## z.ai (harness `zai`, provider `zai`)
+
+The GLM Coding Plan quota of one z.ai account. z.ai is a vendor reached through several clients, so it has its own
+harness and each profile says which local harness login holds the key. **The exporter never asks for a key**: it reads
+the one the holder already keeps, read-only, for one request, and nothing else.
+
+| Source | What | How | Cadence | Evidence |
+|---|---|---|---|---|
+| `zai-usage` | quota windows, plan level, monthly tool-call counts | one `GET https://api.z.ai/api/monitor/usage/quota/limit` per account, header `Authorization: <key>` (no `Bearer`) | default 10 min, floor 5 min; 429 backoff default 30 min, floor 10 min; own network group `zai`, 5 s spacing | endpoint and header **verified** live 2026-11-10 (HTTP 200, level `lite`, three limits); the endpoint is undocumented and community-used |
+
+Opt-in: a profile needs `harness: zai`, `alias`, `account` (the `account` label; never derived from the key), `key_source`,
+`dir` and `quota: {zai_usage: true}`. It is never discovered. Inline keys are refused by the config secret scan and by the
+unknown-field check.
+
+Key sources (`dir` is the holder's directory). All opens go through `internal/safefs` (no link at any path component,
+regular files only, 1 MiB cap); the key must be printable ASCII without whitespace, 16 to 512 bytes; buffers are zeroed
+after use.
+
+| `key_source` | `dir` | File and field | Evidence |
+|---|---|---|---|
+| `openclaw` | `~/.openclaw` (OpenClaw state dir) | `<dir>/openclaw.json`, JSON5 (comments, trailing commas and a BOM are understood; single quotes and unquoted keys are not). First present of `models.providers.zai.apiKey`, `models.providers.zai-anthropic.apiKey`, then `env.vars.ZAI_API_KEY`; a non-string (SecretRef object) is `parse` | structure **verified** by key names on a real file 2026-11-10 and the key works on the endpoint; the `env.vars` fallback is **documented** (OpenClaw `docs/providers/zai.md`), not seen live |
+| `opencode` | the opencode data dir (`~/.local/share/opencode`) | (a) legacy `<dir>/auth.json`: `{"<integrationID>": {"type":"api","key":"..."}}`; else (b) `<dir>/opencode.db` table `credential`, `$.key` where `$.type == "key"`; integration ids in order `zai-coding-plan`, `zhipuai-coding-plan`, `zai`, `zhipuai`; per id the `active` row, else the newest `time_updated`. The query is `ByKeys` on those four ids selecting `integration_id`, `active`, `time_updated`, `$.type`, `$.key` only | **verified** from opencode's source (credential import migration and `credential` table definition) and the local `opencode.db` schema (1.18.33, no rows on that node). **Not verified**: a real z.ai row |
+| `zai-helper` | `~/.chelper` | `<dir>/config.yaml`, field `api_key` | **verified** from the package source (`@z_ai/coding-helper` 0.1.1). The helper also copies the key into `~/.config/opencode/opencode.json` and `~/.codex/config.toml`; the exporter does not read those |
+| `zcode` | n/a | **unsupported, rejected at config load.** zcode's login is an OAuth "business token" the runtime validates and decrypts; it is not a plain key and nothing shows `/api/monitor` accepts it | **documented**, unproven |
+
+Rules:
+
+- Read-only toward the holder, never refresh, never log in, never call another z.ai endpoint. Only `https://api.z.ai`
+  is ever requested (the China host `open.bigmodel.cn` was not verified for this path and is not shipped; there is no
+  `region` or `base_url` setting). No proxy, no keep-alive, redirects refused, 10 s timeout, 1 MiB body cap.
+- The key is re-read on every poll, so a rotation is picked up. It never appears in a log, error, metric, label, state
+  file or argv.
+- **Duplicate keys.** Two profiles whose keys are equal (compared in memory by hash, never stored) are one account:
+  the profile with the smallest `alias` reads it, the other makes no request, emits no series and stays `up`, with one
+  warning naming the two aliases. A peer whose key cannot be read is ignored.
+- **Failures** (reason, behaviour): missing dir, file or entry `not_found`; a link or non-regular file `permission`;
+  malformed file, non-string key, bad key shape, over 1 MiB or an unexpected envelope `parse`; HTTP 401/403, or HTTP 200
+  with `success:false` and `code` 1000 to 1004, `auth_expired` (verified live: a fake key gives 200 with code 1000, no
+  header gives 200 with code 1001); HTTP 429, or 200 with `success:false` and code 1302 or 1305, `rate_limited` with the
+  backoff above (1302/1305 are **documented**, not seen); other `success:false`, other 4xx/5xx, TLS/DNS failures,
+  redirects and oversize bodies `upstream`; a deadline `timeout`. HTTP 200 alone never means data. After two
+  `auth_expired` in a row with the same holder file revision, calls stop until that file changes. The last good reading
+  keeps being served with its true observed time until the shared freshness limit.
+- **Mapping** (closed): `TOKENS_LIMIT` unit 3 number n is window `<n>h`, scope `all`; `TOKENS_LIMIT` unit 6 number n is
+  `<7n>d`, scope `all`; `TIME_LIMIT` unit 5 number 1 is `monthly`, scope `tool_calls`. The unit codes are **inferred**
+  from live responses (unit 3 number 5 is the 5-hour window; unit 6 number 1 resets a week out; unit 5 number 1 is the
+  monthly allowance). Anything else is not exported and counted once in `agent_source_errors_total{reason="parse"}`;
+  the read still succeeds. Two limits mapping to the same labels merge (highest ratio, earliest reset).
+- **Values.** `agent_quota_utilization_ratio` is `percentage / 100`; a `TIME_LIMIT` without `percentage` uses
+  `currentValue / usage` when `usage > 0`; otherwise the series is absent, never 0. `nextResetTime` is milliseconds
+  (kept only when plausible); a window not started has none. `agent_quota_used_calls` and `agent_quota_limit_calls` are
+  `currentValue` and `usage` of the `TIME_LIMIT` window only (z.ai names the cap `usage`). `agent_account_info{plan}`
+  is `data.level` lowercased (`lite`, `pro`, `max`, `team`, else `unknown`).
+- Not built: per-tool `usageDetails` series, `model-usage` (returns no data), credits or money (D9), events for this
+  source, discovery of z.ai profiles.
+
 ## Other providers (later, by plugin)
 
 | Provider | Official surface | Scope |
 |---|---|---|
 | Anthropic API keys (billing) | Admin usage and cost reports API | in scope as an optional provider plugin; hourly-bucket data, daily-lagged; needs an admin key (a secret the operator provides via env or file reference) |
 | OpenAI API keys (billing) | organization usage/costs API | same pattern |
-| OpenRouter, DeepSeek, GLM and similar | balance endpoints with an API key | not built (`specs/decisions.md` D9: prices are not known in real time) |
+| OpenRouter, DeepSeek and similar | balance endpoints with an API key | not built (`specs/decisions.md` D9: prices are not known in real time) |
+| z.ai GLM Coding Plan | quota windows of the plan, with a key a local harness already holds | built as `zai-usage` (opt-in), see the z.ai section; quota windows only, no balance, D9 unaffected |
 | Google AI subscription windows | the agy client's own `/usage` command | in scope as `agy-usage` (opt-in), see the agy section; nothing calls the private endpoint itself |
 
 Keys for these plugins are referenced from config as `env:NAME` or `file:/path` and are never inlined in the config

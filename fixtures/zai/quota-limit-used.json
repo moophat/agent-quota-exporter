@@ -1,0 +1,13 @@
+{
+  "code": 200,
+  "msg": "operation successful",
+  "success": true,
+  "data": {
+    "level": "PRO",
+    "limits": [
+      { "type": "TIME_LIMIT", "unit": 5, "number": 1, "usage": 1000, "currentValue": 42, "remaining": 958, "nextResetTime": 1769904000000 },
+      { "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 37, "nextResetTime": 1767243600000 },
+      { "type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 62.5, "nextResetTime": 1767830400000 }
+    ]
+  }
+}

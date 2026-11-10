@@ -34,6 +34,8 @@ var families = []family{
 	{"agent_quota_observed_timestamp_seconds", "gauge", "When the vendor was last successfully asked, Unix seconds."},
 	{"agent_quota_credits_available", "gauge", "1 if the vendor reports credits left or unlimited, 0 if out."},
 	{"agent_quota_credits_balance", "gauge", "Credit balance as reported, in the vendor's own credit unit."},
+	{"agent_quota_used_calls", "gauge", "Calls used in a call-counted quota window, as reported by the vendor."},
+	{"agent_quota_limit_calls", "gauge", "Calls allowed in a call-counted quota window, as reported by the vendor."},
 	{"agent_quota_reset_credits_available", "gauge", "Reset slots the vendor says can be used now."},
 	{"agent_quota_reset_credits_next_expiry_timestamp_seconds", "gauge", "When the soonest-expiring unused reset slot expires, Unix seconds."},
 	{"agent_tokens_total", "counter", "Tokens consumed, read from local agent state."},

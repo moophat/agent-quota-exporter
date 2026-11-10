@@ -545,3 +545,25 @@ func TestGateGroupSourcesTakeTurns(t *testing.T) {
 		}
 	}
 }
+
+// An error flagged DropCache removes the samples cached by an earlier good read; an ordinary error keeps them.
+func TestDropCacheClearsEarlierSamples(t *testing.T) {
+	for name, drop := range map[string]bool{"drop": true, "keep": false} {
+		t.Run(name, func(t *testing.T) {
+			c := newClock()
+			src := &fakeSource{name: "x", interval: time.Minute, fn: func(n int, _ json.RawMessage) (Result, json.RawMessage, error) {
+				if n > 1 {
+					return Result{}, nil, &SourceError{Reason: ReasonNotFound, DropCache: drop}
+				}
+				return Result{Samples: []Sample{{"agent_sessions", []Label{{"state", "idle"}}, 1}}}, nil, nil
+			}}
+			s := NewScheduler([]Source{src}, openState(t, t.TempDir(), c), c, quietLog(), 30*time.Minute)
+			s.Tick(context.Background(), nil, false, true)
+			c.Add(2 * time.Minute)
+			s.Tick(context.Background(), nil, false, true)
+			if got := strings.Contains(render(t, s, c), "agent_sessions"); got == drop {
+				t.Fatalf("drop=%v but cached samples served=%v", drop, got)
+			}
+		})
+	}
+}

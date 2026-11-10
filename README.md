@@ -82,6 +82,7 @@ agent-quota-exporter --version
   | `codex-usage` | `codex` | opt-in, `quota: {codex_usage: true}` | live Codex quota windows, credits and reset slots with their expiry, from the ChatGPT backend with the CLI's own access token; takes over the quota series of `codex-rollouts` for that profile while it has a fresh reading (rollouts serves them before the first live read and if the live one goes stale; its token counters always stay) |
   | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
   | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
+  | `zai-usage` | `zai` | opt-in, a `zai` profile with `quota: {zai_usage: true}` | z.ai GLM Coding Plan quota windows and plan level, with the key a local OpenClaw, opencode or z.ai coding helper login already holds |
   | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |
 
 - `codex-usage` (fresh Codex quota): default every 3 min (floor 1 min), 429 backoff default 10 min (floor 5 min); set
@@ -92,6 +93,21 @@ agent-quota-exporter --version
   each attempt until the CLI refreshes its login by running. It also reads the reset slots (read-only; the
   exporter never spends one): `agent_quota_reset_credits_available` and `agent_quota_reset_credits_next_expiry_timestamp_seconds`.
   The endpoints are private and undocumented by the vendor; the field names come from a third-party client's code.
+- `zai-usage` (z.ai GLM Coding Plan quota): **the exporter never asks for a key.** A `zai` profile names a harness login
+  that is already on the box (`key_source: openclaw | opencode | zai-helper`) and its directory; the exporter reads the
+  key from that holder's own file, read-only, sends it to `api.z.ai` only, and never logs or stores it. Default every
+  10 min (floor 5 min), 429 backoff 30 min (floor 10 min). Two profiles holding the same key are read once. Example:
+
+  ```yaml
+  - harness: zai
+    alias: zai-openclaw
+    account: zai-main                 # the `account` label; required
+    key_source: openclaw              # openclaw | opencode | zai-helper
+    dir: /home/acct-a/.openclaw       # the holder's directory
+    quota: { zai_usage: true }
+  ```
+
+  Details, evidence levels and failure reasons: [specs/sources.md](specs/sources.md), section "z.ai".
 - `agy-usage` interval: default 30 min, floor 2 min. A read runs the client's own `/usage` command (0 tokens), so set
   `sources.agy-usage.min_interval` (for example `3m`) for a live dashboard; it still backs off after a failed run.
 

@@ -298,6 +298,9 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		reason := ReasonOther
 		if errors.As(err, &se) {
 			reason = se.Reason
+			if se.DropCache {
+				in.cache, in.hasCache, in.observedAt = nil, false, time.Time{}
+			}
 			if se.Backoff > 0 {
 				in.backoffUntil = start.Add(se.Backoff)
 				in.localBackoff = reason != ReasonRateLimited
