@@ -17,6 +17,7 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/opencode"
 	"github.com/moophat/agent-quota-exporter/internal/router"
 	"github.com/moophat/agent-quota-exporter/internal/strata"
+	"github.com/moophat/agent-quota-exporter/internal/zai"
 )
 
 const (
@@ -44,6 +45,7 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 		return b, err
 	}
 	cache := claude.NewQuotaCache()
+	zaiPeers := &zai.Peers{}
 	for _, lane := range cfg.Strata {
 		b.Sources = append(b.Sources, &strata.Source{Host: host, Lane: lane.Name, BaseURL: lane.BaseURL, Interval: lane.PollInterval()})
 	}
@@ -66,6 +68,8 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 			}
 		case config.HarnessAgy:
 			srcs = agy.Build(cfg, r, host)
+		case config.HarnessZAI:
+			srcs = zai.Build(cfg, r, host, version, zaiPeers)
 		}
 		if r.Harness != config.HarnessClaude {
 			if len(srcs) > 0 {

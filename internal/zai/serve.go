@@ -26,6 +26,8 @@ func (i ident) labels(extra ...core.Label) []core.Label {
 type state struct {
 	Reading *reading `json:"reading,omitempty"`
 	LastAt  int64    `json:"last_at,omitempty"` // Unix ms of the last good read
+	C401    int      `json:"c401,omitempty"`    // consecutive authentication failures
+	FP      string   `json:"fp,omitempty"`      // holder file revision at the last one; never a hash of the key
 }
 
 // serve builds the samples of the persisted reading as of now. A reading older than limit is not served; a window
