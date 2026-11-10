@@ -95,9 +95,13 @@ func parseQuota(body []byte) (parsed, string) {
 			order = append(order, k)
 			continue
 		}
-		m.Ratio = maxPtr(m.Ratio, w.Ratio)
-		m.Used = maxPtr(m.Used, w.Used)
-		m.Limit = maxPtr(m.Limit, w.Limit)
+		// The duplicate with the higher ratio supplies ratio and call counts together, so they stay one vendor
+		// record; a tie keeps the record with the larger cap, then the first.
+		reset := m.Reset
+		if outranks(w, *m) {
+			*m = w
+		}
+		m.Reset = reset
 		if w.Reset != 0 && (m.Reset == 0 || w.Reset < m.Reset) {
 			m.Reset = w.Reset
 		}
@@ -206,14 +210,15 @@ func number(raw json.RawMessage) (float64, bool) {
 	return v, true
 }
 
-func maxPtr(a, b *float64) *float64 {
+// outranks reports whether duplicate a replaces b: higher ratio (a missing ratio is lowest), then larger cap.
+func outranks(a, b window) bool {
 	switch {
-	case a == nil:
-		return b
-	case b == nil:
-		return a
-	case *b > *a:
-		return b
+	case a.Ratio != nil && b.Ratio == nil:
+		return true
+	case a.Ratio == nil || b.Ratio == nil:
+		return false
+	case *a.Ratio != *b.Ratio:
+		return *a.Ratio > *b.Ratio
 	}
-	return a
+	return a.Limit != nil && (b.Limit == nil || *a.Limit > *b.Limit)
 }

@@ -264,3 +264,22 @@ func TestParsedLabelsAreBounded(t *testing.T) {
 		}
 	}
 }
+
+// Used and allowed calls come from one record: two monthly limits with different caps never mix.
+func TestParseMergeKeepsCallsOfOneRecord(t *testing.T) {
+	body := `{"success":true,"data":{"level":"lite","limits":[
+		{"type":"TIME_LIMIT","unit":5,"number":1,"usage":100,"currentValue":42},
+		{"type":"TIME_LIMIT","unit":5,"number":1,"usage":1000,"currentValue":10}]}}`
+	w := mustParse(t, []byte(body)).Reading.Windows[0]
+	if *w.Used != 42 || *w.Limit != 100 || math.Abs(*w.Ratio-0.42) > 1e-12 {
+		t.Fatalf("mixed record: used %v limit %v ratio %v", *w.Used, *w.Limit, *w.Ratio)
+	}
+	// the same result whichever order the vendor lists them in
+	rev := `{"success":true,"data":{"level":"lite","limits":[
+		{"type":"TIME_LIMIT","unit":5,"number":1,"usage":1000,"currentValue":10},
+		{"type":"TIME_LIMIT","unit":5,"number":1,"usage":100,"currentValue":42}]}}`
+	w = mustParse(t, []byte(rev)).Reading.Windows[0]
+	if *w.Used != 42 || *w.Limit != 100 {
+		t.Fatalf("order dependent: %v %v", *w.Used, *w.Limit)
+	}
+}
