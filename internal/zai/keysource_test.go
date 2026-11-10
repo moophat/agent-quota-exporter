@@ -33,21 +33,16 @@ func fixtureBody(t *testing.T, name string) string {
 	return string(b)
 }
 
-func reasonOf(t *testing.T, err error) string {
-	t.Helper()
-	var se *core.SourceError
-	if !errors.As(err, &se) {
-		t.Fatalf("want a SourceError, got %v", err)
-	}
-	return se.Reason
-}
-
 func wantReason(t *testing.T, err error, reason string) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("want %s, got success", reason)
 	}
-	if got := reasonOf(t, err); got != reason {
+	var se *core.SourceError
+	if !errors.As(err, &se) {
+		t.Fatalf("want a SourceError, got %v", err)
+	}
+	if got := se.Reason; got != reason {
 		t.Fatalf("want %s, got %s", reason, got)
 	}
 }

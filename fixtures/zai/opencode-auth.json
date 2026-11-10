@@ -1,0 +1,5 @@
+{
+  "zai-coding-plan": { "type": "api", "key": "CANARYZAI0000000000000000.CANARYAUTHGLOBAL" },
+  "zhipuai-coding-plan": { "type": "api", "key": "CANARYZAI0000000000000000.CANARYAUTHCN0000" },
+  "other-provider": { "type": "oauth", "access": "CANARY-OAUTH-ACCESS", "expires": 0 }
+}

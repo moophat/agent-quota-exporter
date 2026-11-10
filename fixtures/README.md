@@ -26,6 +26,8 @@ Collected read-only on 2026-10-28 from a development node by `claude-sonnet-5-5`
 | `agy/usage-command.json` | shape of `agy -p /usage --output-format json` (agy CLI 1.5.0), read on-prem 2026-11-04 | key names and nesting, bucket ids `gemini-*`/`3p-*`, windows `5h`/`weekly`, the zero-cost fields (`num_turns`, `usage.*`, `command.name`) | every value invented; extended 2026-11-04 (claude-opus-5-5) with synthetic buckets: an unsafe window (`gemini-perminute`), two unknown ids that merge (`newtier-*`, `othertier-*`), and `CANARY-AGY-*` text in content fields |
 | `zai/openclaw.json5` | invented (2026-11-10, claude-sonnet-5-5), structure of the OpenClaw state file read by key names on a development node: `models.providers.<id>.{baseUrl,apiKey}`, `env.vars.ZAI_API_KEY`; the real file is JSON5 with `//` comment lines | key names and nesting, comments, trailing commas | every value; keys are `CANARYZAI…` strings that pass the exporter's key shape check but match no vendor prefix |
 | `zai/chelper-config.yaml` | invented (2026-11-10), shape of `~/.chelper/config.yaml` of `@z_ai/coding-helper` 0.1.1 (package source) | `plan`, `api_key` names | all values (canary key) |
+| `zai/opencode-auth.json` | invented (2026-11-10), shape of the legacy opencode `auth.json` (`<integrationID>: {type, key}`), from opencode's credential import migration source | integration ids, `type`, `key` names | all values (canary keys) |
+| `zai/opencode-credential.sql` | DDL of table `credential` from the `.schema` of a real `opencode.db` (opencode 1.18.33, local node, no rows read) plus one invented row | DDL only | the row is invented, with canary values |
 
 ## Rules for fixtures
 
