@@ -23,6 +23,10 @@ const (
 	DefaultBackoff429 = 30 * time.Minute
 	maxBody           = 1 << 20
 	netSpacing        = 5 * time.Second
+
+	// authRetry is how long two authentication failures with an unchanged holder file revision stop calls. A
+	// replacement key can keep the same size and modification time, so the breaker is bounded, not permanent.
+	authRetry = time.Hour
 )
 
 // Source is `zai-usage` (opt-in): the Coding Plan quota windows of one z.ai account, read from the key a local
@@ -132,7 +136,7 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 	if s.Peers != nil && !s.Peers.owns(s, k.value, true) {
 		return core.Result{}, raw, nil // the owner of this key reads it; nothing to report here
 	}
-	if st.C401 >= 2 && k.fp == st.FP {
+	if st.C401 >= 2 && k.fp == st.FP && now.Sub(time.UnixMilli(st.AuthAt)) < authRetry {
 		return fail(core.Fail(core.ReasonAuthExpired)) // no refresh exists: wait for the holder to write a new key
 	}
 	if k.fp != st.FP {
@@ -145,7 +149,7 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 	}
 	authFailed := func() (core.Result, json.RawMessage, error) {
 		st.C401++
-		st.FP = k.fp
+		st.FP, st.AuthAt = k.fp, now.UnixMilli()
 		return fail(core.Fail(core.ReasonAuthExpired))
 	}
 	switch {

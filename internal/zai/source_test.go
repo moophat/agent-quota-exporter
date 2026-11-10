@@ -405,3 +405,42 @@ func TestUnreadableKeyServesNothing(t *testing.T) {
 		t.Fatal("restore served samples without a readable key")
 	}
 }
+
+// A replacement key of equal length that keeps the old modification time has the same file fingerprint; the
+// breaker must still let it be tried after a bounded wait.
+func TestAuthBreakerRetriesAfterBoundedWait(t *testing.T) {
+	f := newFixt(t, "openclaw", "z", respond(401, nil))
+	path := filepath.Join(f.src.Dir, "openclaw.json")
+	var blob json.RawMessage
+	for i := 0; i < 2; i++ {
+		_, blob, _ = f.collect(t, blob)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newKey := strings.Repeat("N", len(canaryKey))
+	if err := os.WriteFile(path, []byte(`{"models":{"providers":{"zai":{"apiKey":"`+newKey+`"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	// the repaired content has the length of the old one, so give the file the same size too
+	if got, _ := os.Stat(path); got.Size() != fi.Size() {
+		t.Skip("fixture sizes differ")
+	}
+	f.rt.handler = respond(200, globalBody(t))
+	f.now = f.now.Add(30 * time.Minute)
+	if _, blob, _ = f.collect(t, blob); f.rt.count() != 2 {
+		t.Fatalf("breaker open: %d requests", f.rt.count())
+	}
+	f.now = f.now.Add(authRetry)
+	res, _, err := f.collect(t, blob)
+	if err != nil || f.rt.count() != 3 || len(res.Samples) == 0 {
+		t.Fatalf("no bounded retry: %v %d", err, f.rt.count())
+	}
+	if f.rt.reqs[2].auth != newKey {
+		t.Fatal("replacement key not used")
+	}
+}

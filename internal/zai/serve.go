@@ -27,6 +27,7 @@ type state struct {
 	Reading *reading `json:"reading,omitempty"`
 	LastAt  int64    `json:"last_at,omitempty"` // Unix ms of the last good read
 	C401    int      `json:"c401,omitempty"`    // consecutive authentication failures
+	AuthAt  int64    `json:"auth_at,omitempty"` // Unix ms of the last one
 	FP      string   `json:"fp,omitempty"`      // holder file revision at the last one; never a hash of the key
 }
 
