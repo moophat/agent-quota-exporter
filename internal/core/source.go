@@ -60,6 +60,9 @@ const (
 type SourceError struct {
 	Reason  string
 	Backoff time.Duration
+	// DropCache makes the scheduler discard the samples cached by an earlier good read, for a plugin that can no
+	// longer vouch for them.
+	DropCache bool
 }
 
 func (e *SourceError) Error() string { return "source error: " + e.Reason }

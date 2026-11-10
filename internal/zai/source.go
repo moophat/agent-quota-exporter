@@ -77,15 +77,14 @@ func (s *Source) Restore(raw json.RawMessage) core.Result {
 	if json.Unmarshal(raw, &st) != nil || st.LastAt == 0 {
 		return core.Result{}
 	}
-	if s.Peers != nil {
-		k, err := s.readKey()
-		if err == nil {
-			owns := s.Peers.owns(s, k.value, false)
-			k.Zero()
-			if !owns {
-				return core.Result{}
-			}
-		}
+	k, err := s.readKey()
+	if err != nil {
+		return core.Result{} // ownership cannot be verified: a peer may be serving this account
+	}
+	owns := s.Peers == nil || s.Peers.owns(s, k.value, false)
+	k.Zero()
+	if !owns {
+		return core.Result{}
 	}
 	now := time.Now()
 	if s.Now != nil {
@@ -121,7 +120,13 @@ func (s *Source) Collect(ctx context.Context, now time.Time, raw json.RawMessage
 
 	k, err := s.readKey()
 	if err != nil {
-		return fail(err)
+		// Without the key, ownership cannot be verified: serve nothing, and drop what an earlier poll cached.
+		blob, _ := json.Marshal(st)
+		var se *core.SourceError
+		if errors.As(err, &se) {
+			err = &core.SourceError{Reason: se.Reason, DropCache: true}
+		}
+		return core.Result{}, blob, err
 	}
 	defer k.Zero()
 	if s.Peers != nil && !s.Peers.owns(s, k.value, true) {

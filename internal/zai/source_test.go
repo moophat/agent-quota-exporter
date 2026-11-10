@@ -380,3 +380,28 @@ func TestHolderIsNeverWritten(t *testing.T) {
 		t.Fatal("holder directory changed")
 	}
 }
+
+// A profile that cannot read its key cannot tell whether a peer owns it: it serves nothing, and asks the
+// scheduler to drop what an earlier poll cached.
+func TestUnreadableKeyServesNothing(t *testing.T) {
+	f := newFixt(t, "openclaw", "z", respond(200, globalBody(t)))
+	_, blob, err := f.collect(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(f.src.Dir, "openclaw.json"))
+	f.now = f.now.Add(10 * time.Minute)
+	res, _, err := f.collect(t, blob)
+	var se *core.SourceError
+	if !errors.As(err, &se) || se.Reason != core.ReasonNotFound || !se.DropCache {
+		t.Fatalf("err %v", err)
+	}
+	if len(res.Samples) != 0 {
+		t.Fatal("persisted samples served without a readable key")
+	}
+	// a restart in the same state serves nothing either
+	f.src.Now = func() time.Time { return f.now }
+	if len(f.src.Restore(blob).Samples) != 0 {
+		t.Fatal("restore served samples without a readable key")
+	}
+}
