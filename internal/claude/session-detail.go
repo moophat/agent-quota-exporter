@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
 )
@@ -107,7 +108,6 @@ type sessionDoc struct {
 	ProcStart       text `json:"procStart"`
 	PidDomain       text `json:"pidDomain"`
 	StartedAt       num  `json:"startedAt"`       // epoch milliseconds
-	UpdatedAt       num  `json:"updatedAt"`       // epoch milliseconds
 	StatusUpdatedAt num  `json:"statusUpdatedAt"` // epoch milliseconds
 }
 
@@ -123,7 +123,9 @@ func sessionAlive(d sessionDoc) bool {
 		}
 	}
 	if d.PidDomain != "" {
-		if own := PidDomain(); own != "" && own != string(d.PidDomain) {
+		// A file naming a pid domain is trusted only when this host can name its own and the two are equal; if it
+		// cannot, the file may belong to another host sharing the directory.
+		if own := PidDomain(); own == "" || own != string(d.PidDomain) {
 			return false
 		}
 	}
@@ -202,7 +204,7 @@ func tmuxSession(t string) string {
 // neither interactive nor background, keeps at most max sessions (cli before sdk, then the oldest) and returns how
 // many it dropped. Every state and reason is emitted as a fixed 0/1 set, so a state change flips a value and never
 // creates a series.
-func sessionSamples(p *Profile, account string, docs []sessionDoc, max int) ([]core.Sample, int) {
+func sessionSamples(p *Profile, account string, docs []sessionDoc, max int, names *nameBook) ([]core.Sample, int) {
 	if max <= 0 {
 		max = defaultMaxSessions
 	}
@@ -235,11 +237,10 @@ func sessionSamples(p *Profile, account string, docs []sessionDoc, max int) ([]c
 	}
 	sort.SliceStable(kept, byAge(kept))
 
+	labels := names.assign(kept)
 	var out []core.Sample
-	used := map[string]bool{}
-	for _, d := range kept {
-		name := uniqueName(sessionLabel(string(d.Name)), used)
-		used[name] = true
+	for i, d := range kept {
+		name := labels[i]
 		state := detailState(string(d.Status))
 		for _, st := range sessionStates {
 			out = append(out, core.Sample{Name: "agent_session_state", Labels: p.labels(account,
@@ -253,11 +254,8 @@ func sessionSamples(p *Profile, account string, docs []sessionDoc, max int) ([]c
 			out = append(out, core.Sample{Name: "agent_session_waiting", Labels: p.labels(account,
 				core.Label{Name: "session", Value: name}, core.Label{Name: "reason", Value: r}), Value: b2f(state == "waiting" && r == reason)})
 		}
-		since := d.StatusUpdatedAt
-		if since <= 0 {
-			since = d.UpdatedAt
-		}
-		if since > 0 {
+		// Only statusUpdatedAt marks a state change; updatedAt moves on unrelated rewrites of the file.
+		if since := d.StatusUpdatedAt; since > 0 {
 			out = append(out, core.Sample{Name: "agent_session_state_since_timestamp_seconds",
 				Labels: p.labels(account, core.Label{Name: "session", Value: name}), Value: float64(since) / 1000})
 		}
@@ -274,6 +272,46 @@ func d2rank(d sessionDoc) int {
 		return 0
 	}
 	return 1
+}
+
+// sessionKey identifies one session across polls: a pid is reused only by a process with another start time.
+type sessionKey struct {
+	pid     int
+	started float64
+}
+
+// nameBook keeps the label each live session was given, so a label never moves to another session while both
+// exist: when the older of two sessions with the same name ends, the younger keeps its "-2". New sessions take the
+// first free label (the plain name, then -2, -3 ...). It lives in memory only, so labels are re-derived after a
+// restart. Entries of sessions that are gone are dropped on the next poll.
+type nameBook struct {
+	mu   sync.Mutex
+	have map[sessionKey]string
+}
+
+// assign returns the label of each session in docs (same order), which must be sorted oldest first.
+func (n *nameBook) assign(docs []sessionDoc) []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	next := make(map[sessionKey]string, len(docs))
+	used := map[string]bool{}
+	out := make([]string, len(docs))
+	for i, d := range docs { // sessions already named keep their label
+		k := sessionKey{d.PID, float64(d.StartedAt)}
+		if l, ok := n.have[k]; ok && !used[l] {
+			next[k], used[l], out[i] = l, true, l
+		}
+	}
+	for i, d := range docs {
+		if out[i] != "" {
+			continue
+		}
+		k := sessionKey{d.PID, float64(d.StartedAt)}
+		l := uniqueName(sessionLabel(string(d.Name)), used)
+		next[k], used[l], out[i] = l, true, l
+	}
+	n.have = next
+	return out
 }
 
 // uniqueName appends -2, -3 ... to a name already taken, keeping the label within 48 characters.

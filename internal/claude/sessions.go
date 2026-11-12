@@ -20,6 +20,8 @@ type SessionsSource struct {
 	Interval    time.Duration
 	PerSession  bool
 	MaxSessions int // per-session cap; 0 = defaultMaxSessions
+
+	names nameBook
 }
 
 func (s *SessionsSource) Name() string               { return "claude-sessions" }
@@ -70,7 +72,11 @@ func (s *SessionsSource) Collect(_ context.Context, _ time.Time, _ json.RawMessa
 		}
 		b, err := readSmall(filepath.Join(dir, e.Name()), 1<<20)
 		if err != nil {
-			continue // a session file can vanish between list and read
+			var se *core.SourceError
+			if errors.As(err, &se) && se.Reason == core.ReasonNotFound {
+				continue // a session file can vanish between list and read
+			}
+			return res, nil, dropCache(err) // unreadable or oversized: the list would be incomplete, so it is unknown
 		}
 		var doc sessionDoc
 		if json.Unmarshal(b, &doc) != nil || doc.PID <= 0 {
@@ -94,7 +100,7 @@ func (s *SessionsSource) Collect(_ context.Context, _ time.Time, _ json.RawMessa
 	if s.PerSession {
 		var over int
 		var per []core.Sample
-		per, over = sessionSamples(s.P, label, live, s.MaxSessions)
+		per, over = sessionSamples(s.P, label, live, s.MaxSessions, &s.names)
 		res.Samples = append(res.Samples, per...)
 		if over > 0 {
 			if res.Errors == nil {

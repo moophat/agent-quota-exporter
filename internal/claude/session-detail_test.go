@@ -336,3 +336,83 @@ func TestCollectFiftySessionsIsCheap(t *testing.T) {
 		t.Fatalf("too slow: %s", d)
 	}
 }
+
+func TestSessionWithPidDomainIsNotLiveWhenThisHostCannotNameItsOwn(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	PidDomain = func() string { return "" } // no machine id or namespace link readable
+	putSession(t, p, 81, `"name":"maybe-foreign"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`,
+		`"pidDomain":"linux:machine-b:pid:[4026531836]"`)
+	putSession(t, p, 82, `"name":"no-domain"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`)
+	h.Tick(time.Second)
+	out := h.Render(t)
+	if strings.Contains(out, `session="maybe-foreign"`) {
+		t.Fatalf("a session naming a pid domain was accepted without a local domain to compare:\n%s", out)
+	}
+	if !strings.Contains(out, `session="no-domain",state="busy"} 1`) || !strings.Contains(out, `state="active"} 1`) {
+		t.Fatalf("a file without a pid domain must still count:\n%s", out)
+	}
+}
+
+// A label belongs to one session while it lives: when the older of two same-named sessions ends, the younger one
+// keeps its -2 and no other session is handed the plain name's series.
+func TestSessionLabelStaysWhenOlderSameNamedSessionEnds(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	fields := func(started string) []string {
+		return []string{`"name":"same"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`, `"startedAt":` + started}
+	}
+	putSession(t, p, 91, fields("1")...)
+	putSession(t, p, 92, fields("2")...)
+	h.Tick(time.Second)
+	out := h.Render(t)
+	if !strings.Contains(out, `session="same",state="busy"} 1`) || !strings.Contains(out, `session="same-2",state="busy"} 1`) {
+		t.Fatalf("first poll:\n%s", out)
+	}
+	os.Remove(filepath.Join(p.Dir, "sessions", "91.json")) // the older one ends
+	h.Tick(time.Second)
+	out = h.Render(t)
+	if strings.Contains(out, `session="same",`) || !strings.Contains(out, `session="same-2",state="busy"} 1`) {
+		t.Fatalf("the surviving session changed its label:\n%s", out)
+	}
+	// a new session with that name takes the freed plain name, not the survivor's
+	putSession(t, p, 93, fields("3")...)
+	h.Tick(time.Second)
+	out = h.Render(t)
+	if !strings.Contains(out, `session="same",state="busy"} 1`) || !strings.Contains(out, `session="same-2",state="busy"} 1`) {
+		t.Fatalf("labels after a third session:\n%s", out)
+	}
+}
+
+// A session file that exists but cannot be read leaves the list incomplete: the series go and the source is down,
+// instead of a healthy-looking list that silently lacks that session.
+func TestUnreadableSessionFileMarksSourceDown(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	putSession(t, p, 71, `"name":"alive-one"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`)
+	h.Tick(time.Second)
+	if !strings.Contains(h.Render(t), `session="alive-one",state="busy"} 1`) {
+		t.Fatal("first read")
+	}
+	write(t, filepath.Join(p.Dir, "sessions", "72.json"), []byte(`{"pid":72,"pad":"`+strings.Repeat("x", 1<<20)+`"}`)) // over the 1 MiB limit
+	h.Tick(time.Second)
+	out := h.Render(t)
+	if strings.Contains(out, "agent_session_state") || strings.Contains(out, "agent_sessions{") {
+		t.Fatalf("series survived an incomplete read:\n%s", out)
+	}
+	if !strings.Contains(out, `agent_source_up{host="node-a",harness="claude-code",profile="a",source="claude-sessions"} 0`) {
+		t.Fatalf("source not down:\n%s", out)
+	}
+}
+
+func TestStateSinceNeedsAStatusTime(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	putSession(t, p, 61, `"name":"only-updated"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`, `"updatedAt":1794506043142`)
+	putSession(t, p, 62, `"name":"with-status"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`, `"statusUpdatedAt":1794506043142`)
+	h.Tick(time.Second)
+	out := h.Render(t)
+	if strings.Contains(out, `since_timestamp_seconds{host="node-a",harness="claude-code",profile="a",account="`) &&
+		strings.Contains(out, `session="only-updated"} 1.79`) {
+		t.Fatalf("updatedAt reported as the state start:\n%s", out)
+	}
+	if !strings.Contains(out, `session="with-status"} 1.794506043142e+09`) {
+		t.Fatalf("status time missing:\n%s", out)
+	}
+}
