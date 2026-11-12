@@ -8,7 +8,7 @@ and who ruled. If this file and another spec document disagree, this file is the
 | D1 | Licence | **LOCKED 2026-10-28**: Apache-2.0 |
 | D2 | Implementation language (plan decision #13) | **LOCKED 2026-10-28**: Go |
 | D3 | Public repository timing | OPEN |
-| D4 | Per-session metrics | OPEN |
+| D4 | Per-session metrics | Maintainer decision 2026-11-13 (not LOCKED): opt-in `metrics.per_session` |
 
 ---
 
@@ -36,10 +36,13 @@ and fixtures are language-neutral, so this does not block phase 0 or 1 design wo
 Private until phase 5 (first public release) is the plan's default; not ruled. Once public, `main` becomes protected
 and PRs are required (see `AGENTS.md`, Git).
 
-## D4. Per-session metrics: OPEN
+## D4. Per-session metrics: maintainer decision, opt-in (2026-11-13)
 
-Whether a per-session metric set is wanted at all. Current design: off by default, no session ids as labels on hot
-series (cardinality rule in `metric-contract.md`).
+Taken by the maintainer under the owner's 2026-11-13 00:30 "go build it" for a "what is running now" view; the owner
+did not rule on the design itself, so this is not LOCKED. Per-session series exist behind `metrics.per_session: true`
+only (default off), as fixed 0/1 state sets per live session with a per-profile cap (`max_sessions_per_profile`,
+default 50), and a `session` label that is the sanitized harness session name (usually a project folder name). Never
+a session id, pid, path, prompt, task or screen text. See `metric-contract.md`, "Session and job metrics (opt-in)".
 
 ## D5. Claude plan label and contract rows: LOCKED (Tu, 2026-11-03)
 

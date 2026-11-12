@@ -1,0 +1,215 @@
+# HELP agent_sessions Live sessions by state.
+# TYPE agent_sessions gauge
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="active"} 2
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="idle"} 2
+agent_sessions{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",state="other"} 8
+agent_sessions{host="node-a",harness="opencode",profile="inst",account="inst",state="active"} 2
+# HELP agent_session_state 1 for the state a live session is in, 0 for the others.
+# TYPE agent_session_state gauge
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",state="idle"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",state="waiting"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",state="busy"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",state="waiting"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",state="busy"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",state="waiting"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",state="shell"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",state="waiting"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",state="waiting"} 1
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",state="busy"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",state="idle"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",state="other"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",state="shell"} 0
+agent_session_state{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",state="waiting"} 1
+# HELP agent_session_waiting 1 for what a waiting session waits on, 0 for the other reasons.
+# TYPE agent_session_waiting gauge
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="permission"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="input"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="dialog"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="sandbox"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",reason="worker"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="goal"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="other"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",reason="worker"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="dialog"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="goal"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="input"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="other"} 1
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="permission"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="sandbox"} 0
+agent_session_waiting{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",reason="worker"} 0
+# HELP agent_session_state_since_timestamp_seconds When the session entered its current state, Unix seconds.
+# TYPE agent_session_state_since_timestamp_seconds gauge
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping"} 1767225300
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1"} 1767225500
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa"} 1767225540
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled"} 1767225300
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5"} 1767225560
+agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6"} 1767225560
+# HELP agent_session_info Slow-changing facts of a live session.
+# TYPE agent_session_info gauge
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",entrypoint="sdk",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",entrypoint="cli",tmux_session="main"} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",entrypoint="cli",tmux_session=""} 1
+# HELP agent_job_running 1 while a job holds the account's lock, 0 otherwise.
+# TYPE agent_job_running gauge
+agent_job_running{host="node-a",harness="agy",profile="acct-busy",account="acct-busy"} 1
+agent_job_running{host="node-a",harness="agy",profile="acct-free",account="acct-free"} 0
+agent_job_running{host="node-a",harness="codex",profile="team",account="team"} 0
+# HELP agent_job_last_end_timestamp_seconds When the last logged job of the account ended, Unix seconds.
+# TYPE agent_job_last_end_timestamp_seconds gauge
+agent_job_last_end_timestamp_seconds{host="node-a",harness="agy",profile="acct-free",account="acct-free"} 1.7672256125e+09
+agent_job_last_end_timestamp_seconds{host="node-a",harness="codex",profile="team",account="team"} 1767225690
+# HELP agent_job_last_exit_code Exit code of the last logged job of the account.
+# TYPE agent_job_last_exit_code gauge
+agent_job_last_exit_code{host="node-a",harness="agy",profile="acct-free",account="acct-free"} 0
+agent_job_last_exit_code{host="node-a",harness="codex",profile="team",account="team"} 2
+# HELP agent_source_up 1 if the last read of the source succeeded or a fresh cache entry exists; fresh age <= max(stale_after, 2*poll_interval + read_timeout + 15s).
+# TYPE agent_source_up gauge
+agent_source_up{host="node-a",harness="claude-code",profile="work",source="claude-sessions"} 1
+agent_source_up{host="node-a",harness="jobs",profile="host",source="job-locks"} 1
+agent_source_up{host="node-a",harness="opencode",profile="inst",source="opencode-http"} 1
+# HELP agent_source_last_success_timestamp_seconds Last successful read of the source, Unix seconds.
+# TYPE agent_source_last_success_timestamp_seconds gauge
+agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions"} 1767226201
+agent_source_last_success_timestamp_seconds{host="node-a",harness="jobs",profile="host",source="job-locks"} 1767226201
+agent_source_last_success_timestamp_seconds{host="node-a",harness="opencode",profile="inst",source="opencode-http"} 1767226201
+# HELP agent_source_cache_age_seconds Age of the value being served, seconds.
+# TYPE agent_source_cache_age_seconds gauge
+agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions"} 0
+agent_source_cache_age_seconds{host="node-a",harness="jobs",profile="host",source="job-locks"} 0
+agent_source_cache_age_seconds{host="node-a",harness="opencode",profile="inst",source="opencode-http"} 0
+# HELP agent_source_backoff_until_timestamp_seconds Non-zero while a vendor 429 or error backoff is active, Unix seconds.
+# TYPE agent_source_backoff_until_timestamp_seconds gauge
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="jobs",profile="host",source="job-locks"} 0
+agent_source_backoff_until_timestamp_seconds{host="node-a",harness="opencode",profile="inst",source="opencode-http"} 0
+# HELP agent_source_read_seconds Duration of the last read of the source, seconds.
+# TYPE agent_source_read_seconds gauge
+agent_source_read_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions"} 0
+agent_source_read_seconds{host="node-a",harness="jobs",profile="host",source="job-locks"} 0
+agent_source_read_seconds{host="node-a",harness="opencode",profile="inst",source="opencode-http"} 0
+# HELP agent_quota_exporter_build_info Build version and metric contract version.
+# TYPE agent_quota_exporter_build_info gauge
+agent_quota_exporter_build_info{version="test",contract="0"} 1
+# HELP agent_quota_exporter_state_epoch When the current persisted state was initialized, Unix seconds; a change means counters restarted.
+# TYPE agent_quota_exporter_state_epoch gauge
+agent_quota_exporter_state_epoch 1767226200
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1767226200

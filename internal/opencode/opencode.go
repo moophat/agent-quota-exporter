@@ -109,13 +109,21 @@ func Build(cfg *config.Config, r config.Resolved, host string, ev *events.Store)
 	if account == "" {
 		account = r.Alias
 	}
-	return []core.Source{&DBSource{Host: host, Alias: r.Alias, Account: account,
+	srcs := []core.Source{&DBSource{Host: host, Alias: r.Alias, Account: account,
 		Path:      filepath.Join(r.Dir, dbFile),
 		MaxModels: cfg.Metrics.MaxModelsPerProfile,
 		Interval:  cfg.SourceInterval(SourceName, cfg.Defaults.UsageInterval.D()),
 		Events:    ev,
 	}}
+	if r.URL != "" {
+		srcs = append(srcs, &HTTPSource{Host: host, Alias: r.Alias, Account: account, URL: r.URL,
+			Interval: cfg.SourceInterval(HTTPSourceName, httpInterval)})
+	}
+	return srcs
 }
+
+// httpInterval is how often the live-session count is read when sources.opencode-http sets nothing.
+const httpInterval = 15 * time.Second
 
 // DBSource is `opencode-db` for one profile (one opencode data dir).
 type DBSource struct {

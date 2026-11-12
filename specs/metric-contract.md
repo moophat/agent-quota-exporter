@@ -27,6 +27,9 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `model` | model id as reported | verbatim, lowercased; unknown = `unknown` |
 | `window` | quota window name: `5h`, `7d`, `weekly`, `monthly`, ... | normalised by the plugin (see below) |
 | `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet`, `tool_calls` | `all` when the window covers everything |
+| `session` | one live session of a harness (per-session series only, see "Session and job metrics") | the harness's own session name made safe: characters outside `A-Za-z0-9._-` become `-`, at most 48 characters, `unnamed` when empty; a repeat on the same profile gets `-2`, `-3`, and a session keeps its label while it lives (a label never moves to another session when the older one ends; labels are re-derived after an exporter restart). **In practice the name is the project folder name plus a short suffix** (a derived name such as `my-project-4f`), so the label usually shows a project folder name, never a path, pid or session id. Present only when `metrics.per_session` is on |
+| `entrypoint` | how the session was started | `cli`, `sdk`, `other` (not `origin`, which means config or discovered) |
+| `tmux_session` | the tmux session the harness runs in, when it reports one | the part before `:` of the harness's tmux value, only if it matches `A-Za-z0-9._-` (1 to 48); otherwise empty. The tmux socket is not reported, so two sockets with the same session name are not told apart |
 
 `window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`);
 `other` when the vendor reports a window without its length (the vendor's word is then the `scope`).
@@ -56,8 +59,12 @@ constant per exporter, so they add no cardinality. Total label count per series 
    for slow-changing facts, and its labels change only on real change.
 3. Series per exporter is bounded by `hosts(1) x profiles x models x token types`. Model labels are capped per
    profile (default top 20 by recent use, the rest folded to `model="other"`).
-4. Per-session series exist only behind `metrics.per_session: true` (default off) and are documented there as a
-   cardinality hazard; they are not in the contract below.
+4. Per-session series exist only behind `metrics.per_session: true` (default off). They are the `agent_session_*`
+   families in "Session and job metrics (opt-in)" below: a fixed set of states and reasons per live session (0/1, so a
+   change flips a value and never adds a series), capped by `metrics.max_sessions_per_profile` (default 50). Ended
+   sessions disappear at once; history is the time-series database's job. The only free-form value in any label is the
+   sanitized `session` name; prompts, task text, screen text, paths, pids and session ids never appear. Maintainer
+   decision under the owner's 2026-11-13 go-ahead, see `decisions.md` D4.
 5. Series for a profile that disappeared stop being emitted. Current-value eligibility follows the
    source freshness rules below; retained events and last-good evidence are never deleted because
    a series is absent. Missing means unknown, never zero.
@@ -128,10 +135,33 @@ agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="
 | `agent_account_logged_in` | gauge | 0/1 | `host harness profile account provider` | 1 if the profile holds a usable login (credential present and not known-expired), 0 otherwise |
 | `agent_account_info` | gauge (info) | constant 1 | `host harness profile account provider plan` | slow-changing account facts; `plan` as reported, bounded to `lite`, `pro`, `max`, `team`; any other or missing value is `unknown` |
 | `agent_credential_expiry_timestamp_seconds` | gauge | Unix seconds | `host harness profile account provider` | access-token expiry time (a timestamp only, never the token); absent if unknown |
-| `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state: `active`, `idle`, `other`. A count: no session ids |
+| `agent_sessions` | gauge | sessions | `host harness profile account state` | live sessions by state, a count with no session ids. Per harness: `claude-code` emits `active`, `idle` and `other` (a `waiting` or `shell` session is `other`); `opencode` (source `opencode-http`) emits `active` only, because the server reports busy sessions and nothing about idle ones, so `idle` is unknown there and is not emitted. A Claude session counts only while its process is alive: the pid exists, its start time equals the file's `procStart` and its pid domain is this host's, so a reused pid is no longer counted |
 | `agent_router_connection_enabled` | gauge | 0/1 | `host harness profile account provider` | 1 if `isActive=1`, else 0; distinguishes operator-disabled connections from failures; absent from legacy cached health until a successful database read |
 | `agent_router_connection_up` | gauge | 0/1 | `host harness profile account provider` | a router's upstream connection (`account` = its alias or hash): 1 if active, its last test did not fail and it is not rate-limited now |
 | `agent_router_rate_limited_until_timestamp_seconds` | gauge | Unix seconds | same | when the router's own rate limit on the connection ends; absent when none |
+
+## Session and job metrics (opt-in)
+
+Behind `metrics.per_session: true` (Claude sessions) and `jobs.lock_dir` (jobs); neither is on by default. Additive:
+contract version stays 0. Everything below describes live things only: a session or job that ended has no series.
+
+| Metric | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `agent_session_state` | gauge | 0/1 | `host harness profile account session state` | one series per live session and state, `state` in `busy`, `idle`, `waiting`, `shell`, `other`; 1 for the session's current state, 0 for the other four. A status word the exporter does not know is `other` |
+| `agent_session_waiting` | gauge | 0/1 | `host harness profile account session reason` | what a `waiting` session waits on, `reason` in `permission`, `input`, `dialog`, `sandbox`, `worker`, `goal`, `other`; all 0 unless the session is waiting. Exact-match map of the harness's own short labels (`permission prompt`, `input needed`, `dialog open`, `sandbox request`, `worker request`, `goal proposal`); any other string is `other` and is never exported |
+| `agent_session_state_since_timestamp_seconds` | gauge | Unix seconds | `host harness profile account session` | when the session entered its current state (the harness's `statusUpdatedAt`, milliseconds converted); absent when the file has no such time |
+| `agent_session_info` | gauge (info) | constant 1 | `host harness profile account session entrypoint tmux_session` | slow-changing facts: how it was started and which tmux session it runs in (empty when none) |
+| `agent_job_running` | gauge | 0/1 | `host harness profile account` | 1 while a job holds the lock of that account, 0 otherwise. One series per lock file found in `jobs.lock_dir`: `harness` is the file-name prefix (`codex` or `agy`), `profile` and `account` the account part. It does not depend on a configured profile |
+| `agent_job_last_end_timestamp_seconds` | gauge | Unix seconds | `host harness profile account` | when the last logged job of the account ended (call start plus duration); absent until the call log has a finished job for it |
+| `agent_job_last_exit_code` | gauge | exit code | `host harness profile account` | exit code of that job; same presence rule |
+
+Bounds: sessions x 14 series per profile (5 states, 7 reasons, since, info), at most `metrics.max_sessions_per_profile`
+sessions; when more are live the `cli` entrypoint is kept before `sdk`, then the oldest by start time, and the
+dropped count is added to `agent_source_errors_total{reason="other"}`. Jobs: at most 100 lock files, 3 series each.
+A pre-warmed spare session and a session whose `kind` is neither `interactive` nor `bg` are skipped.
+
+On any failed read of these sources the series disappear and `agent_source_up` is 0 on the next scrape (the last
+good values are not served); missing means unknown, never zero.
 
 ## Lane metrics (opt-in `strata`)
 

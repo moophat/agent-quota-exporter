@@ -100,7 +100,8 @@ discovery:
   mode: add                       # off | add | only
   roots: ["/root", "/home/*"]
 metrics:
-  per_session: false              # cardinality hazard if true
+  per_session: false              # opt-in: one series group per live session (specs/metric-contract.md)
+  max_sessions_per_profile: 50    # cap when per_session is on
   max_models_per_profile: 20
   account_label: alias            # default; email publishes addresses in metrics and events
 defaults:

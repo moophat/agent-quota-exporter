@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,8 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 	"claude-account":     {30 * time.Second, 0},
 	"codex-rollouts":     {30 * time.Second, 0},
 	"opencode-db":        {30 * time.Second, 0},
+	"opencode-http":      {5 * time.Second, 0},
+	"job-locks":          {5 * time.Second, 0},
 	"router-9router":     {30 * time.Second, 0},
 	// agy-usage reads through the local client at 0 tokens, so its interval floor is low; backoff_429 is its
 	// backoff after any failed run.
@@ -52,7 +55,8 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
 var ContractLabels = []string{"host", "harness", "profile", "account", "provider", "model", "window", "scope",
-	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin"}
+	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin",
+	"session", "tmux_session", "entrypoint"}
 
 // LaneLabels are owned by the lane series; static labels may reuse them only while no lane source is configured.
 var LaneLabels = []string{"lane", "images", "context"}
@@ -109,8 +113,13 @@ func (c *Config) Validate() error {
 	if c.Metrics.MaxModelsPerProfile < 1 {
 		add("metrics.max_models_per_profile: must be >= 1")
 	}
-	if c.Metrics.PerSession {
-		add("metrics.per_session: not supported in this version")
+	if c.Metrics.MaxSessionsPerProfile < 1 || c.Metrics.MaxSessionsPerProfile > 500 {
+		add("metrics.max_sessions_per_profile: must be between 1 and 500")
+	}
+	for k, v := range map[string]string{"jobs.lock_dir": c.Jobs.LockDir, "jobs.call_log": c.Jobs.CallLog} {
+		if v != "" && !filepath.IsAbs(v) {
+			add("%s: must be an absolute path", k)
+		}
 	}
 	if c.OTLP.Endpoint != "" {
 		add("otlp.endpoint: not supported in this version")
@@ -211,6 +220,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		c.validateZAI(i, p, add)
+		c.validateOpencodeURL(i, p, add)
 		if p.Harness == HarnessAgy && p.Quota.Enabled("agy_usage") && p.Account == "" {
 			// one agy login sits on many machines; the operator names the account to read it from one host only
 			add("profiles[%d].account: required for agy with quota.agy_usage", i)
@@ -295,4 +305,43 @@ func (c *Config) validateZAI(i int, p Profile, add func(string, ...any)) {
 	if v, isBool := raw.(bool); (!present || isBool) && !v {
 		add("profiles[%d].quota.zai_usage: must be true (the opt-in)", i)
 	}
+}
+
+// validateOpencodeURL checks the opencode-http address: an HTTP(S) URL without credentials, query or fragment, on
+// loopback unless the profile sets allow_remote. allow_remote is rejected on every other harness.
+func (c *Config) validateOpencodeURL(i int, p Profile, add func(string, ...any)) {
+	if p.Harness != HarnessOpencode {
+		if p.AllowRemote {
+			add("profiles[%d].allow_remote: only for harness %s", i, HarnessOpencode)
+		}
+		return
+	}
+	if p.URL == "" {
+		if p.AllowRemote {
+			add("profiles[%d].allow_remote: needs url", i)
+		}
+		return
+	}
+	u, err := url.Parse(p.URL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || strings.ContainsAny(p.URL, "?#") {
+		add("profiles[%d].url: must be an HTTP(S) URL without credentials, query or fragment", i)
+		return
+	}
+	if !p.AllowRemote && !isLoopbackHost(u.Hostname()) {
+		add("profiles[%d].url: must be on loopback unless allow_remote is true", i)
+	}
+}
+
+// LoopbackURL reports whether a URL's host is loopback (an unparsable URL is not).
+func LoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && isLoopbackHost(u.Hostname())
+}
+
+func isLoopbackHost(h string) bool {
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
