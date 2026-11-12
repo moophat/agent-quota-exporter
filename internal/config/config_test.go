@@ -54,7 +54,6 @@ func TestValidationFailures(t *testing.T) {
 		"label name":            {"version: 1\nlabels: {\"1bad\": x}\n", "invalid label name"},
 		"too many labels":       {"version: 1\nlabels: {a: 1, b: 1, c: 1, d: 1, e: 1}\n", "exceed the cap"},
 		"otlp":                  {"version: 1\notlp: {endpoint: http://x}\n", "otlp.endpoint"},
-		"per session":           {"version: 1\nmetrics: {per_session: true}\n", "per_session"},
 		"discovery mode":        {"version: 1\ndiscovery: {mode: all}\n", "discovery.mode"},
 		"account label":         {"version: 1\nmetrics: {account_label: uuid}\n", "account_label"},
 		"stale nonpositive":     {"version: 1\ndefaults: {stale_after: 0s}\n", "stale_after"},

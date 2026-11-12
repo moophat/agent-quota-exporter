@@ -45,3 +45,30 @@ func TestEnabledEventStoreFailsStartup(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckConfig(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, "state")
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	good := write("good.yaml", "version: 1\nstate_dir: "+state+"\nmetrics: {per_session: true}\njobs: {lock_dir: /run/x}\n")
+	bad := write("bad.yaml", "version: 1\nstate_dir: "+state+"\nunknown_key: 1\n")
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"--check-config", "--config", bad}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "unknown_key") {
+		t.Fatalf("bad config: code=%d stderr=%s", code, errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"--check-config", "--config", good}, &out, &errb); code != 0 || !strings.Contains(out.String(), "config ok") {
+		t.Fatalf("good config: code=%d out=%s err=%s", code, out.String(), errb.String())
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Fatalf("--check-config touched the state dir: %v", err)
+	}
+}

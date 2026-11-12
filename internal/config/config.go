@@ -45,6 +45,15 @@ type Config struct {
 	OTLP      OTLP              `yaml:"otlp"`
 	Events    Events            `yaml:"events"`
 	Strata    []Lane            `yaml:"strata"`
+	Jobs      Jobs              `yaml:"jobs"`
+}
+
+// Jobs opts into the host-level job-locks source: running jobs of a task runner that holds one lock file per
+// agent account while a job runs and appends one JSON line per call to a log. Both paths are absolute; nothing is
+// discovered, an empty LockDir switches the source off.
+type Jobs struct {
+	LockDir string `yaml:"lock_dir"`
+	CallLog string `yaml:"call_log"`
 }
 
 // Lane opts into one read-only Strata server. An empty list makes no requests.
@@ -70,6 +79,8 @@ type Metrics struct {
 	PerSession          bool   `yaml:"per_session"`
 	MaxModelsPerProfile int    `yaml:"max_models_per_profile"`
 	AccountLabel        string `yaml:"account_label"`
+	// MaxSessionsPerProfile bounds the per-session series of one profile when per_session is on.
+	MaxSessionsPerProfile int `yaml:"max_sessions_per_profile"`
 }
 
 type Defaults struct {
@@ -85,7 +96,9 @@ type Profile struct {
 	Alias   string `yaml:"alias"`
 	Dir     string `yaml:"dir"`
 	URL     string `yaml:"url"`
-	Account string `yaml:"account"`
+	// AllowRemote lets an opencode profile's url point beyond loopback; off by default.
+	AllowRemote bool   `yaml:"allow_remote"`
+	Account     string `yaml:"account"`
 	// KeySource names the local harness login a zai profile reads its key from; zai only.
 	KeySource string `yaml:"key_source"`
 	Quota     Quota  `yaml:"quota"`
@@ -128,7 +141,7 @@ func Default() *Config {
 			Mode:  "add",
 			Roots: []string{"/root", "/home/*"},
 		},
-		Metrics: Metrics{MaxModelsPerProfile: 20, AccountLabel: "alias"},
+		Metrics: Metrics{MaxModelsPerProfile: 20, AccountLabel: "alias", MaxSessionsPerProfile: 50},
 		Events:  Events{FreeSpaceReserve: 8 << 20, HotAge: Duration(90 * 24 * time.Hour), PrivacyProfile: "community"},
 		Defaults: Defaults{
 			UsageInterval: Duration(60 * time.Second),

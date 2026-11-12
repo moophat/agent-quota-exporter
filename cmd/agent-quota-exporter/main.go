@@ -35,6 +35,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfgPath := fs.String("config", os.Getenv("AGENT_QUOTA_EXPORTER_CONFIG"), "config file (YAML)")
 	once := fs.Bool("once", false, "collect local sources once, print /metrics to stdout and exit")
 	onceQuota := fs.Bool("once-with-quota", false, "with --once, also run the opt-in quota sources (Claude's quota endpoint, the agy client) if their gates allow")
+	checkConfig := fs.Bool("check-config", false, "load and validate the config, print the result and exit 0 (valid) or 1 (invalid); listens on nothing and writes nothing")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -48,6 +49,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		// as a single request became a long-lived exporter that polls the vendor.
 		fmt.Fprintln(stderr, "--once-with-quota requires --once")
 		return 2
+	}
+	if *checkConfig {
+		if _, err := config.Load(*cfgPath); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "config ok")
+		return 0
 	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 
