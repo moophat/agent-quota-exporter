@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -312,5 +313,26 @@ func TestSessionsSourceErrorCarriesDropCache(t *testing.T) {
 	se, ok := err.(*core.SourceError)
 	if !ok || !se.DropCache {
 		t.Fatalf("want DropCache source error, got %#v", err)
+	}
+}
+
+// Fifty live session files must read in well under a scrape interval (target < 50 ms; the bound here is loose so
+// a loaded CI host does not flake).
+func TestCollectFiftySessionsIsCheap(t *testing.T) {
+	p, _ := sessionHarness(t, true, 0)
+	for i := 1; i <= 50; i++ {
+		putSession(t, p, 1000+i, fmt.Sprintf(`"name":"proj-%d"`, i), `"kind":"interactive"`, `"entrypoint":"cli"`,
+			`"status":"busy"`, fmt.Sprintf(`"startedAt":%d`, i))
+	}
+	s := &SessionsSource{P: p, Interval: time.Second, PerSession: true}
+	start := time.Now()
+	res, _, err := s.Collect(context.Background(), t0, nil)
+	d := time.Since(start)
+	if err != nil || len(res.Samples) != 3+50*14 {
+		t.Fatalf("err %v, %d samples", err, len(res.Samples))
+	}
+	t.Logf("50 sessions collected in %s", d)
+	if d > 250*time.Millisecond {
+		t.Fatalf("too slow: %s", d)
 	}
 }
