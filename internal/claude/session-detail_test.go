@@ -322,7 +322,7 @@ func TestCollectFiftySessionsIsCheap(t *testing.T) {
 	p, _ := sessionHarness(t, true, 0)
 	for i := 1; i <= 50; i++ {
 		putSession(t, p, 1000+i, fmt.Sprintf(`"name":"proj-%d"`, i), `"kind":"interactive"`, `"entrypoint":"cli"`,
-			`"status":"busy"`, fmt.Sprintf(`"startedAt":%d`, i))
+			`"status":"busy"`, `"statusUpdatedAt":5000`, fmt.Sprintf(`"startedAt":%d`, i))
 	}
 	s := &SessionsSource{P: p, Interval: time.Second, PerSession: true}
 	start := time.Now()
