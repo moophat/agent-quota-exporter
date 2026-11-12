@@ -30,6 +30,12 @@ discovery:
 metrics:
   max_models_per_profile: 20
   account_label: alias          # alias | email
+  per_session: false            # opt-in: state of each live Claude session (series per session, see specs/metric-contract.md)
+  max_sessions_per_profile: 50  # cap when per_session is on (1..500)
+# Opt-in: which agent accounts have a job running now, from a task runner's lock files (Linux, specs/sources.md "Jobs").
+# jobs:
+#   lock_dir: /run/runner         # holds <codex|agy>-<account>.lock files, one flocked per running job
+#   call_log: /var/log/runner/calls.jsonl   # optional: end time and exit code of the last job per account
 defaults:
   usage_interval: 60s
   stale_after: 45m              # any positive duration; stale when age > max(this, 2*P + D + 15s)
@@ -55,6 +61,10 @@ profiles:
   - harness: claude-code
     alias: personal
     dir: /home/acct-b/.claude
+  # - harness: opencode           # a running server: busy-session count via GET <url>/session/status
+  #   alias: lane-a
+  #   dir: /home/acct-a/.local/share/opencode
+  #   url: http://127.0.0.1:4096  # loopback unless allow_remote: true
   - harness: codex
     alias: codex-work
     dir: /home/acct-a/.codex     # a CODEX_HOME; ~/.codex is also discovered

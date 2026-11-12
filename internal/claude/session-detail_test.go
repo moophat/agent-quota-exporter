@@ -39,7 +39,7 @@ func has(out, line string) bool { return strings.Contains(out, line+"\n") }
 func TestPerSessionStateAndSinceInSeconds(t *testing.T) {
 	p, h := sessionHarness(t, true, 0)
 	putSession(t, p, 11, `"name":"proj-1a"`, `"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`,
-		`"startedAt":1794505816213`, `"statusUpdatedAt":1794506043142`, `"tmux":"orchestrator:@0.%0"`)
+		`"startedAt":1794505816213`, `"statusUpdatedAt":1794506043142`, `"tmux":"main-agent:@0.%0"`)
 	h.Tick(time.Second)
 	out := h.Render(t)
 	base := `host="node-a",harness="claude-code",profile="a",account="`
@@ -64,7 +64,7 @@ func TestPerSessionStateAndSinceInSeconds(t *testing.T) {
 	if !strings.Contains(out, `session="proj-1a"} 1.794506043142e+09`) {
 		t.Fatalf("since not in seconds:\n%s", out)
 	}
-	if !strings.Contains(out, `session="proj-1a",entrypoint="cli",tmux_session="orchestrator"} 1`) {
+	if !strings.Contains(out, `session="proj-1a",entrypoint="cli",tmux_session="main-agent"} 1`) {
 		t.Fatalf("info row missing:\n%s", out)
 	}
 }
@@ -255,7 +255,7 @@ func TestDuplicateAndUnsafeNames(t *testing.T) {
 }
 
 func TestTmuxSessionIsBounded(t *testing.T) {
-	for in, want := range map[string]string{"orchestrator:@0.%0": "orchestrator", "": "", "bad name:@1.%2": "",
+	for in, want := range map[string]string{"main-agent:@0.%0": "main-agent", "": "", "bad name:@1.%2": "",
 		"x/y:@0.%0": "", strings.Repeat("a", 49) + ":@0.%0": "", "noColon": "noColon"} {
 		if got := tmuxSession(in); got != want {
 			t.Errorf("tmuxSession(%q) = %q, want %q", in, got, want)

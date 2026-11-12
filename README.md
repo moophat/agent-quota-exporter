@@ -66,6 +66,7 @@ multi-account, without ever touching a token**. That is the gap. (Prior art and 
 agent-quota-exporter --config /etc/agent-quota-exporter/config.yaml   # serve /metrics and /healthz (127.0.0.1:9877)
 agent-quota-exporter --config FILE --once                              # collect local sources once, print, exit
 agent-quota-exporter --config FILE --once --once-with-quota            # also ask the quota endpoint if its gate allows
+agent-quota-exporter --config FILE --check-config                      # load and validate the config, exit 0 or 1; listens on nothing, writes nothing
 agent-quota-exporter --version
 ```
 
@@ -81,10 +82,26 @@ agent-quota-exporter --version
   | `codex-rollouts` | `codex` | on | quota, credits and tokens the Codex CLI wrote to its rollouts |
   | `codex-usage` | `codex` | opt-in, `quota: {codex_usage: true}` | live Codex quota windows, credits and reset slots with their expiry, from the ChatGPT backend with the CLI's own access token; takes over the quota series of `codex-rollouts` for that profile while it has a fresh reading (rollouts serves them before the first live read and if the live one goes stale; its token counters always stay) |
   | `opencode-db` | `opencode` | on | tokens, cost and errors from `opencode.db`, read-only |
+  | `opencode-http` | `opencode` | opt-in, an opencode profile with `url: http://127.0.0.1:PORT` | busy-session count from the running server's `GET /session/status` |
+  | `job-locks` | `jobs` | opt-in, `jobs: {lock_dir, call_log}` | which agent accounts have a job running now, from a task runner's lock files and `/proc/locks` |
   | `router-9router` | `9router` | declared profiles only | requests, tokens and connection health from the router's DB, read-only |
   | `zai-usage` | `zai` | opt-in, a `zai` profile with `quota: {zai_usage: true}` | z.ai GLM Coding Plan quota windows and plan level, with the key a local OpenClaw, opencode or z.ai coding helper login already holds |
   | `agy-usage` | `agy` | opt-in, `quota: {agy_usage: true}` plus `account` | runs the agy client's own `/usage` command; each poll can trigger agy's normal token refresh |
 
+- **What is running now** (all opt-in, read-only, no prompt, task or screen text ever read or exported):
+  - `metrics.per_session: true` adds, for each live Claude Code session, `agent_session_state` (busy, idle, waiting,
+    shell, other), `agent_session_waiting` (what a waiting session waits on: permission, input, dialog, sandbox,
+    worker, goal, other), `agent_session_state_since_timestamp_seconds` and `agent_session_info`. The `session` label
+    is the session's name made safe, which in practice is the project folder name plus a short suffix. At most
+    `metrics.max_sessions_per_profile` (default 50) per profile. A session counts as live only if its process is
+    the one the file was written for (same start time, same host).
+  - `jobs.lock_dir` (and optional `jobs.call_log`) adds `agent_job_running` and the last job's end time and exit
+    code per agent account, from a task runner that flocks `<codex|agy>-<account>.lock` while a job runs. The
+    exporter never takes that lock. Jobs started without the runner are invisible.
+  - An opencode profile with `url` adds the busy-session count of that server (loopback only unless
+    `allow_remote: true`).
+  - If any of these cannot be read, their series disappear and `agent_source_up` is 0; nothing is guessed. Details
+    and limits: [specs/sources.md](specs/sources.md), [specs/metric-contract.md](specs/metric-contract.md).
 - `codex-usage` (fresh Codex quota): default every 3 min (floor 1 min), 429 backoff default 10 min (floor 5 min); set
   `sources.codex-usage.min_interval` to change it. It reads only the access token in `<CODEX_HOME>/auth.json`, sends it to
   `chatgpt.com` over a direct connection and never refreshes it (OpenAI rotates refresh tokens, so a refresh here could
