@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -163,5 +164,35 @@ func TestRemoteHTTPSourceIsANetworkSource(t *testing.T) {
 	}
 	if remote.NetGroup() == "" || remote.NetGroup() == local.NetGroup() {
 		t.Fatal("gate groups must be per server")
+	}
+}
+
+type countingTransport struct{ n atomic.Int32 }
+
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.n.Add(1)
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}, Request: r}, nil
+}
+
+// Two profiles that point at the same remote server share one call gate whatever their aliases: the second is held
+// back by the call spacing, then runs once it has passed.
+func TestProfilesOnTheSameRemoteServerShareCallSpacing(t *testing.T) {
+	tr := &countingTransport{}
+	mk := func(alias, url string) *HTTPSource {
+		return &HTTPSource{Host: "node-a", Alias: alias, Account: alias, URL: url, Interval: 15 * time.Second, Transport: tr}
+	}
+	a, b := mk("one", "http://10.0.0.5:4096"), mk("two", "http://10.0.0.5:4096/")
+	other := mk("three", "http://10.0.0.6:4096")
+	if a.NetGroup() != b.NetGroup() || a.NetGroup() == other.NetGroup() {
+		t.Fatalf("groups %q %q %q", a.NetGroup(), b.NetGroup(), other.NetGroup())
+	}
+	h := schedtest.New(t, time.Unix(1767225600, 0), a, b, other)
+	h.Tick(time.Second)
+	if n := tr.n.Load(); n != 2 { // one per server
+		t.Fatalf("first tick made %d calls, want 2 (one per server)", n)
+	}
+	h.Tick(6 * time.Second)
+	if n := tr.n.Load(); n != 3 {
+		t.Fatalf("after the spacing the second profile must run: %d calls", n)
 	}
 }

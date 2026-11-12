@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,8 +46,15 @@ func (s *HTTPSource) MinInterval() time.Duration { return s.Interval }
 // and is left out of the local-only one-shot run. A loopback server is local.
 func (s *HTTPSource) Network() bool { return !config.LoopbackURL(s.URL) }
 
-// NetGroup keeps the gate of one server apart from the vendor sources' shared gate.
-func (s *HTTPSource) NetGroup() string { return "opencode-http/" + s.Alias }
+// NetGroup is the gate of one server, shared by every profile that points at it whatever its alias, and apart
+// from the vendor sources' gate.
+func (s *HTTPSource) NetGroup() string {
+	host := strings.ToLower(s.URL)
+	if u, err := url.Parse(s.URL); err == nil {
+		host = strings.ToLower(u.Host)
+	}
+	return "opencode-http/" + host
+}
 
 // NetSpacing is the gap between two calls to the same server.
 func (s *HTTPSource) NetSpacing() time.Duration { return 5 * time.Second }

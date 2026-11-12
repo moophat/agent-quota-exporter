@@ -313,7 +313,12 @@ func (s *Source) readLog(st *state, have map[string]bool) (int, error) {
 	}
 	if st.Off == 0 && size > firstReadMax {
 		st.Off = size - firstReadMax
-		st.Discard = true // lands inside a line
+		// The cut lands inside a line unless the byte before it ends one.
+		var prev [1]byte
+		if _, err := f.ReadAt(prev[:], st.Off-1); err != nil {
+			return 0, fail(core.ErrReason(err))
+		}
+		st.Discard = prev[0] != '\n'
 	}
 	if _, err := f.Seek(st.Off, io.SeekStart); err != nil {
 		return 0, fail(core.ReasonOther)

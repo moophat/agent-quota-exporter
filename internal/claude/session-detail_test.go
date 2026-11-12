@@ -416,3 +416,23 @@ func TestStateSinceNeedsAStatusTime(t *testing.T) {
 		t.Fatalf("status time missing:\n%s", out)
 	}
 }
+
+// A new process that reuses a pid is a new session even when its file lacks the start times: it does not inherit
+// the previous process's label (and so its series history).
+func TestReusedPidWithoutStartTimesDoesNotInheritTheLabel(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	base := []string{`"name":"x"`, `"kind":"interactive"`, `"entrypoint":"cli"`}
+	putSession(t, p, 5, append(base, `"status":"idle"`, `"sessionId":"id-old"`)...)
+	h.Tick(time.Second)
+	if !strings.Contains(h.Render(t), `session="x",state="idle"} 1`) {
+		t.Fatal("first poll")
+	}
+	// the process ends; a different one takes pid 5, and another session named x exists on pid 4
+	putSession(t, p, 5, append(base, `"status":"idle"`, `"sessionId":"id-new"`)...)
+	putSession(t, p, 4, append(base, `"status":"busy"`, `"sessionId":"id-other"`)...)
+	h.Tick(time.Second)
+	out := h.Render(t)
+	if !strings.Contains(out, `session="x",state="busy"} 1`) || !strings.Contains(out, `session="x-2",state="idle"} 1`) {
+		t.Fatalf("the replacement process kept the old process's label:\n%s", out)
+	}
+}

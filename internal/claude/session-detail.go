@@ -101,6 +101,7 @@ type sessionDoc struct {
 	Status          text `json:"status"`
 	WaitingFor      text `json:"waitingFor"`
 	Name            text `json:"name"`
+	SessionID       text `json:"sessionId"` // identity in memory only, never exported
 	Kind            text `json:"kind"`
 	Entrypoint      text `json:"entrypoint"`
 	Tmux            text `json:"tmux"`
@@ -278,6 +279,12 @@ func d2rank(d sessionDoc) int {
 type sessionKey struct {
 	pid     int
 	started float64
+	procRun string // procStart: another process on the same pid
+	id      string // the harness's session id, kept in memory only: a new process has a new one
+}
+
+func keyOf(d sessionDoc) sessionKey {
+	return sessionKey{d.PID, float64(d.StartedAt), string(d.ProcStart), string(d.SessionID)}
 }
 
 // nameBook keeps the label each live session was given, so a label never moves to another session while both
@@ -297,7 +304,7 @@ func (n *nameBook) assign(docs []sessionDoc) []string {
 	used := map[string]bool{}
 	out := make([]string, len(docs))
 	for i, d := range docs { // sessions already named keep their label
-		k := sessionKey{d.PID, float64(d.StartedAt)}
+		k := keyOf(d)
 		if l, ok := n.have[k]; ok && !used[l] {
 			next[k], used[l], out[i] = l, true, l
 		}
@@ -306,7 +313,7 @@ func (n *nameBook) assign(docs []sessionDoc) []string {
 		if out[i] != "" {
 			continue
 		}
-		k := sessionKey{d.PID, float64(d.StartedAt)}
+		k := keyOf(d)
 		l := uniqueName(sessionLabel(string(d.Name)), used)
 		next[k], used[l], out[i] = l, true, l
 	}

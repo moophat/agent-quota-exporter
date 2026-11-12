@@ -558,3 +558,38 @@ func TestOverlongUnfinishedLogLineIsSkippedNotRescanned(t *testing.T) {
 		t.Fatalf("row after the long line: exit %v, errors %v", v, res.Errors)
 	}
 }
+
+// When the first-run tail begins exactly at the start of a line, that line is read, not discarded as a fragment.
+func TestFirstRunTailStartingOnALineBoundaryKeepsThatLine(t *testing.T) {
+	r := newRig(t)
+	r.lock(t, "agy-a.lock")
+	row := `{"ts":"2026-02-01T00:00:00Z","tool":"agy","account":"a","duration_s":1,"exit_code":4}` + "\n"
+	filler := strings.Repeat("x", 90)
+	var b strings.Builder
+	b.WriteString(`{"ts":"2026-01-01T00:00:00Z","tool":"x","pad":"before the tail"}` + "\n")
+	b.WriteString(row) // starts exactly firstReadMax bytes before the end
+	for b.Len() < 1+len(`{"ts":"2026-01-01T00:00:00Z","tool":"x","pad":"before the tail"}`)+firstReadMax-100 {
+		fmt.Fprintf(&b, `{"tool":"x","pad":"%s"}`+"\n", filler)
+	}
+	// finish with one line sized so the tail is exactly firstReadMax bytes
+	rest := len(`{"ts":"2026-01-01T00:00:00Z","tool":"x","pad":"before the tail"}`) + 1 + firstReadMax - b.Len()
+	if rest < len(`{"tool":"x","pad":""}`)+1 {
+		t.Fatal("fixture sizing")
+	}
+	fmt.Fprintf(&b, `{"tool":"x","pad":"%s"}`+"\n", strings.Repeat("y", rest-len(`{"tool":"x","pad":""}`)-1))
+	if err := os.WriteFile(r.log, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(r.log)
+	first := int64(len(`{"ts":"2026-01-01T00:00:00Z","tool":"x","pad":"before the tail"}`) + 1)
+	if fi.Size()-firstReadMax != first {
+		t.Fatalf("fixture: tail starts at %d, row at %d", fi.Size()-firstReadMax, first)
+	}
+	res, _, err := r.src.Collect(context.Background(), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := find(res.Samples, "agent_job_last_exit_code"); v != 4 {
+		t.Fatalf("the line at the tail boundary was discarded, exit %v", v)
+	}
+}
