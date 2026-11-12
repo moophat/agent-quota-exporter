@@ -21,3 +21,11 @@ func lockKey(dev, ino uint64) string {
 	minor := dev&0xff | (dev>>12)&^uint64(0xff)
 	return fmt.Sprintf("%d:%d:%d", major, minor, ino)
 }
+
+// fileID is the device and inode of a file, to tell a replaced log from the one being read.
+func fileID(fi os.FileInfo) (dev, ino uint64) {
+	if sys, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return uint64(sys.Dev), sys.Ino
+	}
+	return 0, 0
+}

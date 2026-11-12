@@ -276,16 +276,16 @@ func TestLogIsReadIncrementallyAndSurvivesTruncation(t *testing.T) {
 	if v := find(res.Samples, "agent_job_last_exit_code"); v != 3 {
 		t.Fatalf("completed line not read, exit %v", v)
 	}
-	// the log is replaced by a shorter one: no replay of the new file's old rows, offset moves to its end
-	os.WriteFile(r.log, []byte(`{"ts":"`+start.UTC().Format(time.RFC3339Nano)+`","tool":"agy","account":"a","duration_s":1,"exit_code":9}`+"\n"), 0o600)
+	// the log is replaced by a shorter one holding a newer job: it is read from its start
+	os.WriteFile(r.log, []byte(`{"ts":"`+start.Add(time.Hour).UTC().Format(time.RFC3339Nano)+`","tool":"agy","account":"a","duration_s":1,"exit_code":9}`+"\n"), 0o600)
 	res, blob4, _ := r.src.Collect(context.Background(), t0, blob3)
-	if v := find(res.Samples, "agent_job_last_exit_code"); v != 3 {
-		t.Fatalf("truncated log replayed, exit %v", v)
+	if v := find(res.Samples, "agent_job_last_exit_code"); v != 9 {
+		t.Fatalf("replaced log not read from its start, exit %v", v)
 	}
 	json.Unmarshal(blob4, &st)
 	fi, _ = os.Stat(r.log)
 	if st.Off != fi.Size() {
-		t.Fatalf("offset after truncation %d, size %d", st.Off, fi.Size())
+		t.Fatalf("offset after replacement %d, size %d", st.Off, fi.Size())
 	}
 }
 
@@ -379,4 +379,182 @@ func find(ss []core.Sample, name string) float64 {
 		}
 	}
 	return -1
+}
+
+// A rotated log is a different file: its rows are read from the start whether it is shorter or longer than the
+// offset into the old one (a longer one used to be entered in the middle of a line).
+func TestRotatedLogIsReadFromItsStart(t *testing.T) {
+	for name, extra := range map[string]int{"shorter": 0, "longer": 40} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			r.lock(t, "agy-a.lock")
+			r.logRow(t, "agy", "a", t0.Add(-3*time.Hour), 1, 1)
+			_, blob, err := r.src.Collect(context.Background(), t0, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(r.log, r.log+".1"); err != nil {
+				t.Fatal(err)
+			}
+			rows := 1
+			if extra > 0 {
+				rows = 3
+			}
+			for i := 0; i < rows; i++ {
+				dur := 1.0
+				if i == 0 && extra > 0 {
+					dur = 1.123456789012345 // a longer first line, so the old offset falls inside it
+				}
+				r.logRow(t, "agy", "a", t0.Add(-time.Hour+time.Duration(i)*time.Minute), dur, 5+i)
+			}
+			res, _, err := r.src.Collect(context.Background(), t0, blob)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v := find(res.Samples, "agent_job_last_exit_code"); v != float64(5+rows-1) {
+				t.Fatalf("exit %v, want the last row of the new log (%d)", v, 5+rows-1)
+			}
+			if res.Errors["parse"] != 0 {
+				t.Fatalf("entered the new log mid-line: %v", res.Errors)
+			}
+		})
+	}
+}
+
+// An account outside the exported first 100 keeps its last job, so it still has it when it moves inside.
+func TestHistoryIsKeptForAccountsBeyondTheExportCap(t *testing.T) {
+	r := newRig(t)
+	for i := 0; i < maxLocks+5; i++ {
+		r.lock(t, fmt.Sprintf("agy-a%03d.lock", i))
+	}
+	last := fmt.Sprintf("a%03d", maxLocks+4)
+	r.logRow(t, "agy", last, t0.Add(-time.Hour), 7, 3)
+	_, blob, err := r.src.Collect(context.Background(), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ { // ten earlier accounts disappear: the last one moves inside the cap
+		os.Remove(filepath.Join(r.lockDir, fmt.Sprintf("agy-a%03d.lock", i)))
+	}
+	res, _, err := r.src.Collect(context.Background(), t0, blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := find(res.Samples, "agent_job_last_exit_code"); v != 3 {
+		t.Fatalf("history lost while the account was beyond the cap, exit %v", v)
+	}
+}
+
+func TestHugeLockDirectoryExportsTheCapAndCountsTheRest(t *testing.T) {
+	r := newRig(t)
+	for i := 0; i < 2500; i++ {
+		r.lock(t, fmt.Sprintf("agy-b%04d.lock", i))
+		r.lock(t, fmt.Sprintf("noise-%04d.txt", i))
+	}
+	res, _, err := r.src.Collect(context.Background(), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countSamples(res.Samples, "agent_job_running"); n != maxLocks {
+		t.Fatalf("exported %d", n)
+	}
+	if res.Errors["other"] != 2500-maxLocks {
+		t.Fatalf("overflow %v", res.Errors)
+	}
+	if !hasAccount(res.Samples, "b0000") || !hasAccount(res.Samples, "b0099") || hasAccount(res.Samples, "b0100") {
+		t.Fatal("the smallest names must be the exported ones")
+	}
+}
+
+func countSamples(ss []core.Sample, name string) int {
+	n := 0
+	for _, s := range ss {
+		if s.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+func hasAccount(ss []core.Sample, acct string) bool {
+	for _, s := range ss {
+		for _, l := range s.Labels {
+			if l.Name == "account" && l.Value == acct {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// A lock table over the read bound is refused: through the scheduler the running series vanish and the source is
+// down, rather than held locks beyond the bound reading as 0.
+func TestOversizedLockTableMarksSourceDown(t *testing.T) {
+	defer func(v int64) { maxLockTable = v }(maxLockTable)
+	r := newRig(t)
+	r.lock(t, "agy-a.lock")
+	r.hold(t, "agy-a.lock")
+	h, out := r.render(t)
+	if !strings.Contains(out, line("agent_job_running", "agy", "a")+"1\n") {
+		t.Fatalf("first read:\n%s", out)
+	}
+	maxLockTable = 10
+	h.Tick(time.Second)
+	out = h.Render(t)
+	if strings.Contains(out, "agent_job_") || !strings.Contains(out, `source="job-locks"} 0`) {
+		t.Fatalf("truncated table accepted:\n%s", out)
+	}
+}
+
+// On filesystems where a lock file's device differs from the one /proc/locks prints, a held lock could never be
+// matched: the source must say it does not know instead of reporting every job as stopped.
+func TestFilesystemWhereLocksCannotBeMatchedMarksSourceDown(t *testing.T) {
+	defer func(f func(*os.File) (int64, error)) { fsType = f }(fsType)
+	r := newRig(t)
+	r.lock(t, "agy-a.lock")
+	h, out := r.render(t)
+	if !strings.Contains(out, line("agent_job_running", "agy", "a")) {
+		t.Fatalf("first read:\n%s", out)
+	}
+	for name, magic := range map[string]int64{"btrfs": 0x9123683e, "overlayfs": 0x794c7630, "nfs": 0x6969} {
+		fsType = func(*os.File) (int64, error) { return magic, nil }
+		h.Tick(time.Second)
+		out = h.Render(t)
+		if strings.Contains(out, "agent_job_") || !strings.Contains(out, `source="job-locks"} 0`) {
+			t.Fatalf("%s accepted:\n%s", name, out)
+		}
+	}
+}
+
+// An unterminated line over the length limit is counted once and skipped as it grows: the offset moves past it
+// instead of the same bytes being scanned every cycle, and the next complete line is read.
+func TestOverlongUnfinishedLogLineIsSkippedNotRescanned(t *testing.T) {
+	r := newRig(t)
+	r.lock(t, "agy-a.lock")
+	os.WriteFile(r.log, []byte(strings.Repeat("z", maxLine+500)), 0o600)
+	res, blob, err := r.src.Collect(context.Background(), t0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st state
+	json.Unmarshal(blob, &st)
+	if st.Off != maxLine+500 || res.Errors["parse"] != 1 {
+		t.Fatalf("offset %d, errors %v", st.Off, res.Errors)
+	}
+	f, _ := os.OpenFile(r.log, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(strings.Repeat("z", 100)) // the writer is still on the same line
+	f.Close()
+	res, blob, _ = r.src.Collect(context.Background(), t0, blob)
+	json.Unmarshal(blob, &st)
+	if st.Off != maxLine+600 || res.Errors["parse"] != 0 {
+		t.Fatalf("growing line rescanned or recounted: offset %d, errors %v", st.Off, res.Errors)
+	}
+	f, _ = os.OpenFile(r.log, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString("\n")
+	f.Close()
+	r.logRow(t, "agy", "a", t0.Add(-time.Minute), 1, 4)
+	res, _, _ = r.src.Collect(context.Background(), t0, blob)
+	if v := find(res.Samples, "agent_job_last_exit_code"); v != 4 || res.Errors["parse"] != 0 {
+		t.Fatalf("row after the long line: exit %v, errors %v", v, res.Errors)
+	}
 }

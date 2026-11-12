@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/moophat/agent-quota-exporter/internal/core"
@@ -33,11 +34,16 @@ const (
 	Harness      = "jobs"
 	ProfileAlias = "host"
 
-	maxLocks     = 100     // lock files read per cycle; the rest count as source errors
-	firstReadMax = 8 << 20 // bytes of call log read on the first run
+	maxLocks     = 100     // lock files exported per cycle; the rest count as source errors
+	maxHistory   = 1000    // accounts whose last job is remembered, exported or not
+	dirBatch     = 256     // directory entries read at a time
+	firstReadMax = 8 << 20 // bytes of call log read on the first run and per cycle
 	maxLine      = 64 << 10
 	procLocks    = "/proc/locks"
 )
+
+// maxLockTable bounds the /proc/locks read. A table larger than this is refused, never read as if it were whole.
+var maxLockTable int64 = 4 << 20
 
 // lockName is the runner's own rule for an account lock file: tool prefix and a bounded account name.
 var lockName = regexp.MustCompile(`^(codex|agy)-([A-Za-z0-9][A-Za-z0-9_.-]{0,63})\.lock$`)
@@ -65,14 +71,17 @@ type last struct {
 }
 
 type state struct {
-	Off  int64           `json:"off"` // call-log bytes consumed
-	Last map[string]last `json:"last"`
+	Off     int64           `json:"off"`           // call-log bytes consumed
+	Dev     uint64          `json:"dev,omitempty"` // device and inode of the log being read: another file is a new log
+	Ino     uint64          `json:"ino,omitempty"`
+	Discard bool            `json:"discard,omitempty"` // inside an over-long line: skip to its newline
+	Last    map[string]last `json:"last"`
 }
 
 // fail marks a read the source cannot vouch for: the series vanish and the source reports down.
 func fail(reason string) error { return &core.SourceError{Reason: reason, DropCache: true} }
 
-type lockFile struct{ tool, account, key string }
+type lockFile struct{ name, tool, account, key string }
 
 func (s *Source) Collect(_ context.Context, _ time.Time, raw json.RawMessage) (core.Result, json.RawMessage, error) {
 	res := core.Result{}
@@ -83,24 +92,25 @@ func (s *Source) Collect(_ context.Context, _ time.Time, raw json.RawMessage) (c
 			st.Last = map[string]last{}
 		}
 	}
-	locks, over, err := s.listLocks()
+	eligible, total, err := s.listLocks()
 	if err != nil {
 		return res, nil, err
 	}
-	if over > 0 {
-		res.Errors = map[string]int{core.ReasonOther: over}
+	if total > maxLocks {
+		res.Errors = map[string]int{core.ReasonOther: total - maxLocks}
 	}
 	held, err := heldLocks(s.locksPath())
 	if err != nil {
 		return res, nil, err
 	}
+	// History is kept for every eligible account, exported or not; it goes only when the lock file does.
 	have := map[string]bool{}
-	for _, l := range locks {
+	for _, l := range eligible {
 		have[l.tool+"/"+l.account] = true
 	}
 	for k := range st.Last {
 		if !have[k] {
-			delete(st.Last, k) // the account's lock file is gone; its history goes with it
+			delete(st.Last, k)
 		}
 	}
 	if s.CallLog != "" {
@@ -115,7 +125,11 @@ func (s *Source) Collect(_ context.Context, _ time.Time, raw json.RawMessage) (c
 			res.Errors[core.ReasonParse] += parse
 		}
 	}
-	for _, l := range locks {
+	shown := eligible
+	if len(shown) > maxLocks {
+		shown = shown[:maxLocks]
+	}
+	for _, l := range shown {
 		lb := []core.Label{{Name: "host", Value: s.Host}, {Name: "harness", Value: l.tool},
 			{Name: "profile", Value: l.account}, {Name: "account", Value: l.account}}
 		run := 0.0
@@ -140,7 +154,23 @@ func (s *Source) locksPath() string {
 	return procLocks
 }
 
-// listLocks lists the account lock files: regular files whose names match the runner's rule, at most maxLocks.
+// refusedFS are filesystems where the device in a file's stat differs from the one /proc/locks prints, or where
+// flock is not listed as FLOCK, so a held lock could never be matched and every job would read "not running".
+// Magic numbers from statfs(2): btrfs, overlayfs, NFS.
+var refusedFS = map[int64]bool{0x9123683e: true, 0x794c7630: true, 0x6969: true}
+
+// fsType returns the statfs type of an open directory. Replaceable in tests.
+var fsType = func(d *os.File) (int64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Fstatfs(int(d.Fd()), &st); err != nil {
+		return 0, err
+	}
+	return int64(st.Type), nil
+}
+
+// listLocks lists the eligible account lock files: regular files whose names match the runner's rule, smallest
+// names first, at most maxHistory. total counts every matching file. The directory is read in batches and only
+// matches are kept (trimmed to a bound as it grows), so a huge directory costs time, not memory.
 // key is the "major:minor:inode" /proc/locks prints for the file.
 func (s *Source) listLocks() ([]lockFile, int, error) {
 	d, err := safefs.OpenDir(s.LockDir)
@@ -148,29 +178,43 @@ func (s *Source) listLocks() ([]lockFile, int, error) {
 		return nil, 0, dropReason(err)
 	}
 	defer d.Close()
-	infos, err := d.Readdir(-1) // lstat of each entry; nothing is opened, so no lock is ever taken
-	if err != nil {
-		return nil, 0, fail(core.ErrReason(err))
+	if t, err := fsType(d); err != nil || refusedFS[t] {
+		return nil, 0, fail(core.ReasonOther)
 	}
-	sort.Slice(infos, func(i, j int) bool { return infos[i].Name() < infos[j].Name() })
 	var out []lockFile
-	over := 0
-	for _, fi := range infos {
-		m := lockName.FindStringSubmatch(fi.Name())
-		if m == nil || !fi.Mode().IsRegular() {
-			continue
+	total := 0
+	trim := func(limit int) {
+		sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+		if len(out) > limit {
+			out = out[:limit]
 		}
-		key, ok := lockKeyOf(fi)
-		if !ok {
-			return nil, 0, fail(core.ReasonOther)
-		}
-		if len(out) >= maxLocks {
-			over++
-			continue
-		}
-		out = append(out, lockFile{tool: m[1], account: m[2], key: key})
 	}
-	return out, over, nil
+	for {
+		infos, err := d.Readdir(dirBatch) // lstat of each entry; nothing is opened, so no lock is ever taken
+		for _, fi := range infos {
+			m := lockName.FindStringSubmatch(fi.Name())
+			if m == nil || !fi.Mode().IsRegular() {
+				continue
+			}
+			key, ok := lockKeyOf(fi)
+			if !ok {
+				return nil, 0, fail(core.ReasonOther)
+			}
+			total++
+			out = append(out, lockFile{name: fi.Name(), tool: m[1], account: m[2], key: key})
+			if len(out) >= 2*maxHistory {
+				trim(maxHistory)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, 0, fail(core.ErrReason(err))
+		}
+	}
+	trim(maxHistory)
+	return out, total, nil
 }
 
 func dropReason(err error) error {
@@ -194,9 +238,12 @@ func heldLocks(path string) (map[string]bool, error) {
 		return nil, fail(core.ErrReason(err))
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, 4<<20))
+	b, err := io.ReadAll(io.LimitReader(f, maxLockTable+1))
 	if err != nil {
 		return nil, fail(core.ErrReason(err))
+	}
+	if int64(len(b)) > maxLockTable {
+		return nil, fail(core.ReasonOther) // a table cut short would turn held locks into "not running"
 	}
 	return parseLocks(b), nil
 }
@@ -245,9 +292,11 @@ type logRow struct {
 // Exit codes the runner logs for calls that never ran a job (busy with --no-wait, wait timeout).
 func notAJob(exit int) bool { return exit == 75 || exit == 124 }
 
-// readLog consumes new complete lines of the call log from st.Off and folds them into st.Last. The first run
-// (Off 0) reads at most the last firstReadMax bytes. A log shorter than Off was replaced: the offset moves to the
-// end without replaying it. It returns the number of malformed lines.
+// readLog consumes new complete lines of the call log from st.Off and folds them into st.Last, at most
+// firstReadMax bytes per cycle. A log that is another file (device or inode changed) or shorter than the offset
+// was replaced or rotated: it is read from its start like a first run, bounded by the same tail cap. A line over
+// maxLine is counted once as malformed and skipped up to its newline, also when it is still being written. It
+// returns the number of malformed lines.
 func (s *Source) readLog(st *state, have map[string]bool) (int, error) {
 	f, fi, err := safefs.OpenRegular(s.CallLog)
 	if err != nil {
@@ -258,21 +307,32 @@ func (s *Source) readLog(st *state, have map[string]bool) (int, error) {
 	}
 	defer f.Close()
 	size := fi.Size()
-	skipFirst := false
-	switch {
-	case size < st.Off:
-		st.Off = size
-		return 0, nil
-	case st.Off == 0 && size > firstReadMax:
+	dev, ino := fileID(fi)
+	if dev != st.Dev || ino != st.Ino || size < st.Off {
+		st.Dev, st.Ino, st.Off, st.Discard = dev, ino, 0, false
+	}
+	if st.Off == 0 && size > firstReadMax {
 		st.Off = size - firstReadMax
-		skipFirst = true // lands inside a line
+		st.Discard = true // lands inside a line
 	}
 	if _, err := f.Seek(st.Off, io.SeekStart); err != nil {
 		return 0, fail(core.ReasonOther)
 	}
-	rd := bufio.NewReaderSize(io.LimitReader(f, size-st.Off), 64<<10)
+	rd := bufio.NewReaderSize(io.LimitReader(f, min(size-st.Off, firstReadMax)), 64<<10)
 	parse := 0
 	for {
+		if st.Discard {
+			n, found, err := skipLine(rd)
+			if err != nil {
+				return parse, fail(core.ErrReason(err))
+			}
+			st.Off += int64(n)
+			if !found {
+				break // still inside the long line; carry on next cycle
+			}
+			st.Discard = false
+			continue
+		}
 		line, err := readLine(rd)
 		if err == io.EOF {
 			break
@@ -281,13 +341,14 @@ func (s *Source) readLog(st *state, have map[string]bool) (int, error) {
 			return parse, fail(core.ErrReason(err))
 		}
 		if line.partial {
-			break // the writer has not finished this line; take it next cycle
+			if line.n > maxLine { // an over-long unfinished line: count it once and skip the rest as it arrives
+				st.Off += int64(line.n)
+				st.Discard = true
+				parse++
+			}
+			break // otherwise the writer has not finished this line; take it next cycle
 		}
 		st.Off += int64(line.n)
-		if skipFirst {
-			skipFirst = false
-			continue
-		}
 		if line.tooLong {
 			parse++
 			continue
@@ -303,6 +364,24 @@ func (s *Source) readLog(st *state, have map[string]bool) (int, error) {
 		s.fold(st, have, row)
 	}
 	return parse, nil
+}
+
+// skipLine consumes bytes up to and including the next newline without keeping them. found is false when the
+// input ended first.
+func skipLine(rd *bufio.Reader) (n int, found bool, err error) {
+	for {
+		chunk, err := rd.ReadSlice('\n')
+		n += len(chunk)
+		switch err {
+		case nil:
+			return n, true, nil
+		case bufio.ErrBufferFull:
+		case io.EOF:
+			return n, false, nil
+		default:
+			return n, false, err
+		}
+	}
 }
 
 func (s *Source) fold(st *state, have map[string]bool, row logRow) {
