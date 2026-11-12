@@ -102,3 +102,13 @@ func noCanary(t *testing.T, ss []core.Sample, err error, extra ...string) {
 }
 
 func errorsAs(err error, target any) bool { return errors.As(err, target) }
+
+// stubLiveness replaces the three process seams so fixture session files (procStart "0000000000", pidDomain
+// "host") look like they belong to a live process of this host; the returned func restores the real ones.
+func stubLiveness() func() {
+	a, b, c := ProcAlive, ProcStart, PidDomain
+	ProcAlive = func(int) bool { return true }
+	ProcStart = func(int) (string, bool) { return "0000000000", true }
+	PidDomain = func() string { return "host" }
+	return func() { ProcAlive, ProcStart, PidDomain = a, b, c }
+}

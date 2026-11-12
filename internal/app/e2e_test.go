@@ -135,7 +135,7 @@ func renderString(t *testing.T, e *core.Exposition) string {
 // opted-in profile only, then the byte-exact /metrics text, contract conformance, no canary anywhere and no
 // write under any profile directory.
 func TestEndToEnd(t *testing.T) {
-	defer func(f func(int) bool) { claude.ProcAlive = f }(claude.ProcAlive)
+	defer stubLiveness()()
 	claude.ProcAlive = func(pid int) bool { return pid == 4242 }
 	w, cfg, srv := setup(t)
 	clk := &clock{t: t0.Add(time.Minute)}
@@ -340,4 +340,14 @@ func TestContractParser(t *testing.T) {
 			t.Fatalf("renderer family %s is not in the contract", f)
 		}
 	}
+}
+
+// stubLiveness makes the fixture session file (procStart "0000000000", pidDomain "host") look like a live process
+// of this host; the returned func restores the real seams.
+func stubLiveness() func() {
+	a, b, c := claude.ProcAlive, claude.ProcStart, claude.PidDomain
+	claude.ProcAlive = func(int) bool { return true }
+	claude.ProcStart = func(int) (string, bool) { return "0000000000", true }
+	claude.PidDomain = func() string { return "host" }
+	return func() { claude.ProcAlive, claude.ProcStart, claude.PidDomain = a, b, c }
 }

@@ -84,7 +84,8 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 			Events: b.Events}
 		b.Sources = append(b.Sources,
 			&claude.AccountSource{P: p, Interval: cfg.SourceInterval("claude-account", accountInterval)},
-			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval)},
+			&claude.SessionsSource{P: p, Interval: cfg.SourceInterval("claude-sessions", sessionsInterval),
+				PerSession: cfg.Metrics.PerSession, MaxSessions: cfg.Metrics.MaxSessionsPerProfile},
 			&claude.TranscriptsSource{P: p, Interval: cfg.SourceInterval("claude-transcripts", cfg.Defaults.UsageInterval.D()), StateDir: cfg.StateDir, ByteBudget: cfg.Sources["claude-transcripts"].ByteBudget, Deadline: cfg.Sources["claude-transcripts"].Deadline.D()},
 		)
 		var statusline *claude.StatuslineCacheSource

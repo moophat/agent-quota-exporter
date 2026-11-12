@@ -108,7 +108,7 @@ func TestSymlinkedCredentialsRefused(t *testing.T) {
 func TestSessions(t *testing.T) {
 	p := newProfile(t, "a")
 	s := &SessionsSource{P: p, Interval: 15 * time.Second}
-	defer func(f func(int) bool) { ProcAlive = f }(ProcAlive)
+	defer stubLiveness()()
 
 	ProcAlive = func(pid int) bool { return pid == 4242 }
 	res, _, err := collect(t, s, t0, nil)
