@@ -14,6 +14,7 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
 	"github.com/moophat/agent-quota-exporter/internal/events"
+	"github.com/moophat/agent-quota-exporter/internal/jobs"
 	"github.com/moophat/agent-quota-exporter/internal/opencode"
 	"github.com/moophat/agent-quota-exporter/internal/router"
 	"github.com/moophat/agent-quota-exporter/internal/strata"
@@ -23,6 +24,7 @@ import (
 const (
 	accountInterval  = 60 * time.Second
 	sessionsInterval = 15 * time.Second
+	jobsInterval     = 15 * time.Second
 	quotaInterval    = 15 * time.Minute
 	quotaBackoff     = 60 * time.Minute
 )
@@ -48,6 +50,10 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 	zaiPeers := &zai.Peers{}
 	for _, lane := range cfg.Strata {
 		b.Sources = append(b.Sources, &strata.Source{Host: host, Lane: lane.Name, BaseURL: lane.BaseURL, Interval: lane.PollInterval()})
+	}
+	if cfg.Jobs.LockDir != "" {
+		b.Sources = append(b.Sources, &jobs.Source{Host: host, LockDir: cfg.Jobs.LockDir, CallLog: cfg.Jobs.CallLog,
+			Interval: cfg.SourceInterval(jobs.SourceName, jobsInterval)})
 	}
 	for _, r := range profiles {
 		var srcs []core.Source
