@@ -140,3 +140,27 @@ func TestRunningNowEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestOneShotRunSkipsARemoteOpencodeServerButKeepsLoopback(t *testing.T) {
+	cfg := config.Default()
+	cfg.Discovery.Mode = "off"
+	cfg.Profiles = []config.Profile{
+		{Harness: "opencode", Alias: "near", Dir: t.TempDir(), URL: "http://127.0.0.1:4096"},
+		{Harness: "opencode", Alias: "far", Dir: t.TempDir(), URL: "http://10.0.0.5:4096", AllowRemote: true},
+	}
+	profiles, _ := cfg.Resolve(func(string) string { return "" })
+	b, err := Build(cfg, profiles, "node-a", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep := OnceFilter(false)
+	got := map[string]bool{}
+	for _, s := range b.Sources {
+		if s.Name() == "opencode-http" {
+			got[s.Profile()] = keep(s)
+		}
+	}
+	if !got["near"] || got["far"] || len(got) != 2 {
+		t.Fatalf("one-shot filter: %v", got)
+	}
+}

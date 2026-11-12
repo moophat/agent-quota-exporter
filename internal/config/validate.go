@@ -332,6 +332,12 @@ func (c *Config) validateOpencodeURL(i int, p Profile, add func(string, ...any))
 	}
 }
 
+// LoopbackURL reports whether a URL's host is loopback (an unparsable URL is not).
+func LoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && isLoopbackHost(u.Hostname())
+}
+
 func isLoopbackHost(h string) bool {
 	if h == "localhost" {
 		return true

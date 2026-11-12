@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moophat/agent-quota-exporter/internal/config"
 	"github.com/moophat/agent-quota-exporter/internal/core"
 )
 
@@ -39,7 +40,16 @@ func (s *HTTPSource) Name() string               { return HTTPSourceName }
 func (s *HTTPSource) Harness() string            { return Harness }
 func (s *HTTPSource) Profile() string            { return s.Alias }
 func (s *HTTPSource) MinInterval() time.Duration { return s.Interval }
-func (s *HTTPSource) Network() bool              { return false }
+
+// Network is true for a server beyond loopback (allow_remote): it then goes through the scheduler's network gates
+// and is left out of the local-only one-shot run. A loopback server is local.
+func (s *HTTPSource) Network() bool { return !config.LoopbackURL(s.URL) }
+
+// NetGroup keeps the gate of one server apart from the vendor sources' shared gate.
+func (s *HTTPSource) NetGroup() string { return "opencode-http/" + s.Alias }
+
+// NetSpacing is the gap between two calls to the same server.
+func (s *HTTPSource) NetSpacing() time.Duration { return 5 * time.Second }
 
 // httpFail marks a read the source cannot vouch for: the count disappears and the source reports down.
 func httpFail(reason string) error { return &core.SourceError{Reason: reason, DropCache: true} }

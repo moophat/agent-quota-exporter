@@ -152,3 +152,16 @@ func TestBuildAddsHTTPSourceOnlyWithURL(t *testing.T) {
 		t.Fatalf("without url: %d sources", n)
 	}
 }
+
+// A server beyond loopback is a network source: it is not run by the local-only one-shot filter and has its own
+// gate group, while a loopback one stays local.
+func TestRemoteHTTPSourceIsANetworkSource(t *testing.T) {
+	remote := &HTTPSource{Alias: "far", URL: "http://10.0.0.5:4096"}
+	local := &HTTPSource{Alias: "near", URL: "http://127.0.0.1:4096"}
+	if !remote.Network() || local.Network() {
+		t.Fatalf("Network: remote %v local %v", remote.Network(), local.Network())
+	}
+	if remote.NetGroup() == "" || remote.NetGroup() == local.NetGroup() {
+		t.Fatal("gate groups must be per server")
+	}
+}
