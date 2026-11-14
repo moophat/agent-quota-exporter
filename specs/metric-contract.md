@@ -29,7 +29,7 @@ Labels are generic and defined once. A metric lists which of them it carries.
 | `scope` | what the window applies to: `all`, or a model family/limit kind such as `opus`, `sonnet`, `tool_calls` | `all` when the window covers everything |
 | `session` | one live session of a harness (per-session series only, see "Session and job metrics") | the harness's own session name made safe: characters outside `A-Za-z0-9._-` become `-`, at most 48 characters, `unnamed` when empty; a repeat on the same profile gets `-2`, `-3`, and a session keeps its label while it lives (a label never moves to another session when the older one ends; labels are re-derived after an exporter restart). **In practice the name is the project folder name plus a short suffix** (a derived name such as `my-project-4f`), so the label usually shows a project folder name, never a path, pid or session id. Present only when `metrics.per_session` is on |
 | `entrypoint` | how the session was started | `cli`, `sdk`, `other` (not `origin`, which means config or discovered) |
-| `pid` | the OS process id of the session, so a consumer can join a session row to a process exactly (`agent_session_info` only) | the decimal pid, set only when the session file records both a start time and a pid domain and the process exists with that start time on this host's pid domain; otherwise empty, never guessed. A pid does not change during a process's life, so it does not change the series identity of a running session |
+| `pid` | the OS process id of the session, so a consumer can join a session row to a process exactly (`agent_session_info` only) | the decimal pid, set only when the session file records both a start time and a pid domain and the process exists with that start time on this host's pid domain; otherwise empty, never guessed. A pid does not change during a process's life, so it does not change the series identity of a running session. A static label named `pid` is rejected at load only while `metrics.per_session` is on |
 | `tmux_session` | the tmux session the harness runs in, when it reports one | the part before `:` of the harness's tmux value, only if it matches `A-Za-z0-9._-` (1 to 48); otherwise empty. The tmux socket is not reported, so two sockets with the same session name are not told apart |
 
 `window` normalisation: durations as `5h`, `7d`, `30d`; named windows keep the vendor word lowercased (`weekly`);
@@ -64,8 +64,11 @@ constant per exporter, so they add no cardinality. Total label count per series 
    families in "Session and job metrics (opt-in)" below: a fixed set of states and reasons per live session (0/1, so a
    change flips a value and never adds a series), capped by `metrics.max_sessions_per_profile` (default 50). Ended
    sessions disappear at once; history is the time-series database's job. The only free-form value in any label is the
-   sanitized `session` name; prompts, task text, screen text, paths, pids and session ids never appear. Maintainer
-   decision under the owner's 2026-11-13 go-ahead, see `decisions.md` D4.
+   sanitized `session` name; prompts, task text, screen text, paths and session ids never appear. The one other
+   value is `pid` on `agent_session_info` only, set only when the session file proves a live process on this host
+   (empty otherwise), so a consumer can join a session row to an OS process exactly; it is on no other series.
+   Cardinality is unchanged: the pid is constant for a process's life and that series already exists per live
+   session. Maintainer decision under the owner's 2026-11-13 go-ahead, amended 2026-11-15, see `decisions.md` D4.
 5. Series for a profile that disappeared stop being emitted. Current-value eligibility follows the
    source freshness rules below; retained events and last-good evidence are never deleted because
    a series is absent. Missing means unknown, never zero.

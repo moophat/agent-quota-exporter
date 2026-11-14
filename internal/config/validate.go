@@ -56,10 +56,14 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
 var ContractLabels = []string{"host", "harness", "profile", "account", "provider", "model", "window", "scope",
 	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin",
-	"session", "tmux_session", "entrypoint", "pid"}
+	"session", "tmux_session", "entrypoint"}
 
 // LaneLabels are owned by the lane series; static labels may reuse them only while no lane source is configured.
 var LaneLabels = []string{"lane", "images", "context"}
+
+// PerSessionLabels are owned by agent_session_info; static labels may reuse them only while metrics.per_session is
+// off, so a config that already used one keeps starting until it opts in to the per-session series.
+var PerSessionLabels = []string{"pid"}
 
 // MaxLabels caps labels per series (contract, "Label vocabulary").
 const MaxLabels = 12
@@ -141,6 +145,13 @@ func (c *Config) Validate() error {
 		for _, cl := range ContractLabels {
 			if k == cl {
 				add("labels.%s: collides with a contract label", k)
+			}
+		}
+		if c.Metrics.PerSession {
+			for _, pl := range PerSessionLabels {
+				if k == pl {
+					add("labels.%s: collides with the %s label of agent_session_info (metrics.per_session is on); rename this static label or turn per_session off", k, pl)
+				}
 			}
 		}
 		if len(c.Strata) > 0 {
