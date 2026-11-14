@@ -39,6 +39,7 @@ func TestSessionAndJobConfigFailures(t *testing.T) {
 		"allow_remote now": {"version: 1\nprofiles:\n- {harness: codex, alias: a, dir: /x, allow_remote: true}\n", "allow_remote"},
 		"label session":    {"version: 1\nlabels: {session: x}\n", "collides"},
 		"label entrypoint": {"version: 1\nlabels: {entrypoint: x}\n", "collides"},
+		"label pid":        {"version: 1\nmetrics: {per_session: true}\nlabels: {pid: x}\n", "labels.pid: collides with the pid label of agent_session_info"},
 		"label tmux":       {"version: 1\nlabels: {tmux_session: x}\n", "collides"},
 	}
 	for name, tc := range cases {
@@ -55,5 +56,12 @@ func TestRemoteOpencodeURLNeedsAllowRemote(t *testing.T) {
 	body := "version: 1\nprofiles:\n- {harness: opencode, alias: a, dir: /x, url: \"http://10.0.0.5:4096\", allow_remote: true}\n"
 	if _, err := Load(writeCfg(t, body)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A config that already carries a static pid label keeps starting while per-session series are off.
+func TestStaticPidLabelAcceptedWithoutPerSession(t *testing.T) {
+	if _, err := Load(writeCfg(t, "version: 1\nlabels: {pid: x}\n")); err != nil {
+		t.Fatalf("static pid label must load when per_session is off: %v", err)
 	}
 }

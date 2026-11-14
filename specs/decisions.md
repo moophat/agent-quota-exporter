@@ -42,7 +42,12 @@ Taken by the maintainer under the owner's 2026-11-13 00:30 "go build it" for a "
 did not rule on the design itself, so this is not LOCKED. Per-session series exist behind `metrics.per_session: true`
 only (default off), as fixed 0/1 state sets per live session with a per-profile cap (`max_sessions_per_profile`,
 default 50), and a `session` label that is the sanitized harness session name (usually a project folder name). Never
-a session id, pid, path, prompt, task or screen text. See `metric-contract.md`, "Session and job metrics (opt-in)".
+a session id, path, prompt, task or screen text. See `metric-contract.md`, "Session and job metrics (opt-in)".
+
+Amended 2026-11-15 by the maintainer: `agent_session_info` carries `pid` (only when the session file proves a live
+process on this host), so a consumer can join a session row to an OS process exactly. Joining by tmux session name
+proved ambiguous when several processes share one tmux session. Prompts, task text, screen text, paths and session
+ids still never appear.
 
 ## D5. Claude plan label and contract rows: LOCKED (Tu, 2026-11-03)
 
