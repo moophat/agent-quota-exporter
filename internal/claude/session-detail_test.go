@@ -65,7 +65,7 @@ func TestPerSessionStateAndSinceInSeconds(t *testing.T) {
 	if !strings.Contains(out, `session="proj-1a"} 1.794506043142e+09`) {
 		t.Fatalf("since not in seconds:\n%s", out)
 	}
-	if !strings.Contains(out, `session="proj-1a",entrypoint="cli",tmux_session="main-agent"} 1`) {
+	if !strings.Contains(out, `session="proj-1a",entrypoint="cli",tmux_session="main-agent",pid=""} 1`) {
 		t.Fatalf("info row missing:\n%s", out)
 	}
 }
@@ -434,5 +434,32 @@ func TestReusedPidWithoutStartTimesDoesNotInheritTheLabel(t *testing.T) {
 	out := h.Render(t)
 	if !strings.Contains(out, `session="x",state="busy"} 1`) || !strings.Contains(out, `session="x-2",state="idle"} 1`) {
 		t.Fatalf("the replacement process kept the old process's label:\n%s", out)
+	}
+}
+
+// The pid label is the join key to an OS process: published only for a session whose start time and pid domain
+// are both recorded and match this host, empty (never guessed) for a live session that proves less.
+func TestInfoPidLabelOnlyForValidatedSession(t *testing.T) {
+	p, h := sessionHarness(t, true, 0)
+	base := []string{`"kind":"interactive"`, `"entrypoint":"cli"`, `"status":"busy"`}
+	putSession(t, p, 4242, append([]string{`"name":"proven"`, `"procStart":"0000000000"`, `"pidDomain":"host"`}, base...)...)
+	putSession(t, p, 4243, append([]string{`"name":"no-proof"`}, base...)...)
+	putSession(t, p, 4244, append([]string{`"name":"no-domain"`, `"procStart":"0000000000"`}, base...)...)
+	h.Tick(time.Second)
+	out := h.Render(t)
+	for _, want := range []string{
+		`session="proven",entrypoint="cli",tmux_session="",pid="4242"} 1`,
+		`session="no-proof",entrypoint="cli",tmux_session="",pid=""} 1`,
+		`session="no-domain",entrypoint="cli",tmux_session="",pid=""} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("want %s in\n%s", want, out)
+		}
+	}
+	// the other per-session series keep their identity: no pid label on them
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "agent_session_") && !strings.HasPrefix(line, "agent_session_info") && strings.Contains(line, "pid=") {
+			t.Fatalf("pid label leaked onto %s", line)
+		}
 	}
 }

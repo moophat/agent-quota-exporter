@@ -133,6 +133,16 @@ func sessionAlive(d sessionDoc) bool {
 	return true
 }
 
+// sessionPIDLabel is the decimal pid of a session the checks above prove is this host's live process: the pid exists,
+// the start time recorded in the file matches and the recorded pid domain equals this host's. A file that records
+// neither, or only one, proves less, so its pid is not published: the label is "" rather than a guess.
+func sessionPIDLabel(d sessionDoc) string {
+	if d.PID <= 0 || d.ProcStart == "" || d.PidDomain == "" || !sessionAlive(d) {
+		return ""
+	}
+	return strconv.Itoa(d.PID)
+}
+
 // Per-session label values are closed sets; nothing from a file reaches a label except the sanitized name.
 var (
 	sessionStates  = []string{"busy", "idle", "waiting", "shell", "other"}
@@ -263,7 +273,8 @@ func sessionSamples(p *Profile, account string, docs []sessionDoc, max int, name
 		out = append(out, core.Sample{Name: "agent_session_info", Labels: p.labels(account,
 			core.Label{Name: "session", Value: name},
 			core.Label{Name: "entrypoint", Value: entrypointLabel(string(d.Entrypoint))},
-			core.Label{Name: "tmux_session", Value: tmuxSession(string(d.Tmux))}), Value: 1})
+			core.Label{Name: "tmux_session", Value: tmuxSession(string(d.Tmux))},
+				core.Label{Name: "pid", Value: sessionPIDLabel(d)}), Value: 1})
 	}
 	return out, over
 }

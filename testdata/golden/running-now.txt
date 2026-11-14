@@ -155,17 +155,17 @@ agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",
 agent_session_state_since_timestamp_seconds{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6"} 1767225560
 # HELP agent_session_info Slow-changing facts of a live session.
 # TYPE agent_session_info gauge
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",entrypoint="sdk",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",entrypoint="cli",tmux_session="main"} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",entrypoint="cli",tmux_session=""} 1
-agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",entrypoint="cli",tmux_session=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="napping",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="observer-1",entrypoint="sdk",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="proj-aa",entrypoint="cli",tmux_session="main",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="shelled",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-0",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-1",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-2",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-3",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-4",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-5",entrypoint="cli",tmux_session="",pid=""} 1
+agent_session_info{host="node-a",harness="claude-code",profile="work",account="acct-8bf0ba5b",session="wait-6",entrypoint="cli",tmux_session="",pid=""} 1
 # HELP agent_job_running 1 while a job holds the account's lock, 0 otherwise.
 # TYPE agent_job_running gauge
 agent_job_running{host="node-a",harness="agy",profile="acct-busy",account="acct-busy"} 1

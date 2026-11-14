@@ -92,7 +92,9 @@ agent-quota-exporter --version
   - `metrics.per_session: true` adds, for each live Claude Code session, `agent_session_state` (busy, idle, waiting,
     shell, other), `agent_session_waiting` (what a waiting session waits on: permission, input, dialog, sandbox,
     worker, goal, other), `agent_session_state_since_timestamp_seconds` and `agent_session_info`. The `session` label
-    is the session's name made safe, which in practice is the project folder name plus a short suffix. At most
+    is the session's name made safe, which in practice is the project folder name plus a short suffix.
+    `agent_session_info` also carries a `pid` label (the session's OS process id, empty unless the session file's
+    start time and pid domain prove it is a live process on this host), to join a session to a process. At most
     `metrics.max_sessions_per_profile` (default 50) per profile. A session counts as live only if its process is
     the one the file was written for (same start time, same host).
   - `jobs.lock_dir` (and optional `jobs.call_log`) adds `agent_job_running` and the last job's end time and exit

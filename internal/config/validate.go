@@ -56,7 +56,7 @@ var Floors = map[string]struct{ MinInterval, Backoff429 time.Duration }{
 // ContractLabels are the label names the metric contract owns; static labels may not reuse them.
 var ContractLabels = []string{"host", "harness", "profile", "account", "provider", "model", "window", "scope",
 	"severity", "type", "outcome", "code", "plan", "state", "source", "reason", "version", "contract", "origin",
-	"session", "tmux_session", "entrypoint"}
+	"session", "tmux_session", "entrypoint", "pid"}
 
 // LaneLabels are owned by the lane series; static labels may reuse them only while no lane source is configured.
 var LaneLabels = []string{"lane", "images", "context"}
@@ -64,7 +64,7 @@ var LaneLabels = []string{"lane", "images", "context"}
 // MaxLabels caps labels per series (contract, "Label vocabulary").
 const MaxLabels = 12
 
-// maxContractLabelsPerSeries is the widest contract label set (agent_quota_limit_info: 8).
+// maxContractLabelsPerSeries is the widest contract label set (agent_quota_limit_info and agent_session_info: 8).
 const maxContractLabelsPerSeries = 8
 
 var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
