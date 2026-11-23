@@ -35,7 +35,7 @@ interpreter). The comparison table is in `plan.md` ("Go vs Python").
 
 ## D3. Public repository
 
-The project is developed in the open. Internal planning notes, work ledgers and agent-process files were removed
+The project is developed in the open. Internal planning notes and agent-process files were removed
 before publication; `specs/` carries the contracts and the rationale that matter to users and contributors.
 
 ## D4. Per-session metrics: opt-in

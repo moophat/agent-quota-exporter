@@ -129,7 +129,7 @@ Example:
 # TYPE agent_tokens_total counter
 agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="input"} 1520
 agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="cache_read"} 98213
-agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="acct-b1",provider="opencode-go",model="model-y",outcome="ok"} 311
+agent_requests_total{host="node-a",harness="opencode",profile="oc-a",account="acct-b1",provider="opencode-go",model="model-y",outcome="ok"} 311
 ```
 
 ## State metrics (gauges)

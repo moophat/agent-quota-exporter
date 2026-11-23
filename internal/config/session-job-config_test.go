@@ -7,14 +7,14 @@ import (
 
 func TestPerSessionAndJobsAccepted(t *testing.T) {
 	body := "version: 1\ndiscovery: {mode: \"off\"}\nmetrics: {per_session: true, max_sessions_per_profile: 20}\n" +
-		"jobs: {lock_dir: /run/runner, call_log: /var/log/runner/calls.jsonl}\n" +
+		"jobs: {lock_dir: /run/agent-jobs, call_log: /var/log/agent-jobs/calls.jsonl}\n" +
 		"sources:\n  job-locks: {min_interval: 10s}\n  opencode-http: {min_interval: 10s}\n" +
 		"profiles:\n- {harness: opencode, alias: a, dir: /x, url: \"http://127.0.0.1:4096\"}\n"
 	c, err := Load(writeCfg(t, body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Metrics.PerSession || c.Metrics.MaxSessionsPerProfile != 20 || c.Jobs.LockDir != "/run/runner" {
+	if !c.Metrics.PerSession || c.Metrics.MaxSessionsPerProfile != 20 || c.Jobs.LockDir != "/run/agent-jobs" {
 		t.Fatalf("not read: %+v %+v", c.Metrics, c.Jobs)
 	}
 	profiles, _ := c.Resolve(func(string) string { return "" })

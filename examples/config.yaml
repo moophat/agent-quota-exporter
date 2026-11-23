@@ -64,7 +64,7 @@ profiles:
     alias: personal
     dir: /home/acct-b/.claude
   # - harness: opencode           # a running server: busy-session count via GET <url>/session/status
-  #   alias: lane-a
+  #   alias: oc-live
   #   dir: /home/acct-a/.local/share/opencode
   #   url: http://127.0.0.1:4096  # loopback unless allow_remote: true
   - harness: codex
@@ -72,8 +72,8 @@ profiles:
     dir: /home/acct-a/.codex     # a CODEX_HOME; ~/.codex is also discovered
     quota: { codex_usage: true } # opt-in: live quota + reset slots from the ChatGPT backend; never refreshes the token
   - harness: opencode
-    alias: oc-lane-1
-    dir: /var/lib/opencode-lane-1/opencode   # the data dir holding opencode.db
+    alias: oc-a
+    dir: /var/lib/opencode-a/opencode   # the data dir holding opencode.db
   - harness: 9router                  # off unless declared
     alias: router
     dir: /home/acct-a/.9router
