@@ -49,6 +49,7 @@ A *profile* is one `CLAUDE_CONFIG_DIR` (default `~/.claude`; accounts are separa
 | `claude-sessions` | live session count and state; with `metrics.per_session`, one series group per live session | read `<config>/sessions/<pid>.json`. Counts (always): `status`, `pid`, `procStart`, `pidDomain`; a session is live only if the pid exists, field 22 of `/proc/<pid>/stat` (parsed after the last `)`) equals `procStart` when the file has one, and, when the file has a `pidDomain`, the whole string (`linux:<machine-id>:<pid namespace>`, the namespace part alone is the same on every host) equals this host's; if this host cannot build its own, a file naming a pid domain is not live. Per session (opt-in): also `name`, `kind`, `spare`, `entrypoint`, `tmux`, `waitingFor`, `startedAt`, `statusUpdatedAt` (epoch milliseconds; the state-since series uses `statusUpdatedAt` only, `updatedAt` is never read because it moves on unrelated rewrites). Skipped per session: `spare: true` and any `kind` other than `interactive` or `bg`. `waitingFor` is mapped through an exact allowlist (`permission prompt`, `input needed`, `dialog open`, `sandbox request`, `worker request`, `goal proposal`) to a fixed reason; the harness's own set is closed (no dialog text reaches it) and the allowlist keeps it that way if a new string appears, which reads `other`. `name` becomes the `session` label after sanitizing: **in practice it is the project folder name plus a short suffix** (`nameSource: derived`), so the label usually shows a project folder name. `tmux` is `session:@window.%pane` with no socket: only the session name is kept, and the same session name on two sockets is not told apart. `sessionId` is used only as part of a session's identity in memory (so a new process on a reused pid gets a new label) and is never exported. Never read: `cwd`, sockets, peer fields. A session file can outlive its process, and `entrypoint: sdk-cli` sessions include background observers a tool starts for itself: they count in `agent_sessions` (as before) and carry `entrypoint="sdk"` in the per-session series. A session label stays with its session while it lives (the first free of `name`, `name-2`, `name-3` at first sight; remembered in memory, so labels are re-derived after a restart). A failed read of the directory, or of a session file that exists but cannot be read or is over 1 MiB (a file that vanished between listing and reading is skipped), drops the cached series (source down); it does not keep the last list or serve a shortened one | each scrape (cheap, local) | verified for the file shape (2026-11); the `waiting` state and its `waitingFor` strings are read from the harness's binary, not observed on a live file in every case |
 | `claude-account` | account identity, plan and historical binding | shared public metric account label (alias, existing UUID short hash, or configured email) and bounded plan label; event metadata uses the exact identity allowlist below, never other file keys or token values | local metadata target 60 s, on change | existing file shape verified; history requires implementation verification |
 | `claude-oauth-usage` | quota windows | `GET https://api.anthropic.com/api/oauth/usage` with header `anthropic-beta: oauth-2025-04-20` and the profile's current access token from `<config>/.credentials.json`. Response objects `five_hour`, `seven_day` (each `utilization` in percent, `resets_at` ISO time), other top-level objects with a numeric `utilization` (model-family limits, and windows of unstated length), and `limits[]` (`kind`, `percent`, `severity`, `is_active`). See `fixtures/claude/oauth-usage-response.json` | **at most once per 15 min per account globally**; >=60 min after a 429; two-401 holder exclusion as below | verified (field names), **undocumented endpoint** |
+| `claude-statusline-cache` | quota windows, without a vendor call | **opt-in per profile** (`quota.claude_statusline_cache: /abs/path`). Reads one JSON file that a Claude Code status line script writes: `{"timestamp": <epoch ms>, "status": "available", "data": <the usage endpoint response body>}`, parsed exactly like `claude-oauth-usage`. Opened without following links, at most 1 MiB; the file must be owned by root, by the exporter's user or by the profile directory's owner, and must not be group- or other-writable (else `reason="untrusted_owner"`). `.credentials.json` is only stat-ed, never read: a cache `timestamp` older than its modification time reads `auth_expired`. A fresh reading (at most 5 min old) defers `claude-oauth-usage` on the same profile | `defaults.usage_interval` | verified against the file format above; the writer is the user's own script |
 
 Rules specific to `claude-oauth-usage`:
 
@@ -254,7 +255,7 @@ five scalar expressions of `credential` and never the whole `value` column), `pe
 A *profile* is one `HOME` per account. agy profiles are never discovered: they exist only when declared in config.
 Local state holds no quota, but the official client has a quota surface (this corrects the earlier "no quota surface"):
 `agy -p /usage --output-format json` answers with quota buckets, using 0 tokens and no model turn (agy CLI 1.5.0, one
-account, read twice on-prem on 2026-11-04).
+account, read twice on a real install on 2026-11-04).
 
 | Source | What | How | Cadence | Evidence |
 |---|---|---|---|---|
@@ -282,9 +283,8 @@ Rules specific to `agy-usage`:
   other users' profiles: run the exporter as root, or as the profile's own user. The client binary must be executable
   by the `HOME`'s owner (an unreadable one is `reason="permission"`).
 - **Token refresh is the client's.** A run with an expired access token refreshes it and rewrites the token file, as any
-  agy run does; two runs with a live token changed nothing (on-prem, by hash and mtime only). So each poll can trigger the
-  client's normal refresh. Whether the refresh token itself rotates is re-checked on-prem on an rc before `v0.2.0`; if it
-  rotates, the source stays out of the release.
+  agy run does; two runs with a live token changed nothing (on a real install, by hash and mtime only). So each poll can trigger the
+  client's normal refresh. Whether the refresh token itself rotates is not yet verified; if it rotates, the source is withdrawn.
 - **Timeout:** 30 s per run. The client runs in its own process group; on timeout the group gets `SIGTERM`, then 5 s to
   finish writing its token file, then `SIGKILL`. Never `SIGKILL` first. After every run, timeout or not, whatever is
   left of the group (a child that outlived the client, for instance one still holding its stdout) gets the same
@@ -363,7 +363,7 @@ Mapping:
 - **Errors:** a missing database is `not_found`; a lock held by the router is `timeout` (no wait beyond 200 ms; retried
   next cycle). Either way the previous values are served until stale.
 - **Measured:** 5000 rows per cycle take about 20 ms with a 3 MiB peak heap (`BenchmarkCycle`, 200k-row table, a
-  4-vCPU cloud VM; the read itself is single-threaded). On-prem has not measured it against a real router database.
+  4-vCPU cloud VM; the read itself is single-threaded). Not yet measured against a real router database.
 
 Never-read (enforced by the query allow-list and tested): `usageHistory.apiKey`, `usageHistory.tokens`,
 `usageHistory.meta`, `usageHistory.endpoint`, `providerConnections.data` as a whole and every path in it except the two

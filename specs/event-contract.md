@@ -1,16 +1,15 @@
 # Durable event contract
 
 Status: schema 1, design contract for usage parity; not a claim of runtime implementation.
-**AI-Model:** t9r/cx/gpt-6.1-sol
 
 ## Boundary and authority
 
 An optional generic local event sink complements [metric-contract.md](metric-contract.md).
 Metrics work without it; installations requiring retained history must enable it and treat failed
-durable capture as incomplete coverage even if metrics work. No fleet graph, election, account chooser,
+durable capture as incomplete coverage even if metrics work. No inventory graph, election, account chooser,
 public event endpoint, deployment or credential mutation is introduced by this contract.
-This contract supersedes the earlier metrics-only history boundary in `plan.md`, not Tu's recorded
-rulings in [decisions.md](decisions.md). Retained facts and current metric eligibility are separate.
+This contract supersedes the earlier metrics-only history boundary in `plan.md`, not the recorded
+decisions in [decisions.md](decisions.md). Retained facts and current metric eligibility are separate.
 
 ## Envelope (all kinds)
 
@@ -270,7 +269,7 @@ the source's existing `acct-xxxxxxxx` short stable hash, or email when `account_
 is configured. For these events, `account` and `metric_account` are equal
 when attribution is available; unavailable attribution remains null. Claude events do not introduce a separate account namespace.
 
-Owner-authorized contract correction (Tu, 2026-11-08; see decisions.md): schema version
+Contract correction (2026-11-08; see decisions.md D11): schema version
 remains 1 despite the semantic change from private keyed account IDs to public metric labels.
 `metric_account` remains additive compatibility data; readers tolerate its absence in older
 schema-1 events. Existing retained rows are not rewritten or silently relinked; consumers
@@ -289,7 +288,7 @@ Passive readings use their original event time under the same rule. Reset passed
 without post-reset evidence means current unknown, prior reading retained. Identity target/local capture
 is 60 s; health/collect ages remain separate. Direct Claude
 keeps >=900 s/account globally, 15 s request/no inline retry, account-wide >=3600 s after 429.
-Generic external permits carry coordination; no fleet logic enters this repository.
+Generic external permits carry coordination; no deployment-specific logic enters this repository.
 Ordinary local/agy timeout/network/5xx/parse failures retry next interval, repeated failures 2x/4x
 capped at 15 min with nonnegative jitter. Actual agy 429 keeps >=1 h; guard keeps 24 h. Auth changes
 clear auth backoff only, not cooldown/gates; never refresh credentials. Missing files retry normally.
@@ -323,5 +322,5 @@ All original collected-fact IDs are accounted for; none is proposed for removal.
 Schema changes are additive only within version 1 when readers can safely ignore them. Changes to
 meaning, required fields, deduplication or null semantics require a new schema version and compatible
 consumer before activation. Unknown versions are unsupported coverage, never silently interpreted as v1.
-The 2026-11-08 owner-authorized account-label correction above is an explicit exception
+The 2026-11-08 account-label correction (decisions.md D11) above is an explicit exception
 to the semantic-version rule, not a general permission for future semantic changes within v1.

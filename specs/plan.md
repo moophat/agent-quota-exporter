@@ -1,6 +1,8 @@
 # Plan
 
-Status: design phase, 2026-10-28. Nothing here is implemented. Companion documents: [metric-contract.md](metric-contract.md),
+Status: the original design document (2026-10-28), kept for its rationale. Most of it is implemented; where it
+disagrees with the code, [../README.md](../README.md), the contracts and [decisions.md](decisions.md) describe current
+behaviour. Companion documents: [metric-contract.md](metric-contract.md),
 [sources.md](sources.md), [../fixtures/README.md](../fixtures/README.md).
 
 ## Goal
@@ -281,11 +283,10 @@ of the secret-handling paths; docs reviewed by someone who did not write them.
 | Cardinality blow-up | no ids as labels, model cap, per-session off by default |
 | Licence ambiguity of prior art | no code borrowed |
 
-## Open questions for the maintainer
+## Questions raised by this plan, and their answers
 
-1. ~~Licence~~: LOCKED Apache-2.0, 2026-10-28 (see `decisions.md`).
-2. Language: Go or Python (recommendation above; decision #13).
-3. Public repository timing (private until phase 5?).
-4. Whether the Claude quota plugin should be on by default for discovered profiles, or always require explicit opt-in
-   (this plan: always explicit).
-5. Whether a per-session metric set is wanted at all.
+1. Licence: Apache-2.0 (`decisions.md` D1).
+2. Language: Go (`decisions.md` D2).
+3. Public repository: yes (`decisions.md` D3).
+4. Claude quota plugin on by default for discovered profiles: no, always an explicit opt-in per profile.
+5. Per-session metrics: opt-in only (`decisions.md` D4).
