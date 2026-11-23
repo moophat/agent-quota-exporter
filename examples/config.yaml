@@ -1,7 +1,8 @@
-# Example configuration for agent-quota-exporter (Claude Code profiles only in this version).
+# Example configuration for agent-quota-exporter, showing every harness. A minimal config is just
+# `version: 1` plus one profile; see README.md, "Configuration reference".
 # Path: --config FILE or AGENT_QUOTA_EXPORTER_CONFIG. Every key is optional except version.
 version: 1
-# Optional lane monitoring (off by default):
+# Optional model-server lane monitoring, JSON /slots and /metrics (off by default):
 # strata:
 #   - name: lane-a
 #     base_url: http://127.0.0.1:8080
