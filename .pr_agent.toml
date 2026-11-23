@@ -1,4 +1,0 @@
-# Configuration for the automated pull-request reviewer, read from the default branch only.
-# Documentation-only branches (docs/...) skip the automated review and merge on green CI.
-[config]
-ignore_pr_source_branches = ["^docs/"]
