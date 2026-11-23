@@ -17,13 +17,10 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/core"
 )
 
-// Successful cache reads require the root-owned writer; ordinary users cannot
-// create a trusted fixture. The rejection tests below still run without root.
+// A cache file the test writes is owned by the exporter's own user, which is a
+// trusted owner, so these fixtures need no special privilege.
 func newCacheProfile(t *testing.T) *Profile {
 	t.Helper()
-	if os.Geteuid() != 0 {
-		t.Skip("creating a trusted root-owned cache needs root")
-	}
 	p := newProfile(t, "root")
 	path := filepath.Join(p.Dir, ".credentials.json")
 	at := t0.Add(-time.Hour)
@@ -148,9 +145,6 @@ func TestStatuslineCacheAbsent(t *testing.T) {
 				"directory": core.ReasonPermission,
 			}
 			wantReason := reasons[kind]
-			if os.Geteuid() != 0 && kind != "missing" && kind != "symlink" && kind != "directory" {
-				wantReason = "untrusted_owner"
-			}
 			var se *core.SourceError
 			if !errorsAs(err, &se) || se.Reason != wantReason {
 				t.Fatalf("reason: %v, want %s", err, wantReason)
@@ -345,12 +339,15 @@ func TestStoppedStatuslineAllowsLiveQuota(t *testing.T) {
 	}
 }
 
+// The cache must be owned by root, the exporter's user or the profile
+// directory's owner, and must not be group- or other-writable.
 func TestStatuslineCacheTrust(t *testing.T) {
-	for _, kind := range []string{"owner", "group-writable", "world-writable"} {
+	for _, kind := range []string{"owner", "profile-owner", "group-writable", "world-writable"} {
 		t.Run(kind, func(t *testing.T) {
-			if kind == "owner" && os.Geteuid() != 0 {
-				t.Skip("changing the cache owner needs root")
+			if (kind == "owner" || kind == "profile-owner") && os.Geteuid() != 0 {
+				t.Skip("changing file owners needs root")
 			}
+			p := newProfile(t, "root")
 			path := filepath.Join(t.TempDir(), "cache.json")
 			// Invalid JSON distinguishes trust rejection before parsing.
 			write(t, path, []byte("invalid"))
@@ -359,6 +356,19 @@ func TestStatuslineCacheTrust(t *testing.T) {
 				if err := os.Chown(path, 65534, 65534); err != nil {
 					t.Fatal(err)
 				}
+			case "profile-owner":
+				for _, f := range []string{path, p.Dir} {
+					if err := os.Chown(f, 65534, 65534); err != nil {
+						t.Fatal(err)
+					}
+				}
+				src := &StatuslineCacheSource{P: p, Path: path, Interval: time.Minute, StaleAfter: 45 * time.Minute}
+				_, _, err := collect(t, src, t0, nil)
+				var se *core.SourceError
+				if !errorsAs(err, &se) || se.Reason != core.ReasonParse {
+					t.Fatalf("a cache owned by the profile owner must be trusted and then parsed: %v", err)
+				}
+				return
 			case "group-writable":
 				if err := os.Chmod(path, 0664); err != nil {
 					t.Fatal(err)
@@ -368,7 +378,7 @@ func TestStatuslineCacheTrust(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			src := &StatuslineCacheSource{P: newProfile(t, "root"), Path: path, Interval: time.Minute, StaleAfter: 45 * time.Minute}
+			src := &StatuslineCacheSource{P: p, Path: path, Interval: time.Minute, StaleAfter: 45 * time.Minute}
 			res, _, err := collect(t, src, t0, nil)
 			var se *core.SourceError
 			if !errorsAs(err, &se) || se.Reason != "untrusted_owner" || len(res.Samples) != 0 {

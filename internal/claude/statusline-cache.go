@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -12,8 +13,11 @@ import (
 	"github.com/moophat/agent-quota-exporter/internal/core"
 )
 
-// StatuslineCacheSource reads the AgentKit status line's vendor response without
-// credentials or network access. App wiring binds it only to the default root profile.
+// StatuslineCacheSource reads a usage cache file that a Claude Code status line
+// script writes, without credentials or network access. The file holds the body
+// of Claude's usage endpoint response wrapped as
+// {"timestamp": <epoch ms>, "status": "available", "data": {...}}.
+// App wiring creates it only for a profile that names the file explicitly.
 type StatuslineCacheSource struct {
 	P          *Profile
 	Path       string
@@ -73,7 +77,7 @@ func (s *StatuslineCacheSource) read(now time.Time) {
 	defer f.Close()
 	// fi comes from fstat on this same descriptor, before any bytes are read.
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok || st.Uid != 0 || fi.Mode().Perm()&0022 != 0 {
+	if !ok || !s.trustedOwner(st.Uid) || fi.Mode().Perm()&0022 != 0 {
 		s.readErr = core.Fail("untrusted_owner")
 		return
 	}
@@ -107,6 +111,22 @@ func (s *StatuslineCacheSource) read(now time.Time) {
 	s.quota = q
 	s.observedAt = time.UnixMilli(doc.Timestamp)
 	s.readErr = nil
+}
+
+// trustedOwner reports whether uid may own the cache file: root, the user the
+// exporter runs as, or the owner of the profile directory (who can already
+// change that profile's credentials). A profile directory that is a link is
+// not trusted.
+func (s *StatuslineCacheSource) trustedOwner(uid uint32) bool {
+	if uid == 0 || int64(uid) == int64(os.Geteuid()) {
+		return true
+	}
+	fi, err := os.Lstat(s.P.Dir)
+	if err != nil || !fi.IsDir() {
+		return false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && st.Uid == uid
 }
 
 func (s *StatuslineCacheSource) Collect(_ context.Context, now time.Time, _ json.RawMessage) (core.Result, json.RawMessage, error) {

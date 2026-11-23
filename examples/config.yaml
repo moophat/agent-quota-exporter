@@ -44,15 +44,15 @@ defaults:
 profiles:
   - harness: claude-code
     alias: root
-    dir: /root/.claude          # only this login owns the AgentKit status line cache
+    dir: /root/.claude
     quota:
-      claude_statusline_cache: /tmp/ck-usage-limits-cache.json  # overrides exporter's CK_USAGE_CACHE_PATH, then /tmp default
-      claude_oauth_usage: true  # optional fallback only when no fresh cache reading; 15 min floor stays
-    # The shipped unit's PrivateTmp=true hides host /tmp. Override with PrivateTmp=false,
-    # or bind the cache read-only into the service and set the path above. Prefer a
-    # directory bind: atomic replacements can leave a single-file bind on an old inode.
-    # Keep all other unit hardening. Cache polling uses defaults.usage_interval;
-    # timestamp is the observation time; stale_after drops old readings.
+      # Off unless set: absolute path of a usage cache file that a Claude Code status line script writes
+      # (format in README.md, "Claude status line cache"). Read-only; no credentials, no vendor call.
+      # claude_statusline_cache: /run/claude-usage/cache.json
+      claude_oauth_usage: true  # opt-in vendor call; with a cache set, it runs only while no fresh cache reading exists
+    # Under the shipped systemd unit (PrivateTmp=true), a cache file in /tmp is not visible: put it
+    # elsewhere, or bind its directory read-only into the service. Cache polling uses
+    # defaults.usage_interval; the file's timestamp is the observation time.
   - harness: claude-code
     alias: work
     dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR

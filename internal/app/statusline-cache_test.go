@@ -9,19 +9,18 @@ import (
 )
 
 // Wiring can be checked without opening any live profile or credential file.
+// The source exists only when a profile names its cache file, for any profile dir.
 func TestStatuslineCacheWiring(t *testing.T) {
 	for _, tc := range []struct {
-		name, dir, env, path, want string
-		oauth                      bool
+		name, dir, path, want string
+		oauth                 bool
 	}{
-		{name: "default", dir: "/root/.claude", want: "/tmp/ck-usage-limits-cache.json"},
-		{name: "environment", dir: "/root/.claude", env: "/run/cache.json", want: "/run/cache.json"},
-		{name: "config wins", dir: "/root/.claude", env: "/run/env.json", path: "/run/config.json", want: "/run/config.json", oauth: true},
-		{name: "other home", dir: "/home/acct-a/.claude", env: "/run/cache.json"},
-		{name: "other root profile", dir: "/root/.claude-work"},
+		{name: "off by default", dir: "/root/.claude"},
+		{name: "off by default with oauth", dir: "/home/acct-a/.claude", oauth: true},
+		{name: "configured", dir: "/home/acct-a/.claude", path: "/run/claude-usage/cache.json", want: "/run/claude-usage/cache.json"},
+		{name: "configured with oauth", dir: "/root/.claude-work", path: "/run/config.json", want: "/run/config.json", oauth: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("CK_USAGE_CACHE_PATH", tc.env)
 			cfg := config.Default()
 			cfg.Defaults.UsageInterval = config.Duration(90 * time.Second)
 			r := config.Resolved{Harness: config.HarnessClaude, Alias: "root", Dir: tc.dir, Account: "acct-a1", QuotaOptIn: tc.oauth, Quota: config.Quota{"claude_statusline_cache": tc.path}}
@@ -41,7 +40,10 @@ func TestStatuslineCacheWiring(t *testing.T) {
 			}
 			if tc.want == "" {
 				if local != nil {
-					t.Fatal("cache assigned to another login")
+					t.Fatal("cache source enabled without a configured path")
+				}
+				if tc.oauth && (oauth == nil || oauth.Statusline != nil) {
+					t.Fatal("OAuth must run alone when no cache is configured")
 				}
 				return
 			}

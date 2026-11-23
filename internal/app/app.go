@@ -3,8 +3,6 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -95,14 +93,8 @@ func Build(cfg *config.Config, profiles []config.Resolved, host, version string)
 			&claude.TranscriptsSource{P: p, Interval: cfg.SourceInterval("claude-transcripts", cfg.Defaults.UsageInterval.D()), StateDir: cfg.StateDir, ByteBudget: cfg.Sources["claude-transcripts"].ByteBudget, Deadline: cfg.Sources["claude-transcripts"].Deadline.D()},
 		)
 		var statusline *claude.StatuslineCacheSource
-		if filepath.Clean(r.Dir) == "/root/.claude" {
-			path := r.Quota.StatuslinePath()
-			if path == "" {
-				path = os.Getenv("CK_USAGE_CACHE_PATH")
-			}
-			if path == "" {
-				path = "/tmp/ck-usage-limits-cache.json"
-			}
+		// The status line cache is off unless the profile names the file a status line writes.
+		if path := r.Quota.StatuslinePath(); path != "" {
 			statusline = &claude.StatuslineCacheSource{P: p, Path: path,
 				Interval: cfg.Defaults.UsageInterval.D(), StaleAfter: cfg.Defaults.StaleAfter.D()}
 			b.Sources = append(b.Sources, statusline)
