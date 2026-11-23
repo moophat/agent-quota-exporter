@@ -12,14 +12,14 @@ listen: "127.0.0.1:9877"        # default port 9877; set it to what your scraper
 # host: node-a                  # label value; default = OS hostname
 state_dir: /var/lib/agent-quota-exporter
 labels: {}                      # constant labels on every series, e.g. {env: lab}
-# Optional private history; no source event adapters are enabled by this wiring.
+# Optional local event history (off by default); see README.md "Events" and specs/event-contract.md.
 events:
   enabled: false                # default; omission preserves metrics-only community mode
   root_dir: /var/lib/agent-quota-exporter/history # separate from agent state
   byte_budget: 10737418240       # example 10 GiB; REQUIRED positive operator allocation when enabled; no default
   free_space_reserve: 8388608    # default/minimum 8 MiB: bounded batch plus checkpoints
   hot_age: 2160h                # default/minimum 90 days; no automatic deletion
-  privacy_profile: community    # community | parity; parity requires enabled; configured email labels allowed
+  privacy_profile: community    # community (optional history) | parity (complete history: requires enabled, >= 90 days kept); same fields captured
   # Compatibility: identity_key_file is accepted but ignored, logging once at startup
   # when configured. No key is read or required; events use the public metric account label.
   # Enabled invalid/unwritable stores fail startup. Capacity pressure is exposed
@@ -33,10 +33,11 @@ metrics:
   account_label: alias          # alias | email
   per_session: false            # opt-in: state of each live Claude session (series per session, see specs/metric-contract.md)
   max_sessions_per_profile: 50  # cap when per_session is on (1..500)
-# Opt-in: which agent accounts have a job running now, from a task runner's lock files (Linux, specs/sources.md "Jobs").
+# Opt-in: which agent accounts have a job running now (Linux, specs/sources.md "Jobs"), from a task runner that holds
+# one flocked <tool>-<account>.lock per running job (tools: codex, agy) and appends a JSONL call log.
 # jobs:
-#   lock_dir: /run/runner         # holds <codex|agy>-<account>.lock files, one flocked per running job
-#   call_log: /var/log/runner/calls.jsonl   # optional: end time and exit code of the last job per account
+#   lock_dir: /run/agent-jobs                  # holds the <tool>-<account>.lock files
+#   call_log: /var/log/agent-jobs/calls.jsonl  # optional: end time and exit code of the last job per account
 defaults:
   usage_interval: 60s
   stale_after: 45m              # any positive duration; stale when age > max(this, 2*P + D + 15s)

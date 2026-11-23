@@ -24,7 +24,8 @@ accounts in several workspaces**. It never refreshes, writes or exports a token.
 - [Metrics](#metrics)
 - [Security and privacy](#security-and-privacy)
 - [Running under systemd](#running-under-systemd)
-- [Contributing](#contributing), [Security reports](#security-reports), [License](#license)
+- [Contributing and repository layout](#contributing) (`fixtures/` and `testdata/` hold synthetic data only)
+- [Security reports](#security-reports), [License](#license)
 
 ## Why
 
@@ -68,7 +69,7 @@ marked **opt-in** do nothing until the config switches them on.
 | `9router` | the [9router](https://github.com/decolua/9router) local AI router | `router-9router` | declared profiles only | requests, tokens and upstream connection health from the router's SQLite database, read-only |
 | `zai` | z.ai GLM Coding Plan | `zai-usage` | **opt-in** `quota.zai_usage: true` | quota windows and plan level, with a key that a local OpenClaw, opencode or z.ai coding-helper login already holds |
 | `strata` | an HTTP model server exposing JSON `/slots` and `/metrics` | `strata` | **opt-in** top-level `strata:` | busy, queued and slot counts per server ("lane") |
-| `jobs` | a task runner that flocks one lock file per agent account | `job-locks` | **opt-in** `jobs.lock_dir` | which accounts have a job running now (Linux `/proc/locks`) |
+| `jobs` | a task runner that holds one flocked `<tool>-<account>.lock` per running job (tools `codex`, `agy`) and appends a JSONL call log | `job-locks` | **opt-in** `jobs.lock_dir` | which accounts have a job running now (Linux `/proc/locks`) |
 
 The per-source details (exact files, fields, endpoints, cadence, evidence level and failure reasons) are in
 [specs/sources.md](specs/sources.md).
@@ -295,8 +296,8 @@ credentials.
 | `events.byte_budget` | none | storage allocation in bytes; required and positive when enabled |
 | `events.free_space_reserve` | `8388608` | bytes kept free on the filesystem (minimum 8 MiB) |
 | `events.hot_age` | `2160h` | minimum 90 days; nothing is deleted automatically |
-| `events.privacy_profile` | `community` | `community` or `parity` (`parity` requires `enabled` and allows configured email account labels) |
-| `events.identity_key_file` | unset | accepted for compatibility and ignored |
+| `events.privacy_profile` | `community` | `community`: events are optional and retention is your choice within the budget. `parity`: the store is meant as the host's complete usage history; requires `enabled: true` and commits you to keeping at least 90 days queryable and archiving before removal. Both capture the same fields ([details](specs/event-contract.md#configuration-profiles)) |
+| `events.identity_key_file` | unset | removed setting: accepted so older configs load, ignored with one startup warning |
 
 The format is [specs/event-contract.md](specs/event-contract.md). Store capacity is exposed as
 `agent_event_store_*` metrics.
@@ -323,7 +324,7 @@ authoritative contract. Base labels: `host harness profile account provider`.
 | Collector and event store | `agent_collector_*` (backlog, files, bytes, rows, errors), `agent_event_store_*` (size, available bytes, pressure, write success; only with events enabled) |
 | Exporter | `agent_quota_exporter_build_info`, `agent_quota_exporter_profiles`, `agent_quota_exporter_state_epoch`, `process_start_time_seconds` |
 
-A sample of real output is in [testdata/golden/metrics.txt](testdata/golden/metrics.txt).
+Sample output (from synthetic fixtures) is in [testdata/golden/metrics.txt](testdata/golden/metrics.txt).
 
 ## Security and privacy
 

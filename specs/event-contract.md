@@ -11,6 +11,22 @@ public event endpoint, deployment or credential mutation is introduced by this c
 This contract supersedes the earlier metrics-only history boundary in `plan.md`, not the recorded
 decisions in [decisions.md](decisions.md). Retained facts and current metric eligibility are separate.
 
+## Configuration profiles
+
+`events.privacy_profile` names what the operator commits the store to; it does not change which fields are
+captured. Both profiles capture exactly the allow-listed fields of this contract, never content or credentials,
+and both accept configured email account labels (`metrics.account_label: email`).
+
+- `community` (default): events are optional; with `events.enabled: false` nothing is written. Retention is the
+  operator's choice within the storage budget below.
+- `parity`: the store is meant to be the host's complete usage history, a replacement for the harnesses' own usage
+  views. It requires `events.enabled: true` (a config with `parity` and capture disabled fails validation) and holds
+  the operator to the retention rules under "Persistence, privacy and freshness": at least 90 days queryable, closed
+  shards archived and verified before local removal.
+
+`events.identity_key_file` is a removed setting: it is still accepted so older configs load, is ignored, and logs
+one warning at startup. No key is read or required.
+
 ## Envelope (all kinds)
 
 Every JSONL row is an object with these required keys. Nullable keys are present as JSON null,
