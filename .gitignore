@@ -50,5 +50,4 @@ node_modules/
 # agent / tool state
 .claude/
 .gemini/
-.aiworkflow/*.bak
 .local/
