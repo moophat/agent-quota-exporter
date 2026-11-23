@@ -11,7 +11,6 @@ and another spec document disagree, this file is the decision.
 | D4 | Per-session metrics | Settled 2026-11-13, amended 2026-11-15: opt-in `metrics.per_session` |
 | D5 | Claude plan label and health rows | Settled 2026-11-03 |
 | D6 | Claude config dirs on shared mounts | Open: guidance only, no exclude option |
-| D7 | Model attribution in commits | Settled 2026-11-04 |
 | D8 | SQLite read-marks in a live writer's `-shm` | Settled 2026-11-04: accepted |
 | D9 | Provider balances | Settled 2026-11-04: not built |
 | D10 | Idle memory target | Settled 2026-11-04: about 16 MB |
@@ -65,15 +64,6 @@ that discovers it counts the same transcripts, so totals across machines are mul
 option exists: a config dir on a shared mount is read by exactly one exporter (the machine that runs the sessions);
 on the other machines, narrow `discovery.roots` or use `discovery.mode: only` with roots that leave it out. The config
 has no per-dir exclude today.
-
-## D7. Model attribution, no Co-Authored-By
-
-- No commit and no squash message carries a `Co-Authored-By` trailer.
-- Work by an AI agent names the model for failure attribution: in every commit message (`AI-Model:` or `Model:`
-  trailer), every PR body (`**AI-Model:**` line) and every PR comment or review reply (`AI-Model:` line).
-- Where an agent's environment forbids the exact model id in pushed artifacts, it writes the generic family name
-  (`opus`, `sonnet`, `haiku`, ...) instead. Commits from before this rule keep what they have; history is not
-  rewritten.
 
 ## D8. SQLite read-marks in a live writer's -shm: accepted
 

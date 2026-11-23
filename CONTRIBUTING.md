@@ -41,7 +41,5 @@ Optional: install the pre-commit secret scan once per checkout with `pip install
 
 - Conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`, `chore:`; `!` for a breaking change).
 - A pull request describes what changed, why, and how it was tested.
-- Work produced with an AI agent names the model in a `Model:` trailer (see [specs/decisions.md](specs/decisions.md)
-  D7); no `Co-Authored-By` trailers.
 
 By contributing you agree that your contribution is licensed under the [Apache-2.0](LICENSE) license.
