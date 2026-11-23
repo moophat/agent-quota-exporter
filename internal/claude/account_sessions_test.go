@@ -8,7 +8,7 @@ import (
 )
 
 // The account label must be derived from the account id, stable across runs and short; the same account
-// must get the same label on every node so the fleet can join on it.
+// must get the same label on every host so a consumer can join on it.
 func TestAccountLabelFromSiblingClaudeJSON(t *testing.T) {
 	p := newProfile(t, "a")
 	label, uuid := p.Account()
@@ -150,7 +150,7 @@ func TestSessionsDirMissing(t *testing.T) {
 	}
 }
 
-// A sessions dir or profile dir swapped for a link is refused, not followed (Qodo #3).
+// A sessions dir or profile dir swapped for a link is refused, not followed.
 func TestSessionsAndAccountRefuseLinkedDirs(t *testing.T) {
 	p := newProfile(t, "a")
 	os.RemoveAll(filepath.Join(p.Dir, "sessions"))
@@ -167,8 +167,7 @@ func TestSessionsAndAccountRefuseLinkedDirs(t *testing.T) {
 	}
 }
 
-// A configured ~/.claude that is a link to a dir with another name still finds the sibling ~/.claude.json
-// (Qodo #13).
+// A configured ~/.claude that is a link to a dir with another name still finds the sibling ~/.claude.json.
 func TestClaudeJSONPathUsesConfiguredName(t *testing.T) {
 	home := t.TempDir()
 	target := filepath.Join(home, "real-claude")

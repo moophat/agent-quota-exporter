@@ -1,6 +1,5 @@
 package events
 
-// AI-Model: t9r/cx/gpt-6.1-sol
 import (
 	"encoding/json"
 	"testing"

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// A link anywhere on the path, not only at its end, is refused (Qodo #3).
+// A link anywhere on the path, not only at its end, is refused.
 func TestNoLinkFollowedAtAnyLevel(t *testing.T) {
 	base := t.TempDir()
 	real := filepath.Join(base, "real")

@@ -398,8 +398,8 @@ type stepClock struct {
 func (c *stepClock) Now() time.Time      { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
 func (c *stepClock) add(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
 
-// After the profile logs into another account, the previous account's quota is never served under it
-// (Qodo #6), neither on a failed collect nor after a restart.
+// After the profile logs into another account, the previous account's quota is never served under it,
+// neither on a failed collect nor after a restart.
 func TestOAuthUsageNoQuotaFromPreviousLogin(t *testing.T) {
 	st := newStub(t, fixture(t, "oauth-usage-response.json"), 200, 500)
 	p := newProfile(t, "a")
@@ -438,7 +438,7 @@ func TestOAuthUsageAliasDoesNotMaskChangedUUID(t *testing.T) {
 }
 
 // After a restart, a profile of the same account that never ran itself still does not call the vendor inside
-// the interval: the persisted answer of its sibling seeds the per-account gate (Qodo #7).
+// the interval: the persisted answer of its sibling seeds the per-account gate.
 func TestOAuthUsagePerAccountGateSurvivesRestart(t *testing.T) {
 	st := newStub(t, fixture(t, "oauth-usage-response.json"))
 	a, b := newProfile(t, "a"), newProfile(t, "b") // same account id
