@@ -46,16 +46,16 @@ refreshing, any code.
                  | Source API      | Source API
         +--------v------+   +------v-------------+
         | harness plugin|   | provider plugin    |
-        | claude-code   |   | anthropic-oauth-   |
-        | codex         |   | usage, codex-rate- |
-        | opencode      |   | limits, billing    |
-        | agy           |   | APIs (later)       |
+        | claude-code   |   | claude-oauth-usage |
+        | codex         |   | codex-usage        |
+        | opencode      |   | agy-usage          |
+        | agy           |   | zai-usage          |
         +---------------+   +--------------------+
 ```
 
 **Core** (no vendor knowledge): config loader, profile discovery, source scheduler with per-source minimum interval and
 cache, state store (offsets), the metric registry and label normaliser, cardinality caps, secret-redacting logger,
-`/metrics` and `/healthz`, optional OTLP push.
+`/metrics` and `/healthz`. (OTLP push was considered and is not built.)
 
 **Plugins** are in-tree modules behind one narrow interface (no dynamic loading in v1):
 
@@ -120,36 +120,34 @@ profiles:
     dir: /home/acct-b/.claude
     account: acct-b1
   - harness: codex
-    alias: lane-codex
+    alias: codex-work
     dir: /home/acct-c/.codex      # CODEX_HOME
     account: acct-c1
-    quota: { codex_rate_limits: false }   # opt-in, risky until measured
+    quota: { codex_usage: true }  # opt-in vendor call
   - harness: opencode
-    alias: lane-1
-    dir: /var/lib/opencode-lane-1/.local/share/opencode
+    alias: oc-a
+    dir: /home/acct-d/.local/share/opencode
     url: "http://127.0.0.1:4096"  # optional live source
     account: acct-d1
   - harness: agy
-    alias: lane-agy
+    alias: agy-a
     dir: /home/acct-e
+    account: agy-e1
+    quota: { agy_usage: true }
 sources:                          # per-source overrides
   claude-oauth-usage: { min_interval: 15m, backoff_429: 60m }
-  codex-rate-limits:  { min_interval: 15m }
-otlp:
-  endpoint: ""                    # empty = off
+  codex-usage:        { min_interval: 3m, backoff_429: 10m }
 ```
+
+The complete, current key list is the README's "Configuration reference".
 
 Config validation fails loudly at start (unknown keys, duplicate aliases, an inline secret-looking value, an
 `min_interval` below the source's floor). Floors are compiled in and cannot be lowered below the vendor-safe value
 without `i_know_this_can_lock_my_account: true`.
 
-The parity design uses the same public account labels as metrics and requires an explicit local event-store
-byte/reserve/age budget; their authoritative requirements are in
-[event-contract.md](event-contract.md#persistence-privacy-and-freshness). These requirements are
-not implemented config options yet. Active direct Claude freshness uses that contract's margin
-policy rather than a threshold equal to its poll floor.
-Compatibility: `events.identity_key_file` is accepted but ignored, with one log message
-at startup when configured; no key is read or required.
+The optional event store (`events:`) uses the same public account labels as metrics and requires an explicit
+byte, reserve and age budget; its requirements are in [event-contract.md](event-contract.md#configuration-profiles).
+Claude quota freshness uses that contract's margin policy rather than a threshold equal to its poll floor.
 
 ### Scrape-time collection, intervals, cache
 
@@ -157,8 +155,10 @@ at startup when configured; no key is read or required.
   that refreshes its cache when `now - last_attempt >= min_interval` (jittered), triggered by a scrape or a timer,
   whichever is first. Prometheus can scrape every 15 s; the vendor is called at most once per `min_interval` per
   account.
-- Floors: Claude quota 15 min per account (60 min after a 429); Codex rate limits 15 min per account; local
-  files and SQLite 1 to 5 min incremental; opencode HTTP cached 30 s.
+- Defaults and floors: Claude quota 15 min per account, floor 15 min (60 min after a 429); Codex live quota
+  (`codex-usage`) every 3 min, floor 1 min (10 min after a 429, floor 5 min); agy every 30 min, floor 2 min; z.ai
+  every 10 min, floor 5 min; local files and SQLite on `defaults.usage_interval` (60 s, floor 30 s), incremental;
+  session state and opencode HTTP every 15 s, floor 5 s.
 - Cache entries carry `observed_at`. A value with age exceeding `max(stale_after, 2*P + D + 15s)` is dropped
   (absent, not zero). P is effective poll interval; D is collection timeout (`ReadTimeout()`, default 10s).
   Exactly at the bound is fresh; `stale_after` accepts any positive duration. The legacy statusline
@@ -192,12 +192,12 @@ at startup when configured; no key is read or required.
 
 ## Packaging
 
-- One static binary (Go) or one zipapp/wheel (Python), plus a systemd unit, an example config, and a container image.
-- `.deb`/`.rpm` or a tarball via release automation; a Helm chart is not planned.
-- Reproducible builds, signed release artifacts, SBOM. Dependencies pinned and kept few.
-- Ansible role / docs snippet for deploy are the consumer's job; the repo ships only the unit and config example.
+- Built: static Linux binaries (amd64, arm64) in release tarballs with `SHA256SUMS`, a systemd unit and an example
+  config. Dependencies pinned and kept few.
+- Not built yet: a container image, `.deb`/`.rpm` packages, signed artifacts and an SBOM. A Helm chart is not planned.
+- Deployment tooling is the consumer's job; the repo ships only the unit and config example.
 
-## Go vs Python (decision #13 is OPEN; this is a recommendation, not a decision)
+## Go vs Python (settled: Go, `decisions.md` D2)
 
 | Concern | Go | Python |
 |---|---|---|
@@ -216,53 +216,7 @@ where a single static binary and predictable footprint outweigh Python's faster 
 Prometheus exporters are Go (contributors and operators expect it). A Python reference implementation of one
 plugin could be written first to settle the parsers against the fixtures if prototyping speed matters, but it should not
 become the product by drift. If the operator values zero build tooling and edits on the node, stdlib-only Python is a
-legitimate choice. The contract and fixtures are language-neutral, so the decision does not block phase 0 and 1.
-
-## Phases and acceptance criteria
-
-### Phase 0: contract and fixtures (this repo, now)
-Deliverables: README, plan, metric contract, sources, sanitized fixtures, licence, ledger.
-Acceptance: fixture secret-scan commands from `fixtures/README.md` return empty; the contract names every metric any
-later phase emits; the maintainer confirms the open questions (licence, language) or explicitly defers them.
-
-### Phase 1: core skeleton and the local-file plugins
-Scope: config loader and validation, profile model and discovery, scheduler/cache, state store, `/metrics`, `/healthz`,
-health metrics, Claude transcripts + sessions plugin, opencode DB plugin. No network calls.
-Acceptance:
-- Golden-file tests: feeding `fixtures/` produces the exact expected `/metrics` text for the contract metrics.
-- Two Claude profiles and two opencode profiles on one machine produce disjoint, correctly labelled series.
-- Counters are monotonic across restarts with state kept; reset cleanly (no replay) with state deleted.
-- A fixture line with message content produces no content in any output, log or error (tested).
-- Query allow-list test: the opencode plugin issues no statement touching `account`, `credential`, `part`.
-- No write occurs under any profile directory (tested with a read-only mount).
-
-### Phase 2: quota for Claude (opt-in, rate-gated)
-Scope: `claude-oauth-usage` plugin with rate gate, backoff, 401 handling, per-account de-duplication; staleness drop.
-Acceptance:
-- Against a stub server: one request per account per 15 min regardless of scrape rate; 429 triggers 60 min backoff;
-  two 401s stop attempts until the credential file changes.
-- The access token never appears in argv, logs, errors, `/metrics`, or a heap/log dump in tests (canary-token test).
-- The plugin never writes the credential file and never calls a refresh endpoint (network stub asserts only the usage
-  host and path are contacted).
-- Manual check on a real, logged-in profile (maintainer-run): ratios match the vendor's own display.
-
-### Phase 3: Codex and agy discovery
-Scope: Codex state/logs schema discovery, `codex-rate-limits` behind opt-in after measuring whether a single read can
-trigger a token refresh, agy local-state discovery.
-Acceptance: a written measurement (in `specs/sources.md`) of Codex refresh behaviour with evidence; if a read can
-cause a refresh, the plugin ships off by default with that warning, or is dropped; agy gets either a real source or an
-explicit "no surface" statement.
-
-### Phase 4: provider billing plugins and OTLP
-Scope: optional Anthropic/OpenAI admin-usage plugins and a balance plugin; OTLP push.
-Acceptance: keys only via `env:`/`file:` references; OTLP output matches the contract names; plugin enable/disable by
-config without a rebuild of the contract.
-
-### Phase 5: packaging and first public release
-Scope: release automation, systemd unit, container image, signed artifacts, example dashboards and alert rules,
-final licence confirmation, public repository flip.
-Acceptance: install on a clean VM from the release artifact in under 10 minutes following the README; security review
-of the secret-handling paths; docs reviewed by someone who did not write them.
+legitimate choice. The contract and fixtures are language-neutral.
 
 ## Test strategy
 
@@ -278,7 +232,7 @@ of the secret-handling paths; docs reviewed by someone who did not write them.
 |---|---|
 | Vendor private endpoint changes or rate-locks | opt-in, floors, backoff, per-source health, graceful absence |
 | Token accidentally logged | tokens never reach logger by construction, canary tests, no body logging |
-| A second refresher invalidates a grant | no refresh code exists in the codebase; network stub test; Codex plugin gated until measured |
+| A second refresher invalidates a grant | no refresh code exists in the codebase; network stub test; Codex and agy vendor sources are opt-in |
 | Local file formats change | per-plugin parser tests on fixtures, tolerant parsing, `parse` error counter |
 | Cardinality blow-up | no ids as labels, model cap, per-session off by default |
 | Licence ambiguity of prior art | no code borrowed |
