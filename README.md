@@ -141,14 +141,19 @@ Example alert expressions:
 ```promql
 agent_quota_utilization_ratio > 0.9                                   # a quota window is almost used up
 agent_source_up == 0                                                  # a source cannot be read
-(agent_source_up{source=~"claude-oauth-usage|claude-statusline-cache|codex-usage|codex-rollouts|agy-usage|zai-usage"} >= 0) unless on(host, harness, profile) agent_quota_observed_timestamp_seconds  # a configured quota source has no fresh reading
+time() - agent_source_quota_observed_timestamp_seconds{source=~"claude-oauth-usage|claude-statusline-cache|codex-usage|agy-usage|zai-usage"} > 2700  # a configured quota source's last good reading is stale (> 45m)
 agent_account_logged_in == 0                                          # a profile has no usable login
 ```
 
-Because `agent_quota_observed_timestamp_seconds` is omitted once a reading exceeds the freshness cutoff (default `45m`),
-an age check alone (`time() - agent_quota_observed_timestamp_seconds > 3600`) loses its input series once stale; matching
-against the persistent `agent_source_up` series with `unless` detects any configured quota source that currently lacks a
-fresh quota sample (whether past the freshness cutoff or never observed).
+`agent_source_quota_observed_timestamp_seconds` is tracked per `source` and stays emitted after cached quota metrics
+expire at the freshness cutoff (default `45m`), so the alert stays firing once stale and a fresh fallback source does
+not hide a stale sibling. Its timestamp persists in `state_dir` across restarts (and a `LocalFallback` source omits it
+while deferred by a fresh local reading), so normal restarts/rollouts do not fire; `codex-rollouts` is excluded because
+it is a default token-counter source whose `rate_limits` snapshots are optional (absent on API-key logins, when idle,
+or while `codex-usage` owns quota). **Trade-off:** a newly configured quota source that has never produced a good
+reading has no `agent_source_quota_observed_timestamp_seconds` series yet, so this expression alone will not fire for
+a source broken from first start (rely on `agent_source_up == 0` with a `for:` duration in Alertmanager to cover initial
+failures without rollout noise).
 
 ## Command line
 
@@ -325,7 +330,7 @@ authoritative contract. Base labels: `host harness profile account provider`.
 | Account and state | `agent_account_logged_in`, `agent_account_info` (`plan`), `agent_credential_expiry_timestamp_seconds`, `agent_sessions` (`state`), `agent_router_connection_enabled`, `agent_router_connection_up`, `agent_router_rate_limited_until_timestamp_seconds` |
 | Sessions and jobs (opt-in) | `agent_session_state`, `agent_session_waiting`, `agent_session_state_since_timestamp_seconds`, `agent_session_info`, `agent_job_running`, `agent_job_last_end_timestamp_seconds`, `agent_job_last_exit_code` |
 | Lanes (opt-in) | `agent_lane_busy`, `agent_lane_queued`, `agent_lane_slots`, `agent_lane_requests_total`, `agent_lane_info` (labels `host lane`) |
-| Source health | `agent_source_up`, `agent_source_last_success_timestamp_seconds`, `agent_source_cache_age_seconds`, `agent_source_backoff_until_timestamp_seconds`, `agent_source_read_seconds`, `agent_source_errors_total` (`reason`) |
+| Source health | `agent_source_up`, `agent_source_last_success_timestamp_seconds`, `agent_source_quota_observed_timestamp_seconds`, `agent_source_cache_age_seconds`, `agent_source_backoff_until_timestamp_seconds`, `agent_source_read_seconds`, `agent_source_errors_total` (`reason`) |
 | Collector and event store | `agent_collector_*` (backlog, files, bytes, rows, errors), `agent_event_store_*` (size, available bytes, pressure, write success; only with events enabled) |
 | Exporter | `agent_quota_exporter_build_info`, `agent_quota_exporter_profiles`, `agent_quota_exporter_state_epoch`, `process_start_time_seconds` |
 
@@ -337,7 +342,7 @@ What the exporter reads, and what it never does:
 
 | It reads | It never |
 |---|---|
-| Agent state directories of configured and discovered profiles (transcripts, session files, rollouts, SQLite databases), read-only | writes to transcripts, credentials, or SQLite database/`-wal` files; opens SQLite `mode=ro` (`immutable=1` when an idle WAL database has no sidecars, though SQLite writes read-marks to a writable `-shm` and a narrow writer-close race during open can create `-wal`/`-shm` sidecars) |
+| Agent state directories of configured and discovered profiles (transcripts, session files, rollouts, SQLite databases), read-only | writes to transcripts, credentials, or SQLite main database files (opens SQLite with `mode=ro` and `query_only=1`, or `immutable=1` when an idle WAL database has no sidecars; SQLite still writes read-marks to a writable `-shm` and a narrow writer-close race during open can create `-wal`/`-shm` sidecars) |
 | Credential files, only in the opt-in vendor sources that need a token, only for one request | refreshes, mints, writes, logs, prints or exports a token; tokens never appear in a label, an error or a log line |
 | Account ids, plan names and token expiry times from credential and account files | exports an email address unless `metrics.account_label: email` |
 | Structural fields of transcripts (timestamps, model, token counts) | reads or exports prompts, completions, tool output, screen text or paths |

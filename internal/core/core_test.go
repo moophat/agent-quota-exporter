@@ -567,3 +567,116 @@ func TestDropCacheClearsEarlierSamples(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceQuotaObservedPersistsPastStalenessAndRestart(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	first := c.Now()
+	src := &fakeSource{name: "claude-oauth-usage", interval: 15 * time.Minute, network: true, fn: func(n int, _ json.RawMessage) (Result, json.RawMessage, error) {
+		if n > 1 {
+			return Result{}, nil, Fail(ReasonUpstream)
+		}
+		return Result{
+			ObservedAt: first,
+			Samples: []Sample{
+				{Name: "agent_quota_utilization_ratio", Labels: []Label{{"window", "5h"}}, Value: 0.4},
+				{Name: "agent_quota_observed_timestamp_seconds", Value: float64(first.Unix())},
+			},
+		}, nil, nil
+	}}
+	st := openState(t, dir, c)
+	s := NewScheduler([]Source{src}, st, c, quietLog(), 30*time.Minute)
+	if strings.Contains(render(t, s, c), "agent_source_quota_observed_timestamp_seconds") {
+		t.Fatal("emitted before any quota reading")
+	}
+	s.Tick(context.Background(), nil, false, true)
+	wantLine := `agent_source_quota_observed_timestamp_seconds{host="h",harness="claude-code",profile="p",source="claude-oauth-usage",env="t"} 1767225600`
+	if out := render(t, s, c); !strings.Contains(out, wantLine) {
+		t.Fatalf("missing source quota observed after good read:\n%s", out)
+	}
+	c.Add(40 * time.Minute)
+	s.Tick(context.Background(), nil, false, true)
+	out := render(t, s, c)
+	if strings.Contains(out, "\nagent_quota_observed_timestamp_seconds") || strings.Contains(out, "\nagent_source_cache_age_seconds") {
+		t.Fatalf("stale quota samples still served:\n%s", out)
+	}
+	if !strings.Contains(out, wantLine) {
+		t.Fatalf("source quota observed vanished when stale:\n%s", out)
+	}
+	st.Close()
+	src2 := &fakeSource{name: "claude-oauth-usage", interval: 15 * time.Minute, network: true}
+	s2 := NewScheduler([]Source{src2}, openState(t, dir, c), c, quietLog(), 30*time.Minute)
+	if out2 := render(t, s2, c); !strings.Contains(out2, wantLine) {
+		t.Fatalf("source quota observed lost across restart:\n%s", out2)
+	}
+}
+
+type fallbackSource struct {
+	*fakeSource
+	preferred string
+	prefer    func(time.Time) bool
+}
+
+func (f *fallbackSource) PreferLocal(now time.Time) bool { return f.prefer(now) }
+func (f *fallbackSource) PreferredSource() string        { return f.preferred }
+
+func TestSourceQuotaObservedTracksSourcesSeparatelyAndRespectsFallback(t *testing.T) {
+	c := newClock()
+	localAt := c.Now()
+	oauthAt := c.Now()
+	localFresh := true
+	local := &fakeSource{name: "claude-statusline-cache", interval: time.Minute, fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+		if !localFresh {
+			return Result{}, nil, Fail(ReasonOther)
+		}
+		return Result{
+			ObservedAt: localAt,
+			Samples: []Sample{
+				{Name: "agent_quota_utilization_ratio", Labels: []Label{{"window", "5h"}}, Value: 0.2},
+				{Name: "agent_quota_observed_timestamp_seconds", Value: float64(localAt.Unix())},
+			},
+		}, nil, nil
+	}}
+	prefer := false
+	oauth := &fallbackSource{
+		fakeSource: &fakeSource{name: "claude-oauth-usage", interval: 15 * time.Minute, network: true, fn: func(int, json.RawMessage) (Result, json.RawMessage, error) {
+			return Result{
+				ObservedAt: oauthAt,
+				Samples: []Sample{
+					{Name: "agent_quota_utilization_ratio", Labels: []Label{{"window", "5h"}}, Value: 0.3},
+					{Name: "agent_quota_observed_timestamp_seconds", Value: float64(oauthAt.Unix())},
+				},
+			}, nil, nil
+		}},
+		preferred: "claude-statusline-cache",
+		prefer:    func(time.Time) bool { return prefer },
+	}
+	s := NewScheduler([]Source{local, oauth}, openState(t, t.TempDir(), c), c, quietLog(), 30*time.Minute)
+	s.Tick(context.Background(), nil, false, true)
+	// Now local is active and deferring oauth.
+	prefer = true
+	c.Add(20 * time.Minute)
+	localAt = c.Now()
+	s.Tick(context.Background(), nil, false, true)
+	out := render(t, s, c)
+	if strings.Contains(out, `agent_source_quota_observed_timestamp_seconds{host="h",harness="claude-code",profile="p",source="claude-oauth-usage"`) {
+		t.Fatalf("deferred fallback should omit source quota observed while local is fresh:\n%s", out)
+	}
+	if !strings.Contains(out, `agent_source_quota_observed_timestamp_seconds{host="h",harness="claude-code",profile="p",source="claude-statusline-cache",env="t"}`) {
+		t.Fatalf("local source quota observed missing:\n%s", out)
+	}
+	// Local stops updating and goes stale (>30m), while oauth takes over with a fresh reading:
+	// oauth must not hide local's stale quota reading.
+	prefer = false
+	localFresh = false
+	c.Add(35 * time.Minute)
+	oauthAt = c.Now()
+	s.Tick(context.Background(), nil, false, true)
+	out = render(t, s, c)
+	if !strings.Contains(out, `agent_source_quota_observed_timestamp_seconds{host="h",harness="claude-code",profile="p",source="claude-statusline-cache",env="t"}`) {
+		t.Fatalf("fresh fallback hid stale local source:\n%s", out)
+	}
+	if !strings.Contains(out, `agent_source_quota_observed_timestamp_seconds{host="h",harness="claude-code",profile="p",source="claude-oauth-usage",env="t"}`) {
+		t.Fatalf("fallback source quota observed missing after taking over:\n%s", out)
+	}
+}

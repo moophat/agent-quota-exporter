@@ -22,10 +22,11 @@ Optional: install the pre-commit secret scan once per checkout with `pip install
 ## Rules for changes
 
 - **Read-only toward agent state.** No code path may refresh, mint or write a token, or write to agent files or
-  databases. Open SQLite read-only via `internal/sqlro` (which never writes the database or `-wal`, though SQLite may
-  write read-marks into an existing writable `-shm` and in a narrow writer-close race can create fresh sidecars) and
-  never take a lock that could block the agent that owns the database. The only exception for token writes is the
-  opt-in `agy-usage` plugin spawning the external `agy` client, which may refresh its own login.
+  databases. Open SQLite read-only via `internal/sqlro` (`mode=ro` and `query_only=1`, or `immutable=1` on an idle WAL
+  database; SQLite may still write read-marks into an existing writable `-shm` and in a narrow writer-close race can
+  create `-wal`/`-shm` sidecars) and never take a lock that could block the agent that owns the database. The only
+  exception for token writes is the opt-in `agy-usage` plugin spawning the external `agy` client, which may refresh its
+  own login.
 - **Secrets never leave the file.** A credential is read only inside the source that needs it, for one request, and
   never logged, printed, put in an error message or a label.
 - **No message content.** Parse structural fields only; drop content fields at the parser.

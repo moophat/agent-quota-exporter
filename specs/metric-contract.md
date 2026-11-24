@@ -195,6 +195,7 @@ healthy ones.
 |---|---|---|---|---|
 | `agent_source_up` | gauge | 0/1 | `host harness profile source` | 1 if the last attempt to read the source succeeded or a fresh cache entry exists |
 | `agent_source_last_success_timestamp_seconds` | gauge | Unix seconds | same | last successful read |
+| `agent_source_quota_observed_timestamp_seconds` | gauge | Unix seconds | same | last good quota reading observed by the source; persists after the reading goes stale (omitted while a `LocalFallback` source is deferred by a fresh local reading) |
 | `agent_source_cache_age_seconds` | gauge | seconds | same | age of the value being served |
 | `agent_source_backoff_until_timestamp_seconds` | gauge | Unix seconds | same | non-zero while a vendor 429 / error backoff is active |
 | `agent_source_read_seconds` | gauge | seconds | same | duration of the last read |
