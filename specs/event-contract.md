@@ -13,16 +13,17 @@ decisions in [decisions.md](decisions.md). Retained facts and current metric eli
 
 ## Configuration profiles
 
-`events.privacy_profile` names what the operator commits the store to; it does not change which fields are
-captured. Both profiles capture exactly the allow-listed fields of this contract, never content or credentials,
-and both accept configured email account labels (`metrics.account_label: email`).
+`events.privacy_profile` names the operator's intended retention tier; in current validation it only controls whether
+`events.enabled: true` is required and does not alter runtime capture, retention, or archiving behaviour. Both profiles
+capture exactly the allow-listed fields of this contract, never content or credentials, and both accept configured email
+account labels (`metrics.account_label: email`).
 
 - `community` (default): events are optional; with `events.enabled: false` nothing is written. Retention is the
   operator's choice within the storage budget below.
-- `parity`: the store is meant to be the host's complete usage history, a replacement for the harnesses' own usage
-  views. It requires `events.enabled: true` (a config with `parity` and capture disabled fails validation) and holds
-  the operator to the retention rules under "Persistence, privacy and freshness": at least 90 days queryable, closed
-  shards archived and verified before local removal.
+- `parity`: intended for stores used as the host's complete usage history (a replacement for the harnesses' own usage
+  views). Validation currently enforces only `events.enabled: true` (a config with `parity` and capture disabled fails
+  validation); keeping at least 90 days queryable and archiving/verifying closed shards before local removal under
+  "Persistence, privacy and freshness" are the operator's responsibility and are not enforced automatically at runtime.
 
 `events.identity_key_file` is a removed setting: it is still accepted so older configs load, is ignored, and logs
 one warning at startup. No key is read or required.

@@ -7,7 +7,7 @@ and another spec document disagree, this file is the decision.
 |---|---|---|
 | D1 | Licence | Settled 2026-10-28: Apache-2.0 |
 | D2 | Implementation language | Settled 2026-10-28: Go |
-| D3 | Public repository | Settled 2026-11-23: public, after removing internal process files |
+| D3 | Public repository | Settled 2026-11-23, amended 2026-11-24 (moophat): public, with full development history |
 | D4 | Per-session metrics | Settled 2026-11-13, amended 2026-11-15: opt-in `metrics.per_session` |
 | D5 | Claude plan label and health rows | Settled 2026-11-03 |
 | D6 | Claude config dirs on shared mounts | Open: guidance only, no exclude option |
@@ -33,10 +33,11 @@ release instead, and vendor endpoint and field mappings live in config so most b
 PyInstaller (glibc-bound rather than static, one-file mode unpacks to /tmp on every start, carries a whole
 interpreter). The comparison table is in `plan.md` ("Go vs Python").
 
-## D3. Public repository
+## D3. Public repository: settled (moophat)
 
-The project is developed in the open. Internal planning notes and agent-process files were removed
-before publication; `specs/` carries the contracts and the rationale that matter to users and contributors.
+The maintainer (`moophat`) ruled on 2026-11-23 to publish the repository, and on 2026-11-24 to publish the full
+development history (this repository, renamed back from the private dev copy). The project is developed in the open;
+`specs/` carries the contracts and the rationale that matter to users and contributors.
 
 ## D4. Per-session metrics: opt-in
 

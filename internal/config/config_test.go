@@ -311,3 +311,28 @@ func TestFiveMinuteStaleAfterAccepted(t *testing.T) {
 		t.Fatal("stale_after not preserved")
 	}
 }
+
+func TestExampleConfigMatchesUnprivilegedService(t *testing.T) {
+	unit, err := os.ReadFile("../../examples/agent-quota-exporter.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(unit), "\nUser=agent-quota-exporter\n") {
+		t.Skip("shipped unit does not default to unprivileged user")
+	}
+	c, err := Load("../../examples/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range c.Profiles {
+		if p.Disable {
+			continue
+		}
+		if p.Dir == "/root" || strings.HasPrefix(p.Dir, "/root/") {
+			t.Errorf("enabled example profile %q uses %q, unreadable by User=agent-quota-exporter", p.Alias, p.Dir)
+		}
+		if p.Harness == HarnessAgy && p.Quota.Enabled("agy_usage") {
+			t.Errorf("enabled example profile %q enables agy_usage under %q, which cannot run as User=agent-quota-exporter", p.Alias, p.Dir)
+		}
+	}
+}

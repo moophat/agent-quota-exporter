@@ -141,9 +141,14 @@ Example alert expressions:
 ```promql
 agent_quota_utilization_ratio > 0.9                                   # a quota window is almost used up
 agent_source_up == 0                                                  # a source cannot be read
-time() - agent_quota_observed_timestamp_seconds > 3600               # quota reading older than an hour
+(agent_source_up{source=~"claude-oauth-usage|claude-statusline-cache|codex-usage|codex-rollouts|agy-usage|zai-usage"} >= 0) unless on(host, harness, profile) agent_quota_observed_timestamp_seconds  # a configured quota source has no fresh reading
 agent_account_logged_in == 0                                          # a profile has no usable login
 ```
+
+Because `agent_quota_observed_timestamp_seconds` is omitted once a reading exceeds the freshness cutoff (default `45m`),
+an age check alone (`time() - agent_quota_observed_timestamp_seconds > 3600`) loses its input series once stale; matching
+against the persistent `agent_source_up` series with `unless` detects any configured quota source that currently lacks a
+fresh quota sample (whether past the freshness cutoff or never observed).
 
 ## Command line
 
@@ -296,7 +301,7 @@ credentials.
 | `events.byte_budget` | none | storage allocation in bytes; required and positive when enabled |
 | `events.free_space_reserve` | `8388608` | bytes kept free on the filesystem (minimum 8 MiB) |
 | `events.hot_age` | `2160h` | minimum 90 days; nothing is deleted automatically |
-| `events.privacy_profile` | `community` | `community`: events are optional and retention is your choice within the budget. `parity`: the store is meant as the host's complete usage history; requires `enabled: true` and commits you to keeping at least 90 days queryable and archiving before removal. Both capture the same fields ([details](specs/event-contract.md#configuration-profiles)) |
+| `events.privacy_profile` | `community` | `community`: events are optional (`enabled: false` allowed). `parity`: requires `enabled: true` (fails validation when capture is disabled). Both capture the exact same fields and currently share identical runtime behaviour; retention and archiving are the operator's responsibility ([details](specs/event-contract.md#configuration-profiles)) |
 | `events.identity_key_file` | unset | removed setting: accepted so older configs load, ignored with one startup warning |
 
 The format is [specs/event-contract.md](specs/event-contract.md). Store capacity is exposed as
@@ -332,7 +337,7 @@ What the exporter reads, and what it never does:
 
 | It reads | It never |
 |---|---|
-| Agent state directories of configured and discovered profiles (transcripts, session files, rollouts, SQLite databases), read-only | writes to an agent directory, or opens SQLite other than read-only (`mode=ro`; an idle WAL database is opened immutable so no sidecar is created) |
+| Agent state directories of configured and discovered profiles (transcripts, session files, rollouts, SQLite databases), read-only | writes to transcripts, credentials, or SQLite database/`-wal` files; opens SQLite `mode=ro` (`immutable=1` when an idle WAL database has no sidecars, though SQLite writes read-marks to a writable `-shm` and a narrow writer-close race during open can create `-wal`/`-shm` sidecars) |
 | Credential files, only in the opt-in vendor sources that need a token, only for one request | refreshes, mints, writes, logs, prints or exports a token; tokens never appear in a label, an error or a log line |
 | Account ids, plan names and token expiry times from credential and account files | exports an email address unless `metrics.account_label: email` |
 | Structural fields of transcripts (timestamps, model, token counts) | reads or exports prompts, completions, tool output, screen text or paths |
@@ -365,8 +370,12 @@ sudo install -m 0644 agent-quota-exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now agent-quota-exporter
 ```
 
-Give that user read access to the profile dirs (for example a read-only group), or switch the unit to `User=root` when
-the profiles live under `/root`. The comments in the unit cover what `agy-usage` needs.
+The shipped [examples/config.yaml](examples/config.yaml) enables only profiles usable by the dedicated
+`agent-quota-exporter` user once given read-only access to those profile dirs (for example via a read-only group).
+Profiles under `/root` and other-user `agy_usage` profiles are included there as commented-out alternatives: using
+them requires switching the unit to `User=root` and removing `Group=` (unless an `agy` `HOME` belongs to
+`agent-quota-exporter`). The comments in the unit also cover the `PATH`, `ReadWritePaths=` and `MemoryMax=` changes
+`agy-usage` needs.
 
 ## Contributing
 

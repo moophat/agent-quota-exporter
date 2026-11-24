@@ -43,7 +43,7 @@ The bracketed letters keep this file from matching its own patterns; they are th
 the JWT prefix, an auth-header scheme and a refresh-token value.
 
 ```
-grep -rEn '@[a-z0-9-]+\.[a-z]{2,}' fixtures | grep -v example.com
+grep -rEni '@[a-z0-9-]+\.[a-z]{2,}' fixtures | grep -v example.com
 grep -rEn 's[k]-|e[y]J|Bea[r]er|r[e]fresh_token"\s*:\s*"[A-Za-z0-9]' fixtures
 ```
 
