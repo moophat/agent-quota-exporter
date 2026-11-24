@@ -388,18 +388,3 @@ func TestQuotaImplausibleResetFallsBackToStaleAfter(t *testing.T) {
 		}
 	}
 }
-
-func TestRolloutsWithoutRateLimitsHaveNoQuotaObserved(t *testing.T) {
-	h := newHarness(t)
-	h.collect()
-	at := tNow.Add(time.Minute)
-	write(t, h.path("2026/11/04/rollout-null-rl.jsonl"), tokenLine(at, tu{10, 0, 0, 5, 0}, tu{10, 0, 0, 5, 0}, "null"))
-	h.now = at.Add(5 * time.Second)
-	got := h.collect()
-	if q := quota(got); len(q) != 0 {
-		t.Fatalf("unexpected quota samples for null rate_limits: %v", q)
-	}
-	if got["agent_tokens_total{model=unknown,type=input}"] != 10 {
-		t.Fatalf("expected token counters from rollout, got: %v", got)
-	}
-}

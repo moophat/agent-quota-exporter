@@ -141,19 +141,20 @@ Example alert expressions:
 ```promql
 agent_quota_utilization_ratio > 0.9                                   # a quota window is almost used up
 agent_source_up == 0                                                  # a source cannot be read
-time() - agent_source_quota_observed_timestamp_seconds{source=~"claude-oauth-usage|claude-statusline-cache|codex-usage|agy-usage|zai-usage"} > 2700  # a configured quota source's last good reading is stale (> 45m)
+(agent_source_up{source=~"claude-oauth-usage|claude-statusline-cache|codex-usage|agy-usage|zai-usage"} >= 0) unless on(host, harness, profile) agent_quota_observed_timestamp_seconds  # a profile with a quota source has no fresh quota reading
 agent_account_logged_in == 0                                          # a profile has no usable login
 ```
 
-`agent_source_quota_observed_timestamp_seconds` is tracked per `source` and stays emitted after cached quota metrics
-expire at the freshness cutoff (default `45m`), so the alert stays firing once stale and a fresh fallback source does
-not hide a stale sibling. Its timestamp persists in `state_dir` across restarts (and a `LocalFallback` source omits it
-while deferred by a fresh local reading), so normal restarts/rollouts do not fire; `codex-rollouts` is excluded because
-it is a default token-counter source whose `rate_limits` snapshots are optional (absent on API-key logins, when idle,
-or while `codex-usage` owns quota). **Trade-off:** a newly configured quota source that has never produced a good
-reading has no `agent_source_quota_observed_timestamp_seconds` series yet, so this expression alone will not fire for
-a source broken from first start (rely on `agent_source_up == 0` with a `for:` duration in Alertmanager to cover initial
-failures without rollout noise).
+`agent_quota_observed_timestamp_seconds` is omitted once a reading passes the freshness cutoff (default `45m`), so an
+age check on it (`time() - agent_quota_observed_timestamp_seconds > 3600`) loses its input once stale; matching the
+persistent `agent_source_up` series with `unless` keeps firing instead. Limits of this rule, by design:
+
+- Give it a `for:` duration (for example `for: 1h`) in your alerting rule. Right after a restart a source has not
+  polled yet, so the rule is briefly true; `for:` keeps normal restarts and rollouts quiet.
+- It matches per profile, not per source: while any quota source of a profile has a fresh reading, a stale sibling
+  of that profile does not fire. Catch a sibling that cannot be read with `agent_source_up == 0`.
+- `codex-rollouts` is left out: its rate-limit snapshots are optional (absent on API-key logins, when idle, or while
+  `codex-usage` owns quota).
 
 ## Command line
 
@@ -330,7 +331,7 @@ authoritative contract. Base labels: `host harness profile account provider`.
 | Account and state | `agent_account_logged_in`, `agent_account_info` (`plan`), `agent_credential_expiry_timestamp_seconds`, `agent_sessions` (`state`), `agent_router_connection_enabled`, `agent_router_connection_up`, `agent_router_rate_limited_until_timestamp_seconds` |
 | Sessions and jobs (opt-in) | `agent_session_state`, `agent_session_waiting`, `agent_session_state_since_timestamp_seconds`, `agent_session_info`, `agent_job_running`, `agent_job_last_end_timestamp_seconds`, `agent_job_last_exit_code` |
 | Lanes (opt-in) | `agent_lane_busy`, `agent_lane_queued`, `agent_lane_slots`, `agent_lane_requests_total`, `agent_lane_info` (labels `host lane`) |
-| Source health | `agent_source_up`, `agent_source_last_success_timestamp_seconds`, `agent_source_quota_observed_timestamp_seconds`, `agent_source_cache_age_seconds`, `agent_source_backoff_until_timestamp_seconds`, `agent_source_read_seconds`, `agent_source_errors_total` (`reason`) |
+| Source health | `agent_source_up`, `agent_source_last_success_timestamp_seconds`, `agent_source_cache_age_seconds`, `agent_source_backoff_until_timestamp_seconds`, `agent_source_read_seconds`, `agent_source_errors_total` (`reason`) |
 | Collector and event store | `agent_collector_*` (backlog, files, bytes, rows, errors), `agent_event_store_*` (size, available bytes, pressure, write success; only with events enabled) |
 | Exporter | `agent_quota_exporter_build_info`, `agent_quota_exporter_profiles`, `agent_quota_exporter_state_epoch`, `process_start_time_seconds` |
 

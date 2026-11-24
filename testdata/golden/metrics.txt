@@ -70,9 +70,6 @@ agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",
 agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 1767225660
 agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-sessions",env="lab"} 1767225780
 agent_source_last_success_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-transcripts",env="lab"} 1767225780
-# HELP agent_source_quota_observed_timestamp_seconds Last good quota reading observed by the source, Unix seconds.
-# TYPE agent_source_quota_observed_timestamp_seconds gauge
-agent_source_quota_observed_timestamp_seconds{host="node-a",harness="claude-code",profile="work",source="claude-oauth-usage",env="lab"} 1767225660
 # HELP agent_source_cache_age_seconds Age of the value being served, seconds.
 # TYPE agent_source_cache_age_seconds gauge
 agent_source_cache_age_seconds{host="node-a",harness="claude-code",profile="acct-b",source="claude-account",env="lab"} 0

@@ -39,22 +39,20 @@ type instance struct {
 	staleAfter time.Duration
 
 	// guarded by Scheduler.mu
-	inflight        bool
-	deferred        bool
-	attempted       bool
-	cache           []Sample
-	sampleTimes     []time.Time
-	observedAt      time.Time
-	quotaObservedAt time.Time
-	hasCache        bool
-	lastAttempt     time.Time
-	lastSuccess     time.Time
-	backoffUntil    time.Time
-	localBackoff    bool // backoffUntil applies to this instance only, not its gate group
-	lastOK          bool
-	readSeconds     float64
-	errors          map[string]float64
-	loggedReason    string
+	inflight     bool
+	attempted    bool
+	cache        []Sample
+	sampleTimes  []time.Time
+	observedAt   time.Time
+	hasCache     bool
+	lastAttempt  time.Time
+	lastSuccess  time.Time
+	backoffUntil time.Time
+	localBackoff bool // backoffUntil applies to this instance only, not its gate group
+	lastOK       bool
+	readSeconds  float64
+	errors       map[string]float64
+	loggedReason string
 }
 
 // Scheduler runs sources on their intervals and holds the cache /metrics renders from.
@@ -96,9 +94,6 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 		if ps.LastSuccess > 0 {
 			in.lastSuccess = time.Unix(ps.LastSuccess, 0)
 		}
-		if ps.LastQuotaObserved > 0 {
-			in.quotaObservedAt = time.Unix(ps.LastQuotaObserved, 0)
-		}
 		if ps.BackoffUntil > 0 {
 			in.backoffUntil = time.Unix(ps.BackoffUntil, 0)
 			in.localBackoff = ps.LocalBackoff
@@ -116,9 +111,6 @@ func NewScheduler(srcs []Source, st *State, clock Clock, log *slog.Logger, stale
 			if res := r.Restore(ps.Plugin); !res.ObservedAt.IsZero() && len(res.Samples) > 0 {
 				in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
 				in.sampleTimes = sampleTimes(src, res.Samples)
-				if qat := quotaObservedTime(res.Samples); !qat.IsZero() && qat.After(in.quotaObservedAt) {
-					in.quotaObservedAt = qat
-				}
 			}
 		}
 		if g := netGroup(src); src.Network() && !in.localBackoff && in.backoffUntil.After(s.netBlock[g]) {
@@ -180,10 +172,8 @@ func (s *Scheduler) Tick(ctx context.Context, filter func(Source) bool, force, w
 			continue
 		}
 		if f, ok := in.src.(LocalFallback); ok && f.PreferLocal(now) {
-			in.deferred = true
 			continue
 		}
-		in.deferred = false
 		prev[in] = gate{in.lastAttempt, in.attempted, s.netLast[netGroup(in.src)]}
 		in.inflight = true
 		in.lastAttempt = now
@@ -293,9 +283,6 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		if !res.ObservedAt.IsZero() {
 			in.observedAt = res.ObservedAt
 		}
-		if qat := quotaObservedTime(res.Samples); !qat.IsZero() && qat.After(in.quotaObservedAt) {
-			in.quotaObservedAt = qat
-		}
 		if in.loggedReason != "" {
 			s.log.Info("source recovered", "source", in.src.Name(), "profile", in.src.Profile())
 			in.loggedReason = ""
@@ -326,9 +313,6 @@ func (s *Scheduler) run(ctx context.Context, in *instance, start time.Time) {
 		if len(res.Samples) > 0 && !res.ObservedAt.IsZero() {
 			in.cache, in.hasCache, in.observedAt = res.Samples, true, res.ObservedAt
 			in.sampleTimes = times
-			if qat := quotaObservedTime(res.Samples); !qat.IsZero() && qat.After(in.quotaObservedAt) {
-				in.quotaObservedAt = qat
-			}
 		}
 		in.errors[reason]++
 		if in.loggedReason != reason {
@@ -347,7 +331,6 @@ func (s *Scheduler) persistLocked(in *instance) {
 	ps := s.state.Get(in.key)
 	ps.LastAttempt = unixOrZero(in.lastAttempt)
 	ps.LastSuccess = unixOrZero(in.lastSuccess)
-	ps.LastQuotaObserved = unixOrZero(in.quotaObservedAt)
 	ps.BackoffUntil = unixOrZero(in.backoffUntil)
 	ps.LocalBackoff = in.localBackoff && !in.backoffUntil.IsZero()
 	s.state.Put(in.key, ps)
@@ -384,10 +367,10 @@ type snapshot struct {
 	key, name, harness, profile string
 	network                     bool
 	attempted, lastOK, hasCache bool
-	fresh, deferred             bool
+	fresh                       bool
 	cache                       []Sample
-	observedAt, quotaObservedAt time.Time
-	lastSuccess, backoffUntil   time.Time
+	observedAt, lastSuccess     time.Time
+	backoffUntil                time.Time
 	readSeconds                 float64
 	errors                      map[string]float64
 }
@@ -399,8 +382,7 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 	for _, in := range s.insts {
 		sn := snapshot{key: in.key, name: in.src.Name(), harness: in.src.Harness(), profile: in.src.Profile(),
 			network: in.src.Network(), attempted: in.attempted, lastOK: in.lastOK, hasCache: in.hasCache,
-			deferred: in.deferred, observedAt: in.observedAt, quotaObservedAt: in.quotaObservedAt,
-			lastSuccess: in.lastSuccess, backoffUntil: in.backoffUntil,
+			observedAt: in.observedAt, lastSuccess: in.lastSuccess, backoffUntil: in.backoffUntil,
 			readSeconds: in.readSeconds, errors: map[string]float64{}}
 		if g := netGroup(in.src); in.src.Network() && s.netBlock[g].After(sn.backoffUntil) {
 			sn.backoffUntil = s.netBlock[g]
@@ -435,9 +417,6 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 					} else {
 						out[j].cache = nil
 					}
-					if out[i].deferred {
-						out[i].quotaObservedAt = time.Time{}
-					}
 					break
 				}
 			}
@@ -445,15 +424,6 @@ func (s *Scheduler) snapshot(now time.Time) []snapshot {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out
-}
-
-func quotaObservedTime(samples []Sample) time.Time {
-	for _, s := range samples {
-		if s.Name == "agent_quota_observed_timestamp_seconds" && s.Value > 0 {
-			return time.Unix(int64(s.Value), 0)
-		}
-	}
-	return time.Time{}
 }
 
 func sampleTimes(src Source, samples []Sample) []time.Time {
