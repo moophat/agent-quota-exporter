@@ -1,6 +1,6 @@
 # agy home layout
 
-No agy home exists on the sampled node, so there is nothing to list. What is known (from earlier investigation, not
+No agy home was available when the fixtures were sampled, so there is nothing to list. What is known (from earlier investigation, not
 re-verified here):
 
 - The deployment norm is one `HOME` per account (one agy home per profile).

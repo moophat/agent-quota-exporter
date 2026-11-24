@@ -1,6 +1,5 @@
 package claude
 
-// AI-Model: t9r/cx/gpt-6.1-sol
 import (
 	"context"
 	"os"

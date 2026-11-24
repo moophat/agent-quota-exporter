@@ -1,7 +1,8 @@
-# Example configuration for agent-quota-exporter (Claude Code profiles only in this version).
+# Example configuration for agent-quota-exporter, showing every harness. A minimal config is just
+# `version: 1` plus one profile; see README.md, "Configuration reference".
 # Path: --config FILE or AGENT_QUOTA_EXPORTER_CONFIG. Every key is optional except version.
 version: 1
-# Optional lane monitoring (off by default):
+# Optional model-server lane monitoring, JSON /slots and /metrics (off by default):
 # strata:
 #   - name: lane-a
 #     base_url: http://127.0.0.1:8080
@@ -11,14 +12,14 @@ listen: "127.0.0.1:9877"        # default port 9877; set it to what your scraper
 # host: node-a                  # label value; default = OS hostname
 state_dir: /var/lib/agent-quota-exporter
 labels: {}                      # constant labels on every series, e.g. {env: lab}
-# Optional private history; no source event adapters are enabled by this wiring.
+# Optional local event history (off by default); see README.md "Events" and specs/event-contract.md.
 events:
   enabled: false                # default; omission preserves metrics-only community mode
   root_dir: /var/lib/agent-quota-exporter/history # separate from agent state
   byte_budget: 10737418240       # example 10 GiB; REQUIRED positive operator allocation when enabled; no default
   free_space_reserve: 8388608    # default/minimum 8 MiB: bounded batch plus checkpoints
   hot_age: 2160h                # default/minimum 90 days; no automatic deletion
-  privacy_profile: community    # community | parity; parity requires enabled; configured email labels allowed
+  privacy_profile: community    # community (optional history) | parity (complete history: requires enabled, >= 90 days kept); same fields captured
   # Compatibility: identity_key_file is accepted but ignored, logging once at startup
   # when configured. No key is read or required; events use the public metric account label.
   # Enabled invalid/unwritable stores fail startup. Capacity pressure is exposed
@@ -32,10 +33,11 @@ metrics:
   account_label: alias          # alias | email
   per_session: false            # opt-in: state of each live Claude session (series per session, see specs/metric-contract.md)
   max_sessions_per_profile: 50  # cap when per_session is on (1..500)
-# Opt-in: which agent accounts have a job running now, from a task runner's lock files (Linux, specs/sources.md "Jobs").
+# Opt-in: which agent accounts have a job running now (Linux, specs/sources.md "Jobs"), from a task runner that holds
+# one flocked <tool>-<account>.lock per running job (tools: codex, agy) and appends a JSONL call log.
 # jobs:
-#   lock_dir: /run/runner         # holds <codex|agy>-<account>.lock files, one flocked per running job
-#   call_log: /var/log/runner/calls.jsonl   # optional: end time and exit code of the last job per account
+#   lock_dir: /run/agent-jobs                  # holds the <tool>-<account>.lock files
+#   call_log: /var/log/agent-jobs/calls.jsonl  # optional: end time and exit code of the last job per account
 defaults:
   usage_interval: 60s
   stale_after: 45m              # any positive duration; stale when age > max(this, 2*P + D + 15s)
@@ -44,15 +46,15 @@ defaults:
 profiles:
   - harness: claude-code
     alias: root
-    dir: /root/.claude          # only this login owns the AgentKit status line cache
+    dir: /root/.claude
     quota:
-      claude_statusline_cache: /tmp/ck-usage-limits-cache.json  # overrides exporter's CK_USAGE_CACHE_PATH, then /tmp default
-      claude_oauth_usage: true  # optional fallback only when no fresh cache reading; 15 min floor stays
-    # The shipped unit's PrivateTmp=true hides host /tmp. Override with PrivateTmp=false,
-    # or bind the cache read-only into the service and set the path above. Prefer a
-    # directory bind: atomic replacements can leave a single-file bind on an old inode.
-    # Keep all other unit hardening. Cache polling uses defaults.usage_interval;
-    # timestamp is the observation time; stale_after drops old readings.
+      # Off unless set: absolute path of a usage cache file that a Claude Code status line script writes
+      # (format in README.md, "Claude status line cache"). Read-only; no credentials, no vendor call.
+      # claude_statusline_cache: /run/claude-usage/cache.json
+      claude_oauth_usage: true  # opt-in vendor call; with a cache set, it runs only while no fresh cache reading exists
+    # Under the shipped systemd unit (PrivateTmp=true), a cache file in /tmp is not visible: put it
+    # elsewhere, or bind its directory read-only into the service. Cache polling uses
+    # defaults.usage_interval; the file's timestamp is the observation time.
   - harness: claude-code
     alias: work
     dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR
@@ -62,7 +64,7 @@ profiles:
     alias: personal
     dir: /home/acct-b/.claude
   # - harness: opencode           # a running server: busy-session count via GET <url>/session/status
-  #   alias: lane-a
+  #   alias: oc-live
   #   dir: /home/acct-a/.local/share/opencode
   #   url: http://127.0.0.1:4096  # loopback unless allow_remote: true
   - harness: codex
@@ -70,8 +72,8 @@ profiles:
     dir: /home/acct-a/.codex     # a CODEX_HOME; ~/.codex is also discovered
     quota: { codex_usage: true } # opt-in: live quota + reset slots from the ChatGPT backend; never refreshes the token
   - harness: opencode
-    alias: oc-lane-1
-    dir: /var/lib/opencode-lane-1/opencode   # the data dir holding opencode.db
+    alias: oc-a
+    dir: /var/lib/opencode-a/opencode   # the data dir holding opencode.db
   - harness: 9router                  # off unless declared
     alias: router
     dir: /home/acct-a/.9router

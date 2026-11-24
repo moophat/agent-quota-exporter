@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// AI-Model: t9r/cx/gpt-6.1-sol
 func ownerLabel(v string) string { return fmt.Sprintf("acct-%x", sha256.Sum256([]byte(v)))[:13] }
 func ownerRow(v string) []byte {
 	return []byte(fmt.Sprintf("{\"type\":\"session-owner\",\"accountUuid\":%q}\n", v))

@@ -1,90 +1,71 @@
 # Decisions
 
-Open and settled decisions for agent-quota-exporter. The maintainer decides; an agent records the ruling with its date
-and who ruled. If this file and another spec document disagree, this file is the decision.
+Settled and open design decisions for agent-quota-exporter, with their rationale. The maintainer decides. If this file
+and another spec document disagree, this file is the decision.
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | Licence | **LOCKED 2026-10-28**: Apache-2.0 |
-| D2 | Implementation language (plan decision #13) | **LOCKED 2026-10-28**: Go |
-| D3 | Public repository timing | OPEN |
-| D4 | Per-session metrics | Maintainer decision 2026-11-13 (not LOCKED): opt-in `metrics.per_session` |
+| D1 | Licence | Settled 2026-10-28: Apache-2.0 |
+| D2 | Implementation language | Settled 2026-10-28: Go |
+| D3 | Public repository | Settled 2026-11-23: public, after removing internal process files |
+| D4 | Per-session metrics | Settled 2026-11-13, amended 2026-11-15: opt-in `metrics.per_session` |
+| D5 | Claude plan label and health rows | Settled 2026-11-03 |
+| D6 | Claude config dirs on shared mounts | Open: guidance only, no exclude option |
+| D8 | SQLite read-marks in a live writer's `-shm` | Settled 2026-11-04: accepted |
+| D9 | Provider balances | Settled 2026-11-04: not built |
+| D10 | Idle memory target | Settled 2026-11-04: about 16 MB |
+| D11 | Plain account labels in events | Settled 2026-11-08 |
+| D12 | One freshness rule for every source | Settled 2026-11-08 |
 
 ---
 
-## D1. Licence: LOCKED Apache-2.0
+## D1. Licence: Apache-2.0
 
-**Ruled by Tu, 2026-10-28:** "just do what node exporter and normal popular exporters did".
+Follow what node_exporter and the prometheus/ organisation's exporters do: Apache-2.0. The `LICENSE` file is the
+standard Apache-2.0 text. MIT was the alternative considered.
 
-node_exporter and the prometheus/ organisation's exporters are Apache-2.0, so this project is Apache-2.0. The `LICENSE`
-file is the standard Apache-2.0 text. MIT was the alternative considered and is not pursued.
+## D2. Language: Go
 
-## D2. Language: LOCKED Go
+The exporter is a long-running, read-only daemon deployed to many heterogeneous machines, where a single static binary
+and a predictable footprint outweigh faster prototyping, and most Prometheus exporters are Go. Considered and
+rejected: Python edited in place on each machine (a local hotfix drifts from the repository; fixes go through a
+release instead, and vendor endpoint and field mappings live in config so most breakages need no rebuild), and
+PyInstaller (glibc-bound rather than static, one-file mode unpacks to /tmp on every start, carries a whole
+interpreter). The comparison table is in `plan.md` ("Go vs Python").
 
-**Ruled by Tu, 2026-10-28:** "Golang then" (after "Compiled language is better for agent").
+## D3. Public repository
 
-Considered and rejected: Python edited in place on nodes (a node-local hotfix drifts from the repo; fixes go PR →
-build → rollout, and vendor endpoint/field mappings live in config so most breakages need no rebuild), and PyInstaller
-(loses in-place editing anyway, glibc-bound rather than static, one-file mode unpacks to /tmp on every start, carries a
-whole interpreter). The original rationale follows. The exporter is a long-running, read-only daemon deployed to many heterogeneous nodes, where a
-single static binary and a predictable footprint outweigh Python's faster prototyping, and most Prometheus exporters are
-Go. The comparison table and the stdlib-only Python alternative are in `plan.md` (section "Go vs Python"). The contract
-and fixtures are language-neutral, so this does not block phase 0 or 1 design work.
+The project is developed in the open. Internal planning notes and agent-process files were removed
+before publication; `specs/` carries the contracts and the rationale that matter to users and contributors.
 
-## D3. Public timing: OPEN
+## D4. Per-session metrics: opt-in
 
-Private until phase 5 (first public release) is the plan's default; not ruled. Once public, `main` becomes protected
-and PRs are required (see `AGENTS.md`, Git).
+Per-session series exist behind `metrics.per_session: true` only (default off), as fixed 0/1 state sets per live
+session with a per-profile cap (`max_sessions_per_profile`, default 50), and a `session` label that is the sanitized
+harness session name (usually a project folder name). Never a session id, path, prompt, task or screen text. See
+`metric-contract.md`, "Session and job metrics (opt-in)".
 
-## D4. Per-session metrics: maintainer decision, opt-in (2026-11-13)
+Amended 2026-11-15: `agent_session_info` carries `pid` (only when the session file proves a live process on this
+host), so a consumer can join a session row to an OS process exactly. Joining by tmux session name proved ambiguous
+when several processes share one tmux session. Prompts, task text, screen text, paths and session ids still never
+appear.
 
-Taken by the maintainer under the owner's 2026-11-13 00:30 "go build it" for a "what is running now" view; the owner
-did not rule on the design itself, so this is not LOCKED. Per-session series exist behind `metrics.per_session: true`
-only (default off), as fixed 0/1 state sets per live session with a per-profile cap (`max_sessions_per_profile`,
-default 50), and a `session` label that is the sanitized harness session name (usually a project folder name). Never
-a session id, path, prompt, task or screen text. See `metric-contract.md`, "Session and job metrics (opt-in)".
-
-Amended 2026-11-15 by the maintainer: `agent_session_info` carries `pid` (only when the session file proves a live
-process on this host), so a consumer can join a session row to an OS process exactly. Joining by tmux session name
-proved ambiguous when several processes share one tmux session. Prompts, task text, screen text, paths and session
-ids still never appear.
-
-## D5. Claude plan label and contract rows: LOCKED (Tu, 2026-11-03)
+## D5. Claude plan label and contract rows
 
 - `claudeAiOauth.subscriptionType` in `.credentials.json` is allow-listed for `claude-account` (`sources.md`). It
   feeds `agent_account_info{plan}`, bounded to `pro`, `max`, `team`; anything else reads `unknown`.
 - `agent_quota_exporter_state_epoch` and `process_start_time_seconds` get rows in the contract's health table. Both
   were already emitted and described in prose, so this documents them and is non-breaking (contract stays 0).
 
-## D6. Claude config dirs on NFS: OPEN, not needed today (facts recorded, design not ruled)
+## D6. Claude config dirs on shared mounts: open
 
-Tu, 2026-11-03: some Claude config dirs on the fleet are on NFS. Not yet known: which dirs, and whether one dir is
-visible to more than one node's exporter. If it is, every exporter that discovers it counts the same transcripts,
-so fleet totals are multiplied by the number of nodes. Proposed rule, pending a ruling: a config dir on a shared mount
-is read by exactly one exporter (the node that owns the session); on the other nodes, narrow `discovery.roots`
-or use `discovery.mode: only` with roots that leave it out. The config has no per-dir exclude today.
+If one Claude config dir is visible to more than one machine's exporter (for example on an NFS mount), every exporter
+that discovers it counts the same transcripts, so totals across machines are multiplied. Guidance until a dedicated
+option exists: a config dir on a shared mount is read by exactly one exporter (the machine that runs the sessions);
+on the other machines, narrow `discovery.roots` or use `discovery.mode: only` with roots that leave it out. The config
+has no per-dir exclude today.
 
-On-prem inspection, 2026-11-04 (`plans/handoffs/onprem-test-result-20261104-0400.md`):
-- On the five nodes inspected, every Claude config dir that holds credentials, `projects/` or `sessions/` is on a
-  node-local disk, and none is on the shared mount.
-- A depth-5 search of the shared mount found no profile dir.
-- Not inspected by command: the NFS server node itself. A profile there would be visible to other exporters only if
-  placed under the export, and the mount search found none. Its node-local profiles were not checked.
-
-So no shared config dir is known today, and the rule is not applied yet. It stays OPEN as the guard: apply it if a
-profile is ever placed on a shared mount, and re-check when the NFS server node is inspected.
-
-## D7. Model attribution, no Co-Authored-By: LOCKED (Tu, 2026-11-04)
-
-- No commit and no squash message in this repo carries a `Co-Authored-By` trailer.
-- The model is named in every commit message (`AI-Model:` and `Model:` trailers), every PR body (`**AI-Model:**`
-  line) and every PR comment or review reply (`AI-Model:` line), for failure attribution.
-- Where an agent's environment forbids the exact model id in pushed artifacts, it writes the generic family name
-  (`opus`, `sonnet`, `haiku`, ...) instead. Commits pushed before this ruling keep what they have; history is not
-  rewritten. Checked on `main` after the v0.2 merge (14aeb20):
-`git log -1 --format=%b` shows none.
-
-## D8. SQLite read-marks in a live writer's -shm: ACCEPTED (Tu, 2026-11-04)
+## D8. SQLite read-marks in a live writer's -shm: accepted
 
 With a writer present, a read-only SQLite reader attaches to the existing `-shm` and writes read-marks into it, as
 every SQLite reader does; it never writes the database or `-wal`. Accepted as SQLite's own coordination, not a write
@@ -94,67 +75,49 @@ required. Measured (strace, `internal/sqlro`, 2026-11-04): when the exporter can
 (another owner, mode 0644, run as `nobody`), SQLite gets `EACCES`, falls back to a read-only open and mapping, and the
 read succeeds, with a live writer and after it was killed. So a non-owner exporter reads without writing there at all.
 
-## D9. Provider balances: NOT BUILT (Tu, 2026-11-04)
+## D9. Provider balances: not built
 
-No balance plugin. The vendors' prices are not known in real time, so a balance cannot be turned into anything the
-fleet can act on, and it would carry money and a unit label the contract forbids. Codex credits (a vendor-reported
-credit count in the rollouts) are unaffected.
+No balance plugin. The vendors' prices are not known in real time, so a balance cannot be turned into anything an
+operator can act on, and it would carry money and a unit label the contract forbids. Codex credits (a vendor-reported
+credit count) are unaffected.
 
-## D10. Idle memory target: ~16 MB (Tu, 2026-11-04)
+## D10. Idle memory target: about 16 MB
 
-The v0.2 plan's "under 15 MB" is replaced by about 16 MB, with a ceiling of 17 MB RSS on that load (11 profiles, a
-300k-row router DB): above 17 MB is a regression to investigate. Measured: 15.7 to 16.9 MB plateau; the extra over v0.1 is the pure-Go SQLite driver's fixed cost. A cgo driver (smaller, but no
-static release build) is not wanted.
+About 16 MB RSS, with a ceiling of 17 MB on the reference load (11 profiles, a 300k-row router database): above 17 MB
+is a regression to investigate. Measured: 15.7 to 16.9 MB plateau; the extra over v0.1 is the pure-Go SQLite driver's
+fixed cost. A cgo driver (smaller, but no static release build) is not wanted.
 
-## D11. Plain account labels in events: LOCKED (Tu, 2026-11-08)
+## D11. Plain account labels in events
 
-**AI-Model:** t9r/cx/gpt-6.1-sol
+Events use the same public account label as metrics: the configured alias, the existing `acct-xxxxxxxx` short stable
+hash, or the email when `account_label: email` is configured. Identity and usage `account` and `metric_account` are
+the same label when attribution is available. There is no separate keyed-ID policy; allow-listed identity metadata
+may contain emails. Secret, credential and prompt/content bans remain in force. The parity profile permits configured
+email labels.
 
-Owner-authorized ruling: events use the same public account label as metrics: configured
-alias, existing `acct-xxxxxxxx` short stable hash, or email when configured. Identity and
-usage `account` and `metric_account` are the same label when attribution is available.
-Remove the separate keyed-ID policy and identity-only email redaction restrictions;
-allowlisted identity metadata may contain emails. Secret, credential and prompt/content
-bans remain in force. Parity permits configured email labels.
+`events.identity_key_file` is accepted only for compatibility and ignored with one startup log message when
+configured; no key is read or required.
 
-`events.identity_key_file` is accepted only for compatibility, ignored with one startup
-log message when configured; no key is read or required.
+The event schema stays 1: this is a contract correction with changed account semantics, and `metric_account` is
+additive compatibility data that older rows may omit. Retained old rows are not rewritten or silently relinked.
+Consumers of mixed history must account for the old versus new account semantics. The metric contract stays 0.
 
-Schema stays 1 by explicit owner request: this is a contract correction with changed
-account semantics, and `metric_account` is additive compatibility data that older rows
-may omit. Retained old rows are not rewritten or silently relinked. Consumers of mixed
-history must account for the old versus new account semantics. Metric contract stays 0.
+## D12. One freshness rule for every source
 
-## Also recorded in `plan.md`, not yet ruled
+A reading is stale iff its age exceeds `max(defaults.stale_after, 2*P + D + 15s)`, where `P` is the source's
+effective poll interval and `D` its collection timeout. Any positive `stale_after` is valid. The legacy
+statusline-specific setting is accepted but ignored. This supersedes earlier per-source freshness exceptions; a quota
+reset can end eligibility earlier. Vendor polling cadence is unchanged.
 
-Whether the Claude quota plugin is on by default for discovered profiles or always explicit opt-in (plan: always
-explicit).
+The optional [event-contract.md](event-contract.md) replaces the earlier metrics-only history boundary. Its
+freshness and failure policy supersedes a blanket one-hour backoff for ordinary failures and the reading of metric
+staleness as history deletion. It preserves the 900 s floor of direct Claude quota calls, real rate-limit cooldowns,
+guard stops and the no-refresh rule.
 
-## Usage parity contract revision (B01)
+Known gap: the agy client may refresh its own credentials when `agy-usage` runs it, which conflicts with the
+no-refresh boundary of the event policy; `agy-usage` stays opt-in and documented as such. Codex live-response field
+names come from a third-party client and are not vendor-documented.
 
-### Single freshness rule — 2026-11-08
+## Also recorded in `plan.md`
 
-Owner delegated the choice to the orchestrator; the authorized brief selects one rule for every source:
-stale iff age > max(configured stale_after, 2*effective poll interval + collection timeout + 15s).
-Any positive stale_after is valid. The legacy statusline-specific setting is accepted but ignored.
-This supersedes earlier freshness exceptions; reset eligibility may end earlier. Vendor polling is unchanged.
-Recorded by t9r/cx/gpt-6.1-sol.
-
-**AI-Model:** t9r/cx/gpt-6.1-sol
-
-The authorized usage-parity brief replaces the agent-imposed metrics-only history boundary with
-the optional generic [event-contract.md](event-contract.md). This records that delivery requirement,
-not a new ruling attributed to Tu. This section records agent-authored delivery requirements only;
-it does not interpret, restate or settle owner rulings. Consult the original entries above directly.
-
-**Open question for maintainer:** D4 remains OPEN with its original wording. Does the proposed
-private session-event contract require a separate decision? No answer is inferred here.
-The event contract records the proposed handling of restricted manual charge evidence and its
-unverified units; that design text is not an owner ruling.
-
-The parity freshness/failure policy supersedes blanket ordinary-failure one-hour backoff and
-metric-staleness-as-history-deletion interpretations. It preserves direct Claude's 900 s floor,
-actual rate-limit cooldowns, guard stops and no-refresh rule. These are implementation requirements,
-not completed repairs. The existing agy CLI's possible credential refresh conflicts with the parity
-no-refresh boundary; no new permission to launch/refresh a client is inferred. Resolve before claiming
-runtime parity. Codex real-response verification and unverified manual quota units remain explicit.
+Claude quota calls are always an explicit opt-in per profile; they are never on by default for discovered profiles.

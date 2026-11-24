@@ -254,19 +254,21 @@ func TestV01ConfigsStillLoad(t *testing.T) {
 }
 
 func TestStatuslineCacheConfig(t *testing.T) {
-	body := "version: 1\ndiscovery: {mode: off}\nprofiles:\n- harness: claude-code\n  alias: root\n  dir: /root/.claude\n  quota: {claude_statusline_cache: /run/agentkit/cache.json, claude_oauth_usage: true}\n"
+	body := "version: 1\ndiscovery: {mode: off}\nprofiles:\n- harness: claude-code\n  alias: root\n  dir: /root/.claude\n  quota: {claude_statusline_cache: /run/claude-usage/cache.json, claude_oauth_usage: true}\n"
 	cfg, err := Load(writeCfg(t, body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	profiles, _ := cfg.Resolve(func(string) string { return "" })
-	if len(profiles) != 1 || profiles[0].Quota.StatuslinePath() != "/run/agentkit/cache.json" || !profiles[0].QuotaOptIn {
+	if len(profiles) != 1 || profiles[0].Quota.StatuslinePath() != "/run/claude-usage/cache.json" || !profiles[0].QuotaOptIn {
 		t.Fatalf("cache config lost: %+v", profiles)
 	}
+	if _, err := Load(writeCfg(t, strings.Replace(body, "/root/.claude", "/home/acct-a/.claude", 1))); err != nil {
+		t.Fatalf("a cache path must be accepted for any Claude profile dir: %v", err)
+	}
 	for _, bad := range []string{
-		strings.Replace(body, "/run/agentkit/cache.json", "relative.json", 1),
-		strings.Replace(body, "/run/agentkit/cache.json", "true", 1),
-		strings.Replace(body, "/root/.claude", "/home/acct-a/.claude", 1),
+		strings.Replace(body, "/run/claude-usage/cache.json", "relative.json", 1),
+		strings.Replace(body, "/run/claude-usage/cache.json", "true", 1),
 		strings.Replace(body, "claude_oauth_usage: true", "claude_oauth_usage: /run/file", 1),
 		strings.Replace(body, "harness: claude-code", "harness: codex", 1),
 	} {

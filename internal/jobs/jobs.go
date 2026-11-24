@@ -1,11 +1,11 @@
 // Package jobs reads which agent jobs are running now from the files a task runner leaves on the host
 // (`job-locks`, specs/sources.md, "Jobs").
 //
-// The convention it reads: while a job for account A of tool T runs, the runner holds an exclusive flock on the
-// empty file <lock_dir>/T-A.lock; every call appends one JSON line to a call log. The source never takes the
+// The convention it reads: a task runner holds one flocked <tool>-<account>.lock in <lock_dir> per running job and
+// appends one JSON line per call to a call log. Supported tools are codex and agy. The source never takes the
 // flock (it reads /proc/locks, which lists who holds which lock), so it cannot make a runner wait or fail. From the
-// call log it keeps only the end time and exit code of the last finished call per account; task text, caller,
-// directory, session id and the task hash are not decoded.
+// call log it decodes only ts, tool, account, duration_s and exit_code, and keeps the end time and exit code of the
+// last finished call per account.
 package jobs
 
 import (
@@ -45,7 +45,7 @@ const (
 // maxLockTable bounds the /proc/locks read. A table larger than this is refused, never read as if it were whole.
 var maxLockTable int64 = 4 << 20
 
-// lockName is the runner's own rule for an account lock file: tool prefix and a bounded account name.
+// lockName is the lock file name rule: a supported tool prefix and a bounded account name.
 var lockName = regexp.MustCompile(`^(codex|agy)-([A-Za-z0-9][A-Za-z0-9_.-]{0,63})\.lock$`)
 var accountName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
@@ -168,7 +168,7 @@ var fsType = func(d *os.File) (int64, error) {
 	return int64(st.Type), nil
 }
 
-// listLocks lists the eligible account lock files: regular files whose names match the runner's rule, smallest
+// listLocks lists the eligible account lock files: regular files whose names match lockName, smallest
 // names first, at most maxHistory. total counts every matching file. The directory is read in batches and only
 // matches are kept (trimmed to a bound as it grows), so a huge directory costs time, not memory.
 // key is the "major:minor:inode" /proc/locks prints for the file.
@@ -289,7 +289,8 @@ type logRow struct {
 	Exit     *int     `json:"exit_code"`
 }
 
-// Exit codes the runner logs for calls that never ran a job (busy with --no-wait, wait timeout).
+// Exit codes that mean a call never ran a job: 75 (EX_TEMPFAIL, the account was busy) and 124 (gave up waiting,
+// the timeout(1) convention).
 func notAJob(exit int) bool { return exit == 75 || exit == 124 }
 
 // readLog consumes new complete lines of the call log from st.Off and folds them into st.Last, at most

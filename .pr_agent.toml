@@ -1,5 +1,0 @@
-# Qodo reads this from the default branch only. Docs-only PRs skip the review and merge on green CI:
-# review quota is spent on code, not on notes. A PR is told apart by its source branch: plan/,
-# chore/ledger, docs/ and research/ branches carry plans, ledgers and notes only.
-[config]
-ignore_pr_source_branches = ["^plan/", "^chore/ledger", "^docs/", "^research/"]

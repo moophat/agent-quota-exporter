@@ -215,9 +215,6 @@ func (c *Config) Validate() error {
 				if !ok || !filepath.IsAbs(path) {
 					add("profiles[%d].quota.%s: must be an absolute file path", i, q)
 				}
-				if filepath.Clean(p.Dir) != "/root/.claude" {
-					add("profiles[%d].quota.%s: only for /root/.claude", i, q)
-				}
 			} else if _, ok := value.(bool); !ok {
 				add("profiles[%d].quota.%s: must be a boolean", i, q)
 			}

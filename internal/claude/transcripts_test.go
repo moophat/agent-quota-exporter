@@ -234,7 +234,7 @@ func TestTranscriptsModelCapNeverMovesTotals(t *testing.T) {
 	}
 }
 
-// A session file created and written during an exporter outage is counted after the restart (Qodo #4).
+// A session file created and written during an exporter outage is counted after the restart.
 func TestTranscriptsFileCreatedDuringOutageCounted(t *testing.T) {
 	x := newTT(t)
 	x.collect() // last collect at t0+1m
@@ -247,7 +247,7 @@ func TestTranscriptsFileCreatedDuringOutageCounted(t *testing.T) {
 }
 
 // A truncated or replaced file re-read from the start does not recount history, even when the dedupe set no
-// longer holds those ids (Qodo #5).
+// longer holds those ids.
 func TestTranscriptsReplacedFileNoReplay(t *testing.T) {
 	x := newTT(t)
 	x.collect()
@@ -289,7 +289,7 @@ func TestTranscriptsTruncatedInPlaceNoReplay(t *testing.T) {
 	}
 }
 
-// A user-controlled link inside a profile is never followed (Qodo #3).
+// A user-controlled link inside a profile is never followed.
 func TestTranscriptsSymlinkedProjectsRefused(t *testing.T) {
 	x := newTT(t)
 	os.RemoveAll(filepath.Join(x.p.Dir, "projects"))

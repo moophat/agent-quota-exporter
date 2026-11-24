@@ -1,6 +1,6 @@
 # Metric contract
 
-Status: draft v0 (design phase). This is the interface between the exporter and everything that scrapes it. A builder
+Status: contract version 0 (pre-1.0; additive changes keep version 0). This is the interface between the exporter and everything that scrapes it. A builder
 implements to this document; a consumer (dashboards, alerts, a label-mapping layer) relies on it. Breaking changes
 bump the contract version (`agent_quota_exporter_build_info{contract="0"}`).
 
@@ -43,7 +43,7 @@ metrics consumer and in account-bearing events. It is also allowed with the pari
 Events use the same public account labels as metrics; identity and usage events carry
 equal `account` and `metric_account` values when attribution is available. Enabling events
 must not change any metric's `account` label, including account info, quota and token series.
-The owner-authorized event semantic correction is recorded in `decisions.md`;
+The event account-label correction is recorded in `decisions.md` D11;
 metric contract version remains 0 (no new metric names, labels or units).
 
 Operator-defined static labels (`labels:` in config, for example `env`, `team`) are appended to every series. They are
@@ -68,7 +68,7 @@ constant per exporter, so they add no cardinality. Total label count per series 
    value is `pid` on `agent_session_info` only, set only when the session file proves a live process on this host
    (empty otherwise), so a consumer can join a session row to an OS process exactly; it is on no other series.
    Cardinality is unchanged: the pid is constant for a process's life and that series already exists per live
-   session. Maintainer decision under the owner's 2026-11-13 go-ahead, amended 2026-11-15, see `decisions.md` D4.
+   session. Decided 2026-11-13, amended 2026-11-15, see `decisions.md` D4.
 5. Series for a profile that disappeared stop being emitted. Current-value eligibility follows the
    source freshness rules below; retained events and last-good evidence are never deleted because
    a series is absent. Missing means unknown, never zero.
@@ -129,7 +129,7 @@ Example:
 # TYPE agent_tokens_total counter
 agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="input"} 1520
 agent_tokens_total{host="node-a",harness="claude-code",profile="work",account="acct-a1",provider="anthropic",model="model-x",type="cache_read"} 98213
-agent_requests_total{host="node-a",harness="opencode",profile="lane-1",account="acct-b1",provider="opencode-go",model="model-y",outcome="ok"} 311
+agent_requests_total{host="node-a",harness="opencode",profile="oc-a",account="acct-b1",provider="opencode-go",model="model-y",outcome="ok"} 311
 ```
 
 ## State metrics (gauges)

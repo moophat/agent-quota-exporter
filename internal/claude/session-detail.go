@@ -274,7 +274,7 @@ func sessionSamples(p *Profile, account string, docs []sessionDoc, max int, name
 			core.Label{Name: "session", Value: name},
 			core.Label{Name: "entrypoint", Value: entrypointLabel(string(d.Entrypoint))},
 			core.Label{Name: "tmux_session", Value: tmuxSession(string(d.Tmux))},
-				core.Label{Name: "pid", Value: sessionPIDLabel(d)}), Value: 1})
+			core.Label{Name: "pid", Value: sessionPIDLabel(d)}), Value: 1})
 	}
 	return out, over
 }
