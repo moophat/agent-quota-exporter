@@ -1,11 +1,13 @@
 # Example systemd unit. It runs as a dedicated, unprivileged user, created with:
 #   useradd --system --no-create-home --shell /usr/sbin/nologin agent-quota-exporter
 # Give that user read-only access to the profile dirs it monitors (for example a read-only group). It writes
-# nowhere but its state dir. If the agent profiles live under /root (/root/.claude*), it must run as root to read
-# them: set User=root and remove Group=.
+# nowhere but its state dir (except SQLite's own -shm coordination / rare writer-close sidecar race; see README.md).
+# The shipped examples/config.yaml enables only profiles usable by this unprivileged user; /root and other-user
+# agy profiles are commented out there as alternatives. If you enable profiles under /root (/root/.claude*), set
+# User=root and remove Group=.
 #
 # With quota.agy_usage on, the exporter runs the agy client inside this unit, as the owner of the agy HOME, which
-# needs root unless that HOME belongs to the exporter's user:
+# requires User=root and removing Group= unless that HOME belongs to agent-quota-exporter:
 # - the client must be on this unit's PATH: systemd's default holds only the standard /usr/local and /usr dirs, so
 #   set Environment=PATH= to include the client's dir (a per-user install such as ~/.local/bin is not on it);
 # - a login refresh rewrites the client's token file in its HOME, which ProtectHome=read-only forbids: add that HOME

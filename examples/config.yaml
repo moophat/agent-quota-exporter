@@ -19,7 +19,7 @@ events:
   byte_budget: 10737418240       # example 10 GiB; REQUIRED positive operator allocation when enabled; no default
   free_space_reserve: 8388608    # default/minimum 8 MiB: bounded batch plus checkpoints
   hot_age: 2160h                # default/minimum 90 days; no automatic deletion
-  privacy_profile: community    # community (optional history) | parity (complete history: requires enabled, >= 90 days kept); same fields captured
+  privacy_profile: community    # community | parity (both capture the same fields; parity only enforces enabled: true; retention/archiving are operator-managed)
   # Compatibility: identity_key_file is accepted but ignored, logging once at startup
   # when configured. No key is read or required; events use the public metric account label.
   # Enabled invalid/unwritable stores fail startup. Capacity pressure is exposed
@@ -44,9 +44,16 @@ defaults:
   # statusline_stale_after: 5m   # legacy compatibility key; ignored (uses stale_after)
   # P = effective source poll interval; D = collection timeout (10s unless source overrides it).
 profiles:
+  # Optional root-owned profile (requires User=root and removing Group= in examples/agent-quota-exporter.service):
+  # - harness: claude-code
+  #   alias: root
+  #   dir: /root/.claude
+  #   quota:
+  #     claude_oauth_usage: true
   - harness: claude-code
-    alias: root
-    dir: /root/.claude
+    alias: work
+    dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR
+    account: acct-a1            # optional; default is a short hash of the account id
     quota:
       # Off unless set: absolute path of a usage cache file that a Claude Code status line script writes
       # (format in README.md, "Claude status line cache"). Read-only; no credentials, no vendor call.
@@ -55,11 +62,6 @@ profiles:
     # Under the shipped systemd unit (PrivateTmp=true), a cache file in /tmp is not visible: put it
     # elsewhere, or bind its directory read-only into the service. Cache polling uses
     # defaults.usage_interval; the file's timestamp is the observation time.
-  - harness: claude-code
-    alias: work
-    dir: /home/acct-a/.claude   # a CLAUDE_CONFIG_DIR
-    account: acct-a1            # optional; default is a short hash of the account id
-    quota: { claude_oauth_usage: true }   # opt-in: private, undocumented vendor endpoint
   - harness: claude-code
     alias: personal
     dir: /home/acct-b/.claude
@@ -77,11 +79,14 @@ profiles:
   - harness: 9router                  # off unless declared
     alias: router
     dir: /home/acct-a/.9router
-  - harness: agy
-    alias: agy-a
-    dir: /home/acct-c            # the HOME agy runs under
-    account: agy-a1             # required: read each agy login from one host only
-    quota: { agy_usage: true }  # opt-in: runs agy's own /usage; each poll can trigger its normal token refresh
+  # Optional agy profile (agy_usage runs the agy client as the owner of dir, so a HOME owned by another user
+  # requires User=root and removing Group= in examples/agent-quota-exporter.service, plus the PATH,
+  # ReadWritePaths= and MemoryMax= overrides documented there; or use a HOME owned by agent-quota-exporter):
+  # - harness: agy
+  #   alias: agy-a
+  #   dir: /home/acct-c            # the HOME agy runs under
+  #   account: agy-a1             # required: read each agy login from one host only
+  #   quota: { agy_usage: true }  # opt-in: runs agy's own /usage; each poll can trigger its normal token refresh
   - harness: zai
     alias: zai-openclaw
     account: zai-main             # required: the `account` label, never derived from the key
